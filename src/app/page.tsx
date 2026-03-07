@@ -1248,12 +1248,19 @@ export default function Home() {
                   fetchAlist({ action: 'get', path: alistDownloadModal.filePath })
                     .then(r => r.json())
                     .then(data => {
-                      const sign = data.code === 200 ? (data.data?.sign || '') : '';
-                      const url = sign ? `${getAlistBase()}/d${alistDownloadModal!.filePath}?sign=${sign}` : `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
-                      navigator.clipboard.writeText(url);
-                      setAlistMsg('✅ 直链已复制！粘贴到迅雷/IDM即可满速下载');
+                      if (data.code === 200 && data.data?.raw_url) {
+                        navigator.clipboard.writeText(data.data.raw_url);
+                        setAlistMsg('✅ 百度CDN真实直链已复制！粘贴到迅雷/IDM即可满速下载（记得配好UA: pan.baidu.com）');
+                      } else {
+                        // fallback: 用 AList /d/ 地址
+                        const sign = data.code === 200 ? (data.data?.sign || '') : '';
+                        const url = sign ? `${getAlistBase()}/d${alistDownloadModal!.filePath}?sign=${sign}` : `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
+                        navigator.clipboard.writeText(url);
+                        setAlistMsg('✅ 链接已复制（备用地址）');
+                      }
                     }).catch(() => {
-                      navigator.clipboard.writeText(`${getAlistBase()}/d${alistDownloadModal!.filePath}`);
+                      const url = `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
+                      navigator.clipboard.writeText(url);
                       setAlistMsg('✅ 链接已复制');
                     });
                   setAlistDownloadModal(null);
@@ -1261,8 +1268,8 @@ export default function Home() {
                 className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
               >
                 <div>
-                  <div className="text-[11px] font-bold text-emerald-400">🚀 复制直链（迅雷/IDM）</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>适合超大文件，下载速度最快（搭配idm可达到50mb/s）且不消耗服务器流量。真心希望有条件的同学使用此方法，把服务器流量留给有需要的同学</div>
+                  <div className="text-[11px] font-bold text-emerald-400">🚀 复制直链（迅雷/IDM/NDM）</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>复制百度CDN原始地址，搭配IDM/NDM配好UA可达50MB/s。不消耗服务器流量</div>
                 </div>
               </button>
 
