@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyAdminToken } from '../_auth';
+import { verifyToken, requireRole } from '../_auth';
 
 const DEFAULT_ALIST_URL = (process.env.ALIST_URL || 'http://47.108.222.119:5244').replace(/\/+$/, '');
 const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
@@ -58,6 +58,14 @@ export async function POST(request: Request) {
             dir_name?: string;
         };
 
+        const authHeader = request.headers.get('authorization') || undefined;
+
+        // 所有操作都需要登录
+        const user = verifyToken(authHeader);
+        if (!user) {
+            return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
+        }
+
         const customUrl = request.headers.get('x-alist-url');
         const customUser = request.headers.get('x-alist-username');
         const customPass = request.headers.get('x-alist-password');
@@ -72,11 +80,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ code: 400, message: '缺少 action 参数' }, { status: 400 });
         }
 
+        // 写操作仅 admin / manager 可执行
         const writeActions = ['mkdir', 'remove', 'rename'];
         if (writeActions.includes(action)) {
-            const authHeader = request.headers.get('authorization') || undefined;
-            if (!verifyAdminToken(authHeader)) {
-                return NextResponse.json({ code: 401, message: '需要管理员权限喵...' }, { status: 401 });
+            if (!requireRole(authHeader, 'admin', 'manager')) {
+                return NextResponse.json({ code: 403, message: '权限不足，仅管理员可执行此操作' }, { status: 403 });
             }
         }
 
@@ -126,7 +134,7 @@ export async function POST(request: Request) {
     } catch (e: any) {
         console.error('[alist] error:', e);
         return NextResponse.json(
-            { code: 500, message: e?.message || 'AList 代理出错喵...' },
+            { code: 500, message: e?.message || 'AList 代理出错' },
             { status: 500 },
         );
     }

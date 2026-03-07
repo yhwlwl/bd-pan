@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { verifyToken } from '../_auth';
+import { getSettings } from '@/lib/users';
 
 const DEFAULT_ALIST_URL = (process.env.ALIST_URL || 'http://47.108.222.119:5244').replace(/\/+$/, '');
 const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
@@ -28,9 +30,25 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const path = searchParams.get('path');
-        const configB64 = searchParams.get('c'); // Custom config encoded
+        const configB64 = searchParams.get('c');
+        const tokenParam = searchParams.get('token'); // Token via query string (GET 请求无法用 header)
         if (!path) {
             return NextResponse.json({ error: '缺少 path 参数' }, { status: 400 });
+        }
+
+        // 权限校验
+        const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
+        const user = verifyToken(authHeader);
+        if (!user) {
+            return new Response('请先登录', { status: 401, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+        }
+
+        // 游客需要检查 allowGuestDownload
+        if (user.role === 'guest') {
+            const settings = getSettings();
+            if (!settings.allowGuestDownload) {
+                return new Response('管理员已关闭游客下载功能', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+            }
         }
 
         let customConfig: any = null;
@@ -43,14 +61,14 @@ export async function GET(request: Request) {
         }
 
         const url = customConfig?.url ? customConfig.url.replace(/\/+$/, '') : DEFAULT_ALIST_URL;
-        const user = customConfig?.user || DEFAULT_ALIST_USERNAME;
-        const pass = customConfig?.pass || DEFAULT_ALIST_PASSWORD;
+        const aUser = customConfig?.user || DEFAULT_ALIST_USERNAME;
+        const aPass = customConfig?.pass || DEFAULT_ALIST_PASSWORD;
 
-        const token = await getAlistToken(url, user, pass);
+        const token = await getAlistToken(url, aUser, aPass);
         const filename = path.split('/').pop() || 'download';
         const rangeHeader = request.headers.get('range');
 
-        // 获取文件信息，判断存储类型
+        // 获取文件信息
         const getRes = await fetch(`${url}/api/fs/get`, {
             method: 'POST',
             headers: {
@@ -74,14 +92,12 @@ export async function GET(request: Request) {
         let fileRes: Response;
 
         if (isBaidu && rawUrl) {
-            // 百度网盘：用 raw_url + UA: pan.baidu.com
             const fetchHeaders: Record<string, string> = {
                 'User-Agent': 'pan.baidu.com',
             };
             if (rangeHeader) fetchHeaders['Range'] = rangeHeader;
             fileRes = await fetch(rawUrl, { headers: fetchHeaders });
         } else {
-            // 阿里云盘、其他存储：通过 AList 的 /p/ 代理模式
             const proxyHeaders: Record<string, string> = {
                 'Authorization': token,
             };
@@ -103,7 +119,6 @@ export async function GET(request: Request) {
             );
         }
 
-        // 将响应流式传回给前端（支持断点续传）
         const responseHeaders = new Headers();
         responseHeaders.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
 
