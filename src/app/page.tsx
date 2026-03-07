@@ -879,10 +879,10 @@ export default function Home() {
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-xs font-bold text-blue-400">☁️ Cloudflare 边缘加速</span>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-zinc-400">
+                    <p className="text-[11px] leading-relaxed text-zinc-300">
                       通过我们在海外部署的 CF Workers 节点中转请求。
-                      <span className="block mt-1 text-white/80">✅ 推荐度：⭐⭐⭐⭐⭐ (普通同学首选)</span>
-                      <span className="block text-zinc-500">优点：不消耗服务器流量，无需配置代理，兼容性好。</span>
+                      <span className="block mt-1 text-white">✅ 推荐度：⭐⭐⭐⭐⭐ (普通同学首选)</span>
+                      <span className="block text-zinc-400">优点：不消耗服务器流量，无需配置代理，兼容性好。</span>
                     </p>
                   </div>
                   
@@ -890,10 +890,10 @@ export default function Home() {
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-xs font-bold text-emerald-400">🚀 复制直链 (搭配 IDM/迅雷)</span>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-zinc-400">
+                    <p className="text-[11px] leading-relaxed text-zinc-300">
                       直接获取百度网盘 CDN 的原始链接。
-                      <span className="block mt-1 text-white/80">✅ 推荐度：⭐⭐⭐⭐⭐ (有条件同学首选，极速)</span>
-                      <span className="block text-zinc-500">优点：单线程可达 5MB/s，多线程（IDM）可刷满 50MB/s。</span>
+                      <span className="block mt-1 text-white">✅ 推荐度：⭐⭐⭐⭐⭐ (有条件同学首选，极速)</span>
+                      <span className="block text-zinc-400">优点：单线程可达 5MB/s，多线程（IDM）可刷满 50MB/s。</span>
                     </p>
                   </div>
 
@@ -901,10 +901,10 @@ export default function Home() {
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-xs font-bold text-pink-400">🔥 服务器中转下载</span>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-zinc-400">
+                    <p className="text-[11px] leading-relaxed text-zinc-300">
                       通过 STA 核心服务器代理下载并转发给你。
-                      <span className="block mt-1 text-white/80">⚠️ 推荐度：⭐ (作为备用方案)</span>
-                      <span className="block text-zinc-500">缺点：消耗服务器昂贵的出站流量（Vercel 额度有限），请大家尽量通过前两种方式下载。</span>
+                      <span className="block mt-1 text-white">⚠️ 推荐度：⭐ (作为备用方案)</span>
+                      <span className="block text-zinc-400">缺点：消耗服务器昂贵的出站流量（Vercel 额度有限），请大家尽量通过前两种方式下载。</span>
                     </p>
                   </div>
                 </div>
@@ -916,33 +916,33 @@ export default function Home() {
                 <div className="p-4 rounded-2xl bg-zinc-800/20 border border-white/5 space-y-3">
                   <div className="flex items-start gap-3">
                     <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 mt-0.5">1</div>
-                    <p className="text-[11px] text-zinc-400">下载并安装 <a href="https://www.internetdownloadmanager.com/" target="_blank" className="text-accent underline">IDM (Internet Download Manager)</a>。</p>
+                    <p className="text-[11px] text-zinc-300">下载并安装 <a href="https://www.internetdownloadmanager.com/" target="_blank" className="text-accent underline">IDM (Internet Download Manager)</a>。</p>
                   </div>
                   <div className="flex items-start gap-3">
                     <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 mt-0.5">2</div>
-                    <p className="text-[11px] text-zinc-400">
-                      打开 IDM 菜单：<span className="text-white/80">选项 (Options) -&gt; 下载 (Downloads)</span>。
+                    <p className="text-[11px] text-zinc-300">
+                      打开 IDM 菜单：<span className="text-white">选项 (Options) -&gt; 下载 (Downloads)</span>。
                     </p>
                   </div>
                   <div className="flex items-start gap-3">
                     <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 mt-0.5">3</div>
                     <div className="flex-1 space-y-2">
-                       <p className="text-[11px] text-zinc-400">在最下方找到 <span className="text-white/80">“手动添加下载任务时使用的用户代理 (User-Agent)”</span>，填入：</p>
+                       <p className="text-[11px] text-zinc-300">在最下方找到 <span className="text-white">“手动添加下载任务时使用的用户代理 (User-Agent)”</span>，填入：</p>
                        <code className="block p-2 rounded bg-black/40 border border-white/5 text-[11px] font-mono text-pink-400 select-all">pan.baidu.com</code>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
                     <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 mt-0.5">4</div>
-                    <p className="text-[11px] text-zinc-400">回到网盘，点击 <span className="text-emerald-400">复制直链</span>，并在 IDM 中 <span className="text-white/80">新建任务</span> 粘贴即可。</p>
+                    <p className="text-[11px] text-zinc-300">回到网盘，点击 <span className="text-emerald-400">复制直链</span>，并在 IDM 中 <span className="text-white">新建任务</span> 粘贴即可。</p>
                   </div>
                 </div>
               </section>
 
               {/* 温馨提示 */}
               <div className="p-4 rounded-2xl bg-pink-500/5 border border-pink-500/10 text-center">
-                <p className="text-[11px] text-zinc-400">
+                <p className="text-[11px] text-zinc-300">
                   💖 每一份服务器流量都来之不易。<br/>
-                  <span className="text-white/80 font-bold">推荐有条件的同学优先使用 IDM + 直链</span>，<br/>
+                  <span className="text-white font-bold">推荐有条件的同学优先使用 IDM + 直链</span>，<br/>
                   让服务器把有限的带宽留给更需要的手机端同学。
                 </p>
               </div>
