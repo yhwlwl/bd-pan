@@ -1,6 +1,8 @@
+
 "use client";
 import { useState, useEffect } from 'react';
-import CHANGELOG_DATA from '@/data/changelog.json';
+import JSZip from 'jszip';
+import CHANGELOG_DATA from '../data/changelog.json';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const SIZE_THRESHOLD = 20 * 1024 * 1024; // 20MB
@@ -51,6 +53,7 @@ export default function Home() {
 
   // 文件预览
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive'; filePath: string; sign?: string; size?: number } | null>(null);
+  const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number } | null>(null);
   const [previewText, setPreviewText] = useState<string>('');
   const [previewArchiveFiles, setPreviewArchiveFiles] = useState<any[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -106,6 +109,13 @@ export default function Home() {
     const type = getPreviewType(item.name);
     if (!type) return false;
 
+    // 检查是否有预览权限
+    if (!userPerms?.preview) {
+        setAlistMsg('❌ 您没有在线预览的权限');
+        return false;
+    }
+
+    setPreviewItemMeta({ name: item.name, filePath, sign: item.sign, size: item.size });
     setPreviewLoading(true);
     setPreviewText('');
     setPreviewArchiveFiles([]);
@@ -115,22 +125,76 @@ export default function Home() {
 
     try {
       if (type === 'archive') {
-         // AList 压缩包挂载支持：请求 /api/fs/list on filePath (压缩包也会被当做目录处理)
-         const listRes = await fetchAlist({ action: 'list', path: filePath, password: '' });
-         const listData = await listRes.json();
-         if (listData.code === 200 && listData.data?.content) {
-            setPreviewArchiveFiles(listData.data.content);
-            setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
+         const ext = item.name.split('.').pop()?.toLowerCase();
+         if (ext === 'zip') {
+             if ((item.size || 0) > 50 * 1024 * 1024) {
+                const limitMb = ((item.size||0)/1024/1024).toFixed(2);
+                setPreviewText("⚠️ 压缩包过大 (" + limitMb + " MB)\n纯前端解析会占用大量设备内存并可能导致浏览器崩溃。\n超过 50MB 的 ZIP 包请直接下载至本地解压。");
+                setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
+                setPreviewLoading(false);
+                return true;
+             }
+             
+             try {
+                // 1. 获取 raw_url
+                const pRes = await fetch('/api/alist', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'get', path: filePath }),
+                });
+                const d = await pRes.json();
+                if (d.code !== 200 || !d.data?.raw_url) throw new Error(d.message);
+                
+                // 2. Fetch 二进制流并交给 JSZip 解析
+                const zipRes = await fetch(d.data.raw_url);
+                const arrayBuffer = await zipRes.arrayBuffer();
+                const zip = await JSZip.loadAsync(arrayBuffer);
+                
+                const filesList: any[] = [];
+                zip.forEach((relativePath, zipEntry) => {
+                    const parts = relativePath.split('/');
+                    // 仅展示顶级文件和目录
+                    if (parts.length === 1 || (parts.length === 2 && zipEntry.dir)) {
+                        filesList.push({
+                            name: zipEntry.dir ? parts[0] : relativePath,
+                            is_dir: zipEntry.dir,
+                            size: (zipEntry as any)._data?.uncompressedSize || 0
+                        });
+                    }
+                });
+                
+                // 去重目录 (JSZip可能会重复目录枚举)
+                const uniqueFiles = Array.from(new Map(filesList.map(f => [f.name, f])).values());
+                
+                // 排序：文件夹在前，文件在后，同类按字母数字排序
+                uniqueFiles.sort((a, b) => {
+                  if (a.is_dir && !b.is_dir) return -1;
+                  if (!a.is_dir && b.is_dir) return 1;
+                  return a.name.localeCompare(b.name, undefined, { numeric: true });
+                });
+                
+                setPreviewArchiveFiles(uniqueFiles);
+                setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
+             } catch (err: any) {
+                setPreviewText("⚠️ ZIP 解析失败或拉取跨域被阻止：\n" + (err.message || String(err)));
+                setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
+             }
          } else {
-            setPreviewText(`⚠️ 无法解析压缩包目录结构该存储节点尚未开启后端解压支持。\n详细错误: ${listData.message || '未知'}`);
-            setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
+             // rar, 7z 等
+             setPreviewText("⚠️ 不支持的纯前端解析格式: " + (ext?.toUpperCase() || '') + "\n浏览器环境下纯原生仅支持解包 ZIP 格式档案。\n请点击上方下载按钮下载后使用本地软件解压。");
+             setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
          }
+         
          setPreviewLoading(false);
          return true;
       }
 
       // 获取文件直链
-      const res = await fetchAlist({ action: 'get', path: filePath });
+      const res = await fetch('/api/alist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get', path: filePath }),
+      });
       const data = await res.json();
       if (data.code !== 200 || !data.data?.raw_url) {
         setAlistMsg('❌ 获取文件预览链接失败');
@@ -144,16 +208,16 @@ export default function Home() {
       if (isBaidu && type === 'text') {
          previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
          if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
-         const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-         if (ccConfigStr) previewUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
+         const ccStr = getCustomConfig();
+         if (ccStr) previewUrl += `&c=${btoa(encodeURIComponent(JSON.stringify(ccStr)))}`;
       } else if (isBaidu) {
          if ((item.size || 0) >= SIZE_THRESHOLD) {
             previewUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(previewUrl)}`;
          } else {
             previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
             if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
-            const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-            if (ccConfigStr) previewUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
+            const ccStr = getCustomConfig();
+            if (ccStr) previewUrl += `&c=${btoa(encodeURIComponent(JSON.stringify(ccStr)))}`;
          }
       }
 
@@ -1136,45 +1200,45 @@ export default function Home() {
       )}
 
       {/* 文件预览弹窗 */}
-      {(previewFile || previewLoading) && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-xl" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => { setPreviewFile(null); setPreviewText(''); }}>
+      {(previewFile || previewLoading) && previewItemMeta && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-xl" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); }}>
           <div className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-3xl overflow-hidden animate-in shadow-2xl border border-white/10" style={{ background: 'var(--bg-app)' }} onClick={e => e.stopPropagation()}>
             {/* 顶部栏 */}
             <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
               <div className="flex items-center gap-3 min-w-0">
                 <span className="text-lg shrink-0">
-                  {previewFile?.type === 'image' ? '🖼️' : previewFile?.type === 'video' ? '🎬' : previewFile?.type === 'pdf' ? '📄' : '📝'}
+                  {previewFile?.type === 'image' ? '🖼️' : previewFile?.type === 'video' ? '🎬' : previewFile?.type === 'pdf' ? '📄' : previewFile?.type === 'archive' ? '📦' : '📝'}
                 </span>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{previewFile?.name || '加载中...'}</h3>
+                  <h3 className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{previewItemMeta?.name || '加载中...'}</h3>
                   <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    {previewFile?.size ? `${(previewFile.size / 1024 / 1024).toFixed(2)} MB` : ''} · 在线预览
+                    {previewItemMeta?.size ? `${(previewItemMeta.size / 1024 / 1024).toFixed(2)} MB` : ''} · 在线预览
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {previewFile && (
+                {((previewFile || previewLoading) && previewItemMeta) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       const prov = alistProvider.toLowerCase();
                       const isBaidu = prov.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
                       const isAliyun = prov.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
-                      if (isBaidu && (previewFile.size || 0) >= SIZE_THRESHOLD) {
-                        setAlistDownloadModal({ name: previewFile.name, filePath: previewFile.filePath, sign: previewFile.sign });
+                      if (isBaidu && (previewItemMeta.size || 0) >= SIZE_THRESHOLD) {
+                        setAlistDownloadModal({ name: previewItemMeta.name, filePath: previewItemMeta.filePath, sign: previewItemMeta.sign });
                       } else if (isBaidu || isAliyun) {
-                        alistProxyDownload(previewFile.filePath, previewFile.name);
+                        alistProxyDownload(previewItemMeta.filePath, previewItemMeta.name);
                       } else {
-                        alistDirectDownload(previewFile.filePath, previewFile.sign);
+                        alistDirectDownload(previewItemMeta.filePath, previewItemMeta.sign);
                       }
-                      setPreviewFile(null); setPreviewText('');
+                      setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null);
                     }}
                     className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-accent text-white hover:opacity-80 transition-opacity"
                   >
                     ⬇️ 下载
                   </button>
                 )}
-                <button onClick={() => { setPreviewFile(null); setPreviewText(''); }} className="hover:opacity-100 opacity-60 transition-opacity p-2 text-lg">✕</button>
+                <button onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); }} className="hover:opacity-100 opacity-60 transition-opacity p-2 text-lg">✕</button>
               </div>
             </div>
             

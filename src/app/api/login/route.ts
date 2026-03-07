@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { signToken } from '../_auth';
-import { findUser, getSettings, getUserPermissions } from '@/lib/users';
+import { findUser, getSettings, getUserPermissions } from '../../../lib/users';
 
 export async function POST(request: Request) {
     try {

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { Role } from '@/lib/users';
+import type { Role } from '../../lib/users';
 
 const TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // 8 小时
 
