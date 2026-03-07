@@ -50,7 +50,7 @@ export default function Home() {
   // 管理面板
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
-  const [adminSettings, setAdminSettings] = useState<{ allowGuestDownload: boolean; permissions?: Record<string, UserPermissions> }>({ allowGuestDownload: true, permissions: {} });
+  const [adminSettings, setAdminSettings] = useState<{ enableGuestMode: boolean; permissions?: Record<string, UserPermissions> }>({ enableGuestMode: true, permissions: {} });
   const [newUserName, setNewUserName] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
   const [newUserRole, setNewUserRole] = useState<'manager' | 'guest'>('manager');
@@ -650,12 +650,12 @@ export default function Home() {
             <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>全局设置</div>
               <div className="flex items-center justify-between">
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>允许游客下载 · {adminSettings.allowGuestDownload ? '已开启' : '已关闭'}</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>启用游客模式 · {adminSettings.enableGuestMode ? '已开启' : '已关闭'}</span>
                 <button
-                  onClick={() => adminAction('updateSettings', { settings: { allowGuestDownload: !adminSettings.allowGuestDownload } })}
-                  className={`w-10 h-5 rounded-full transition-colors relative ${adminSettings.allowGuestDownload ? 'bg-emerald-500' : 'bg-zinc-700'}`}
+                  onClick={() => adminAction('updateSettings', { settings: { enableGuestMode: !adminSettings.enableGuestMode } })}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${adminSettings.enableGuestMode ? 'bg-emerald-500' : 'bg-zinc-700'}`}
                 >
-                  <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${adminSettings.allowGuestDownload ? 'left-5' : 'left-0.5'}`} />
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${adminSettings.enableGuestMode ? 'left-5' : 'left-0.5'}`} />
                 </button>
               </div>
             </div>

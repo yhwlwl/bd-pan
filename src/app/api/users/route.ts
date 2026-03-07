@@ -50,7 +50,7 @@ export async function POST(request: Request) {
             }
 
             case 'updateSettings': {
-                const { settings } = body as { settings: { allowGuestDownload?: boolean } };
+                const { settings } = body as { settings: { enableGuestMode?: boolean } };
                 await updateSettings(settings);
                 return NextResponse.json({ ok: true, settings: await getSettings(), users: await getUsers() });
             }

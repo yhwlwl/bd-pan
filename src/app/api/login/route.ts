@@ -9,8 +9,8 @@ export async function POST(request: Request) {
         // 游客模式
         if (body.guest === true) {
             const settings = await getSettings();
-            if (!settings.allowGuestDownload) {
-                return NextResponse.json({ error: '游客模式已被管理员关闭' }, { status: 403 });
+            if (!settings.enableGuestMode) {
+                return NextResponse.json({ error: '系统已关闭游客访问' }, { status: 403 });
             }
             const token = signToken('guest', 'guest');
             if (!token) return NextResponse.json({ error: '服务端配置异常' }, { status: 500 });

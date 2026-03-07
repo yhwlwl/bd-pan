@@ -19,7 +19,7 @@ export interface UserPermissions {
 }
 
 export interface GlobalSettings {
-    allowGuestDownload: boolean;
+    enableGuestMode: boolean;
     permissions?: Record<string, UserPermissions>;
 }
 
@@ -33,8 +33,7 @@ export async function getUserPermissions(username: string, role: Role): Promise<
     const defaultManager: UserPermissions = { view: true, download: true, upload: true, delete: true, rename: true };
     
     const settings = await getSettings();
-    const allowGuestDl = settings.allowGuestDownload ?? true;
-    const defaultGuest: UserPermissions = { view: true, download: allowGuestDl, upload: false, delete: false, rename: false };
+    const defaultGuest: UserPermissions = { view: true, download: true, upload: false, delete: false, rename: false };
 
     if (role === 'admin') {
         return { view: true, download: true, upload: true, delete: true, rename: true };
@@ -70,6 +69,14 @@ export async function getUsers(): Promise<UserWithPermissions[]> {
             permissions: await getUserPermissions(u.username, u.role)
         });
     }
+
+    // 内置一个游客账号，供全局配置统一的游客权限
+    result.push({
+        username: 'guest',
+        role: 'guest',
+        permissions: await getUserPermissions('guest', 'guest')
+    });
+
     return result;
 }
 
@@ -107,7 +114,7 @@ export async function addUser(username: string, password: string, role: Role): P
 
 export async function removeUser(username: string): Promise<{ ok: boolean; error?: string }> {
     if (!supabase) return { ok: false, error: 'Supabase 未配置' };
-    if (username === 'admin') return { ok: false, error: '不允许删除 admin 账号' };
+    if (username === 'admin' || username === 'guest') return { ok: false, error: `不允许删除 ${username} 账号` };
 
     const { error, count } = await supabase
         .from('bdpan_users')
@@ -120,7 +127,7 @@ export async function removeUser(username: string): Promise<{ ok: boolean; error
 
 export async function updateUserRole(username: string, role: Role): Promise<{ ok: boolean; error?: string }> {
     if (!supabase) return { ok: false, error: 'Supabase 未配置' };
-    if (username === 'admin') return { ok: false, error: '不允许修改 admin 角色' };
+    if (username === 'admin' || username === 'guest') return { ok: false, error: `不允许修改 ${username} 角色` };
     if (role === 'admin') return { ok: false, error: '不允许授予 admin 角色' };
 
     const { error, count } = await supabase
@@ -149,7 +156,7 @@ export async function updateAdminPassword(newPassword: string): Promise<{ ok: bo
 // === 全局设置 ===
 
 export async function getSettings(): Promise<GlobalSettings> {
-    const defaults: GlobalSettings = { allowGuestDownload: true, permissions: {} };
+    const defaults: GlobalSettings = { enableGuestMode: true, permissions: {} };
     if (!supabase) return defaults;
 
     const { data, error } = await supabase
@@ -160,7 +167,7 @@ export async function getSettings(): Promise<GlobalSettings> {
     if (error || !data) return defaults;
     const val = data.value as Record<string, unknown>;
     return {
-        allowGuestDownload: typeof val.allowGuestDownload === 'boolean' ? val.allowGuestDownload : true,
+        enableGuestMode: typeof val.enableGuestMode === 'boolean' ? val.enableGuestMode : (typeof val.allowGuestDownload === 'boolean' ? val.allowGuestDownload : true),
         permissions: (val.permissions || {}) as Record<string, UserPermissions>,
     };
 }
