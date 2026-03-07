@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from 'react';
+import CHANGELOG_DATA from '@/data/changelog.json';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const SIZE_THRESHOLD = 20 * 1024 * 1024; // 20MB
@@ -46,6 +47,9 @@ export default function Home() {
   const [alistRenaming, setAlistRenaming] = useState<string | null>(null);
   const [alistNewName, setAlistNewName] = useState('');
   const [alistDownloadModal, setAlistDownloadModal] = useState<{ name: string; filePath: string; sign?: string } | null>(null);
+
+  // 更新日志弹窗
+  const [showChangelog, setShowChangelog] = useState(false);
 
   // 管理面板
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -841,6 +845,42 @@ export default function Home() {
         </div>
       )}
 
+      {/* 更新日志弹窗 */}
+      {showChangelog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowChangelog(false)}>
+          <div className="w-full max-w-lg max-h-[80vh] flex flex-col glass-strong rounded-2xl overflow-hidden animate-in shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
+              <div>
+                <h3 className="text-base font-bold text-accent">更新日志 (Changelog)</h3>
+                <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>STA-PAN 开发历程记录</div>
+              </div>
+              <button onClick={() => setShowChangelog(false)} className="hover:opacity-100 opacity-60 transition-opacity p-2 -mr-2 text-lg">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              {CHANGELOG_DATA.map((log: any, idx: number) => (
+                <div key={log.hash} className="relative pl-6">
+                  {/* Timeline dot and line */}
+                  <div className="absolute left-[3px] top-[5px] w-2 h-2 rounded-full bg-pink-500 shadow-[0_0_8px_rgba(236,72,153,0.8)] ring-4 ring-black" style={{ '--tw-ring-color': 'var(--bg-app)' } as any}></div>
+                  {idx !== CHANGELOG_DATA.length - 1 && (
+                    <div className="absolute left-[6px] top-[14px] bottom-[-24px] w-[1px]" style={{ background: 'var(--border-color)' }}></div>
+                  )}
+                  <div className="flex items-baseline gap-2 mb-1.5">
+                    <span className="text-xs font-bold px-1.5 py-0.5 rounded border border-pink-500/30 text-pink-400 bg-pink-500/5">v{log.version}</span>
+                    <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{log.date.split(' ')[0]}</span>
+                  </div>
+                  <div className="text-xs leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+                    {log.message}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-3 text-center text-[10px] border-t" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-faint)' }}>
+              历史版本记录就到这里啦 ~
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 大文件下载方式选择弹窗 */}
       {alistDownloadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setAlistDownloadModal(null)}>
@@ -1140,6 +1180,15 @@ export default function Home() {
 
       {/* 底部版权 */}
       <footer className="text-center py-4 text-[9px]" style={{ color: 'var(--text-faint)' }}>
+        <div className="flex items-center justify-center gap-2 mb-2 text-[10px]">
+          <span className="font-mono text-pink-500 font-bold">v{CHANGELOG_DATA[0].version}</span>
+          <span className="opacity-30">|</span>
+          <span style={{ color: 'var(--text-muted)' }}>更新时间: {CHANGELOG_DATA[0].date.split(' ')[0]}</span>
+          <span className="opacity-30">|</span>
+          <button onClick={() => setShowChangelog(true)} className="hover:text-pink-400 transition-colors underline decoration-dotted underline-offset-2">
+            👀 更新日志
+          </button>
+        </div>
         <div>© {new Date().getFullYear()} 成都七中科学技术协会 (STA)</div>
         <div className="mt-1 opacity-80">本网站由25级网络部搭建运营。</div>
       </footer>
