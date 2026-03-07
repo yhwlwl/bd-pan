@@ -1,17 +1,18 @@
 "use client";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const SIZE_THRESHOLD = 20 * 1024 * 1024; // 20MB
 
 type Role = 'admin' | 'manager' | 'guest';
+type Theme = 'light' | 'dark';
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [userToken, setUserToken] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<Role | null>(null);
   const [username, setUsername] = useState<string | null>(null);
-  const cancelWebNDMRef = useRef<(() => void) | null>(null);
+  const [theme, setTheme] = useState<Theme>('dark');
 
   // 登录表单
   const [loginUsername, setLoginUsername] = useState('');
@@ -89,9 +90,23 @@ export default function Home() {
     });
   };
 
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    document.documentElement.classList.toggle('dark', next === 'dark');
+    localStorage.setItem('BDPAN_THEME', next);
+  };
+
   useEffect(() => {
     setMounted(true);
     if (typeof window !== 'undefined') {
+      // 主题初始化
+      const saved = localStorage.getItem('BDPAN_THEME') as Theme | null;
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const initial: Theme = saved || (prefersDark ? 'dark' : 'light');
+      setTheme(initial);
+      document.documentElement.classList.toggle('dark', initial === 'dark');
+
       const savedToken = window.localStorage.getItem('BDPAN_TOKEN');
       const savedRole = window.localStorage.getItem('BDPAN_ROLE') as Role | null;
       const savedUser = window.localStorage.getItem('BDPAN_USERNAME');
@@ -101,7 +116,7 @@ export default function Home() {
         setUsername(savedUser);
       }
 
-      // 打点跟踪
+      // 访客追踪
       fetch('https://ipapi.co/json/')
         .then(res => res.json())
         .then(data => {
@@ -111,9 +126,11 @@ export default function Home() {
             body: JSON.stringify({
               time: new Date().toISOString(),
               ip: data.ip,
-              location: `${data.country_name || ''} ${data.region || ''} ${data.city || ''}`.trim(),
+              country: data.country_name || '',
+              region: data.region || '',
+              city: data.city || '',
               device: navigator.userAgent,
-              source: 'bd-pan'
+              source: 'pan'
             })
           }).catch(() => { });
         })
@@ -121,7 +138,7 @@ export default function Home() {
           fetch('/api/track', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ time: new Date().toISOString(), device: navigator.userAgent, source: 'bd-pan' })
+            body: JSON.stringify({ time: new Date().toISOString(), device: navigator.userAgent, source: 'pan' })
           }).catch(() => { });
         });
     }
@@ -446,17 +463,17 @@ export default function Home() {
     }
   };
 
-  if (!mounted) return <div className="bg-[#050506] min-h-screen" />;
+  if (!mounted) return <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }} />;
 
   // === 登录页 ===
   if (!userToken) {
     return (
-      <div className="min-h-screen bg-[#050506] text-zinc-300 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm bg-black/60 border border-zinc-800 rounded-2xl p-6 shadow-2xl animate-in">
+      <div className="min-h-screen bg-gradient-animated flex items-center justify-center p-4" style={{ color: 'var(--text-secondary)' }}>
+        <div className="w-full max-w-sm glass-strong rounded-2xl p-6 animate-in">
           <div className="text-center mb-6">
             <div className="text-3xl mb-2">☁️</div>
-            <h1 className="text-xl font-black text-white tracking-tight">AList 网盘</h1>
-            <p className="text-[11px] text-zinc-600 mt-1">百度网盘 · 阿里云盘 · 多网盘聚合</p>
+            <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>成都七中STA · 科协网盘</h1>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>成都七中学生科技协会 · 百度网盘文件共享</p>
           </div>
           <div className="space-y-3">
             <input
@@ -466,7 +483,7 @@ export default function Home() {
               onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('pwd-input')?.focus(); }}
               placeholder="用户名"
               autoComplete="username"
-              className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2.5 text-xs text-white outline-none focus:border-pink-500 transition-colors"
+              className="w-full rounded-lg px-3 py-2.5 text-xs outline-none transition-all" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
             />
             <input
               id="pwd-input"
@@ -476,29 +493,36 @@ export default function Home() {
               onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
               placeholder="密码"
               autoComplete="current-password"
-              className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2.5 text-xs text-white outline-none focus:border-pink-500 transition-colors"
+              className="w-full rounded-lg px-3 py-2.5 text-xs outline-none transition-all" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
             />
             <button
               onClick={handleLogin}
               disabled={authLoading}
-              className={`w-full text-xs font-bold py-2.5 rounded-lg transition-all ${authLoading
-                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                : 'bg-pink-500 text-white hover:bg-pink-400 hover:shadow-lg hover:shadow-pink-500/20'}`}
+              className={`w-full text-xs font-bold py-2.5 rounded-lg transition-all text-white ${authLoading
+                ? 'opacity-50 cursor-not-allowed'
+                : 'hover:shadow-lg hover:opacity-90'}`}
+              style={{ background: 'var(--accent)' }}
             >
               {authLoading ? '验证中...' : '登 录'}
             </button>
             <div className="relative">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-zinc-800"></div></div>
-              <div className="relative flex justify-center text-[10px]"><span className="bg-[#050506] px-2 text-zinc-600">OR</span></div>
+              <div className="absolute inset-0 flex items-center"><div className="w-full" style={{ borderTop: '1px solid var(--border-color)' }}></div></div>
+              <div className="relative flex justify-center text-[10px]"><span className="px-2" style={{ background: 'var(--bg-primary)', color: 'var(--text-faint)' }}>OR</span></div>
             </div>
             <button
               onClick={handleGuestLogin}
               disabled={authLoading}
-              className="w-full text-xs font-bold py-2.5 rounded-lg border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600 transition-all"
+              className="w-full text-xs font-bold py-2.5 rounded-lg transition-all" style={{ border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
             >
               👤 游客模式
             </button>
             {authError && <div className="text-[11px] text-red-400 text-center">{authError}</div>}
+          </div>
+          <div className="flex items-center justify-between mt-5">
+            <p className="text-[9px]" style={{ color: 'var(--text-faint)' }}>© 成都七中学生科技协会</p>
+            <button onClick={toggleTheme} className="text-sm opacity-60 hover:opacity-100 transition-opacity" title="切换主题">
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
           </div>
         </div>
       </div>
@@ -507,29 +531,32 @@ export default function Home() {
 
   // === 主应用 ===
   return (
-    <div className="min-h-screen bg-[#050506] text-zinc-300 font-mono flex flex-col selection:bg-pink-500/30">
+    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
 
       {/* 顶部状态栏 */}
-      <header className="h-11 bg-[#0c0c0e] border-b border-zinc-800 flex items-center justify-between px-4 md:px-6 text-[10px] font-bold tracking-widest text-zinc-500 shrink-0">
+      <header className="h-12 glass-strong flex items-center justify-between px-4 md:px-6 text-[10px] font-bold tracking-widest shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
         <div className="flex items-center gap-3">
           <span className="text-base">☁️</span>
-          <span className="text-pink-400 uppercase">AList 网盘</span>
+          <span style={{ color: 'var(--accent)' }} className="uppercase">STA 科协网盘</span>
           <span className="opacity-30">|</span>
           <span className="text-emerald-500 hidden sm:inline">ONLINE</span>
         </div>
         <div className="flex items-center gap-3">
-          {/* 用户身份信息 */}
           <div className="flex items-center gap-2">
             <span className={`text-[10px] px-1.5 py-0.5 rounded border ${roleBadgeColor(userRole!)}`}>
               {roleLabel(userRole!)}
             </span>
-            <span className="text-zinc-500">{username}</span>
+            <span style={{ color: 'var(--text-muted)' }}>{username}</span>
           </div>
           <span className="opacity-30">|</span>
+          <button onClick={toggleTheme} className="text-sm opacity-60 hover:opacity-100 transition-opacity" title="切换主题">
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
           {isAdmin && (
             <button
               onClick={() => { setShowAdminPanel(true); fetchAdminData(); }}
-              className="text-[10px] text-zinc-500 hover:text-pink-400 transition-colors tracking-widest flex items-center gap-1"
+              className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"
+              style={{ color: 'var(--accent)' }}
             >
               👑 管理
             </button>
@@ -541,12 +568,13 @@ export default function Home() {
                 if (cc) { setCustomUrl(cc.url || ''); setCustomUser(cc.user || ''); setCustomPass(cc.pass || ''); }
                 setShowSettings(true);
               }}
-              className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors tracking-widest flex items-center gap-1"
+              className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"
+              style={{ color: 'var(--text-muted)' }}
             >
               ⚙️ 设置
             </button>
           )}
-          <button onClick={handleLogout} className="text-[10px] text-zinc-500 hover:text-pink-400 transition-colors tracking-widest">
+          <button onClick={handleLogout} className="text-[10px] hover:opacity-80 transition-opacity tracking-widest" style={{ color: 'var(--text-muted)' }}>
             退出
           </button>
         </div>
@@ -554,27 +582,27 @@ export default function Home() {
 
       {/* 管理面板弹窗 */}
       {showAdminPanel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowAdminPanel(false)}>
-          <div className="w-full max-w-lg bg-[#0c0c0e] border border-zinc-700 rounded-2xl p-5 shadow-2xl mx-4 animate-in max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowAdminPanel(false)}>
+          <div className="w-full max-w-lg glass-strong rounded-2xl p-5 mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <span className="text-lg">👑</span>
-                <h3 className="text-sm font-bold text-white">管理面板</h3>
+                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>管理面板</h3>
               </div>
-              <button onClick={() => setShowAdminPanel(false)} className="text-zinc-600 hover:text-zinc-300 text-lg">✕</button>
+              <button onClick={() => setShowAdminPanel(false)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
             </div>
 
             {adminMsg && (
-              <div className={`mb-3 px-3 py-1.5 rounded text-[11px] font-bold ${adminMsg.startsWith('✅') ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+              <div className={`mb-3 px-3 py-1.5 rounded text-[11px] font-bold ${adminMsg.startsWith('✅') ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
                 {adminMsg}
               </div>
             )}
 
             {/* 全局设置 */}
-            <div className="mb-5 bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
-              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-3">全局设置</div>
+            <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+              <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>全局设置</div>
               <div className="flex items-center justify-between">
-                <span className="text-[11px] text-zinc-300">允许游客下载文件</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>允许游客下载 · {adminSettings.allowGuestDownload ? '已开启' : '已关闭'}</span>
                 <button
                   onClick={() => adminAction('updateSettings', { settings: { allowGuestDownload: !adminSettings.allowGuestDownload } })}
                   className={`w-10 h-5 rounded-full transition-colors relative ${adminSettings.allowGuestDownload ? 'bg-emerald-500' : 'bg-zinc-700'}`}
@@ -585,13 +613,13 @@ export default function Home() {
             </div>
 
             {/* 用户列表 */}
-            <div className="mb-5 bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
-              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-3">用户列表</div>
+            <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+              <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>用户列表</div>
               <div className="space-y-2">
                 {adminUsers.map((u) => (
-                  <div key={u.username} className="flex items-center justify-between bg-black/40 border border-zinc-800 rounded-lg px-3 py-2">
+                  <div key={u.username} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-white font-mono">{u.username}</span>
+                      <span className="text-[11px] font-mono" style={{ color: 'var(--text-primary)' }}>{u.username}</span>
                       <span className={`text-[9px] px-1.5 py-0.5 rounded border ${roleBadgeColor(u.role)}`}>
                         {roleLabel(u.role)}
                       </span>
@@ -602,14 +630,14 @@ export default function Home() {
                           <select
                             value={u.role}
                             onChange={(e) => adminAction('updateRole', { username: u.username, role: e.target.value })}
-                            className="bg-zinc-900 border border-zinc-700 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 outline-none"
+                            className="rounded px-1.5 py-0.5 text-[10px] outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                           >
                             <option value="manager">管理员</option>
                             <option value="guest">游客</option>
                           </select>
                           <button
                             onClick={() => { if (confirm(`确认删除用户 ${u.username}？`)) adminAction('remove', { username: u.username }); }}
-                            className="text-zinc-600 hover:text-red-500 transition-colors"
+                            className="hover:text-red-500 transition-colors" style={{ color: 'var(--text-muted)' }}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                           </button>
@@ -622,23 +650,23 @@ export default function Home() {
             </div>
 
             {/* 添加用户 */}
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
-              <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-3">添加用户</div>
+            <div className="rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+              <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>添加用户</div>
               <div className="flex flex-col gap-2">
                 <div className="flex gap-2">
                   <input
                     type="text" value={newUserName} onChange={e => setNewUserName(e.target.value)}
-                    placeholder="用户名" className="flex-1 bg-black border border-zinc-800 rounded px-2.5 py-2 text-[11px] text-white outline-none focus:border-pink-500"
+                    placeholder="用户名" className="flex-1 rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   />
                   <input
                     type="password" value={newUserPass} onChange={e => setNewUserPass(e.target.value)}
-                    placeholder="密码" className="flex-1 bg-black border border-zinc-800 rounded px-2.5 py-2 text-[11px] text-white outline-none focus:border-pink-500"
+                    placeholder="密码" className="flex-1 rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   />
                 </div>
                 <div className="flex gap-2">
                   <select
                     value={newUserRole} onChange={e => setNewUserRole(e.target.value as 'manager' | 'guest')}
-                    className="flex-1 bg-black border border-zinc-800 rounded px-2.5 py-2 text-[11px] text-zinc-300 outline-none focus:border-pink-500"
+                    className="flex-1 rounded px-2.5 py-2 text-[11px] outline-none border-accent" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   >
                     <option value="manager">管理员（可上传/管理）</option>
                     <option value="guest">游客（仅浏览/下载）</option>
@@ -649,7 +677,7 @@ export default function Home() {
                       adminAction('add', { username: newUserName.trim(), password: newUserPass.trim(), role: newUserRole });
                       setNewUserName(''); setNewUserPass('');
                     }}
-                    className="px-4 py-2 bg-pink-500 text-white text-[11px] font-bold rounded hover:bg-pink-400 transition-colors"
+                    className="px-4 py-2 bg-accent text-white text-[11px] font-bold rounded hover:opacity-80 transition-opacity"
                   >
                     添加
                   </button>
@@ -662,28 +690,28 @@ export default function Home() {
 
       {/* 设置弹窗 */}
       {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
-          <div className="w-full max-w-sm bg-[#0c0c0e] border border-zinc-700 rounded-2xl p-4 shadow-2xl mx-4 animate-in" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowSettings(false)}>
+          <div className="w-full max-w-sm glass-strong rounded-2xl p-4 mx-4 animate-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <div>
-                <div className="text-[12px] text-white font-bold">⚙️ AList 服务端设置</div>
-                <div className="text-[10px] text-zinc-500 mt-0.5">仅在您当前浏览器有效，覆盖系统默认配置</div>
+                <div className="text-[12px] font-bold" style={{ color: 'var(--text-primary)' }}>⚙️ AList 服务端设置</div>
+                <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>仅在您当前浏览器有效，覆盖系统默认配置</div>
               </div>
-              <button onClick={() => setShowSettings(false)} className="text-zinc-600 hover:text-zinc-300 text-lg">✕</button>
+              <button onClick={() => setShowSettings(false)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
             </div>
 
             <div className="space-y-3">
               <div>
-                <label className="text-[10px] text-zinc-400 mb-1 block">AList_URL [必须项]</label>
-                <input type="text" value={customUrl} onChange={e => setCustomUrl(e.target.value)} placeholder="如: https://frp-gap.com:37492" className="w-full bg-black border border-zinc-800 rounded px-2.5 py-2 text-[11px] text-white outline-none focus:border-pink-500" />
+                <label className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>AList_URL [必须项]</label>
+                <input type="text" value={customUrl} onChange={e => setCustomUrl(e.target.value)} placeholder="如: https://frp-gap.com:37492" className="w-full rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
               </div>
               <div>
-                <label className="text-[10px] text-zinc-400 mb-1 block">AList_Username [用于后台/直链获取]</label>
-                <input type="text" value={customUser} onChange={e => setCustomUser(e.target.value)} placeholder="可留空使用默认" className="w-full bg-black border border-zinc-800 rounded px-2.5 py-2 text-[11px] text-white outline-none focus:border-pink-500" />
+                <label className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>AList_Username [用于后台/直链获取]</label>
+                <input type="text" value={customUser} onChange={e => setCustomUser(e.target.value)} placeholder="可留空使用默认" className="w-full rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
               </div>
               <div>
-                <label className="text-[10px] text-zinc-400 mb-1 block">AList_Password</label>
-                <input type="password" value={customPass} onChange={e => setCustomPass(e.target.value)} placeholder="可留空使用默认" className="w-full bg-black border border-zinc-800 rounded px-2.5 py-2 text-[11px] text-white outline-none focus:border-pink-500" />
+                <label className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>AList_Password</label>
+                <input type="password" value={customPass} onChange={e => setCustomPass(e.target.value)} placeholder="可留空使用默认" className="w-full rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
               </div>
             </div>
 
@@ -700,7 +728,7 @@ export default function Home() {
                   setShowSettings(false);
                   alistListDir('/');
                 }}
-                className="flex-1 bg-pink-500 text-white text-[11px] font-bold py-2 rounded shadow hover:bg-pink-400"
+                className="flex-1 bg-accent text-white text-[11px] font-bold py-2 rounded shadow hover:opacity-80"
               >
                 保存配置
               </button>
@@ -712,7 +740,7 @@ export default function Home() {
                   setShowSettings(false);
                   alistListDir('/');
                 }}
-                className="px-3 bg-zinc-800 text-zinc-300 text-[11px] py-2 rounded hover:bg-zinc-700"
+                className="px-3 text-[11px] py-2 rounded" style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)' }}
               >
                 恢复默认
               </button>
@@ -723,14 +751,14 @@ export default function Home() {
 
       {/* 大文件下载方式选择弹窗 */}
       {alistDownloadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setAlistDownloadModal(null)}>
-          <div className="w-full max-w-sm bg-[#0c0c0e] border border-zinc-700 rounded-2xl p-4 shadow-2xl mx-4 glow-pink animate-in" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setAlistDownloadModal(null)}>
+          <div className="w-full max-w-sm glass-strong rounded-2xl p-4 mx-4 glow-accent animate-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div>
-                <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">大文件下载 ≥20MB</div>
-                <div className="text-xs text-white font-mono truncate max-w-[260px] mt-1">{alistDownloadModal.name}</div>
+                <div className="text-[10px] uppercase tracking-widest font-bold" style={{ color: 'var(--text-muted)' }}>大文件下载 ≥20MB</div>
+                <div className="text-xs font-mono truncate max-w-[260px] mt-1" style={{ color: 'var(--text-primary)' }}>{alistDownloadModal.name}</div>
               </div>
-              <button onClick={() => setAlistDownloadModal(null)} className="text-zinc-600 hover:text-zinc-300 text-lg">✕</button>
+              <button onClick={() => setAlistDownloadModal(null)} className="hover:opacity-100 opacity-60 text-lg transition-opacity">✕</button>
             </div>
             <div className="space-y-2">
               {/* 自动加UA直接下载 */}
@@ -745,7 +773,7 @@ export default function Home() {
                   window.open(downloadUrl, '_blank');
                   setAlistDownloadModal(null);
                 }}
-                className="w-full flex items-center justify-between bg-zinc-900 border border-pink-500/40 rounded-lg px-3 py-2.5 hover:border-pink-400 transition-colors text-left"
+                className="w-full flex items-center justify-between border rounded-lg px-3 py-2.5 text-left border-accent bg-accent-bg"
               >
                 <div>
                   <div className="text-[11px] font-bold text-pink-400">🔥 直接下载（自动加 UA: pan.baidu.com）</div>
@@ -769,11 +797,11 @@ export default function Home() {
                     });
                   setAlistDownloadModal(null);
                 }}
-                className="w-full flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 hover:border-emerald-500/50 transition-colors text-left"
+                className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
               >
                 <div>
                   <div className="text-[11px] font-bold text-emerald-400">🚀 复制直链（迅雷/IDM）</div>
-                  <div className="text-[10px] text-zinc-600">粘贴到下载工具，SVIP 满速</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>仅服务端代理下载，兼容性好但速度取决于你的服务器</div>
                 </div>
               </button>
 
@@ -792,22 +820,22 @@ export default function Home() {
                     }).catch(() => setAlistMsg('❌ 接口异常'));
                   setAlistDownloadModal(null);
                 }}
-                className="w-full flex items-center justify-between bg-zinc-900 border border-blue-500/30 rounded-lg px-3 py-2.5 hover:border-blue-400 transition-colors text-left"
+                className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
               >
                 <div>
                   <div className="text-[11px] font-bold text-blue-400">☁️ Cloudflare 边缘加速</div>
-                  <div className="text-[10px] text-zinc-500">CF Worker 注入 UA，全球边缘节点中转，不耗服务器带宽</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>通过 CF Workers 中转，可多线程，需部署 Worker</div>
                 </div>
               </button>
 
               {/* ⚡ 302 直链 */}
               <button
                 onClick={() => { alistDirectDownload(alistDownloadModal.filePath, alistDownloadModal.sign); setAlistDownloadModal(null); }}
-                className="w-full flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 hover:border-zinc-600 transition-colors text-left"
+                className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
               >
                 <div>
-                  <div className="text-[11px] font-bold text-zinc-400">⚡ 302直链跳转（不加UA）</div>
-                  <div className="text-[10px] text-zinc-600">直接跳转百度CDN，大文件可能被拦截</div>
+                  <div className="text-[11px] font-bold" style={{ color: 'var(--text-primary)' }}>⚡ 302直链跳转（不加UA）</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>直接跳转百度CDN，大文件可能被拦截</div>
                 </div>
               </button>
             </div>
@@ -820,46 +848,47 @@ export default function Home() {
         <div className="max-w-4xl mx-auto animate-in">
 
           {/* 文件浏览器卡片 */}
-          <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl overflow-hidden">
+          <div className="glass rounded-2xl overflow-hidden">
 
             {/* 头部工具栏 */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-black/40">
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black tracking-widest uppercase italic text-zinc-500">Cloud_Drive</span>
-                <span className="text-[10px] text-zinc-600">· AList</span>
+                <span className="text-[10px] font-black tracking-widest uppercase italic" style={{ color: 'var(--text-muted)' }}>Cloud_Drive</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>· AList</span>
               </div>
               <div className="flex items-center gap-2">
                 {canWrite && (
                   <>
                     <button onClick={() => setAlistShowMkdir(!alistShowMkdir)}
-                      className="text-[10px] text-zinc-500 hover:text-pink-400 transition-colors px-2 py-1 border border-zinc-800 rounded" title="新建文件夹">
+                      className="text-[10px] px-2 py-1 rounded transition-opacity hover:opacity-80" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }} title="新建文件夹">
                       + 文件夹
                     </button>
-                    <label className="text-[10px] text-zinc-500 hover:text-pink-400 transition-colors px-2 py-1 border border-zinc-800 rounded cursor-pointer" title="上传文件">
+                    <label className="text-[10px] px-2 py-1 rounded cursor-pointer transition-opacity hover:opacity-80" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }} title="上传文件">
                       {alistUploading ? '上传中...' : '↑ 上传'}
                       <input type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setAlistUploadFile(f); }} />
                     </label>
                   </>
                 )}
-                <button onClick={() => alistListDir(alistPath)} className="text-zinc-600 hover:text-pink-400 transition-colors" title="刷新">
+                <button onClick={() => alistListDir(alistPath)} className="hover:opacity-100 opacity-60 transition-opacity" title="刷新">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 </button>
               </div>
             </div>
 
             {/* 面包屑导航 */}
-            <div className="flex items-center gap-1 px-4 py-2 border-b border-zinc-800/50 overflow-x-auto">
+            <div className="flex items-center gap-1 px-4 py-2 overflow-x-auto" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
               {alistPath.split('/').filter(Boolean).length === 0 ? (
-                <span className="text-pink-400 text-[11px] font-mono font-bold">/ Root</span>
+                <span className="text-[11px] font-mono font-bold text-accent">/ Root</span>
               ) : (
                 ['', ...alistPath.split('/').filter(Boolean)].map((seg, idx, arr) => {
                   const crumbPath = '/' + arr.slice(1, idx + 1).join('/');
                   return (
                     <span key={idx} className="flex items-center gap-1">
-                      {idx > 0 && <span className="text-zinc-700">/</span>}
+                      {idx > 0 && <span style={{ color: 'var(--text-faint)' }}>/</span>}
                       <button
                         onClick={() => alistListDir(idx === 0 ? '/' : crumbPath)}
-                        className={`text-[11px] font-mono hover:text-pink-400 transition-colors whitespace-nowrap ${idx === arr.length - 1 ? 'text-white font-bold' : 'text-zinc-500'}`}
+                        className={`text-[11px] font-mono transition-colors whitespace-nowrap ${idx === arr.length - 1 ? 'font-bold text-accent' : ''}`}
+                        style={{ color: idx === arr.length - 1 ? 'var(--accent)' : 'var(--text-muted)' }}
                       >
                         {idx === 0 ? 'Root' : seg}
                       </button>
@@ -871,30 +900,30 @@ export default function Home() {
 
             {/* 新建文件夹 */}
             {alistShowMkdir && canWrite && (
-              <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800/50 bg-zinc-900/60">
+              <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
                 <input value={alistMkdirName} onChange={e => setAlistMkdirName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && alistMkdir()}
                   placeholder="新建文件夹名称..." autoFocus
-                  className="flex-1 bg-black/40 border border-zinc-700 rounded px-2 py-1 text-[11px] text-white outline-none focus:border-pink-500 transition-colors" />
-                <button onClick={alistMkdir} className="px-2 py-1 text-[10px] bg-pink-500 text-white rounded font-bold hover:bg-pink-400">创建</button>
-                <button onClick={() => { setAlistShowMkdir(false); setAlistMkdirName(''); }} className="px-2 py-1 text-[10px] text-zinc-500 hover:text-zinc-300">取消</button>
+                  className="flex-1 rounded px-2 py-1 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
+                <button onClick={alistMkdir} className="px-2 py-1 text-[10px] bg-accent text-white rounded font-bold hover:opacity-80">创建</button>
+                <button onClick={() => { setAlistShowMkdir(false); setAlistMkdirName(''); }} className="px-2 py-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>取消</button>
               </div>
             )}
 
             {/* 待上传确认 */}
             {alistUploadFile && canWrite && (
-              <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800/50 bg-zinc-900/60">
-                <span className="text-[11px] text-zinc-400 flex-1 truncate">📎 {alistUploadFile.name}</span>
-                <button onClick={alistUpload} disabled={alistUploading} className="px-2 py-1 text-[10px] bg-pink-500 text-white rounded font-bold hover:bg-pink-400 disabled:opacity-50">
+              <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
+                <span className="text-[11px] flex-1 truncate" style={{ color: 'var(--text-muted)' }}>📎 {alistUploadFile.name}</span>
+                <button onClick={alistUpload} disabled={alistUploading} className="px-2 py-1 text-[10px] bg-accent text-white rounded font-bold hover:opacity-80 disabled:opacity-50">
                   {alistUploading ? '上传中...' : '确认上传'}
                 </button>
-                <button onClick={() => setAlistUploadFile(null)} className="px-2 py-1 text-[10px] text-zinc-500 hover:text-zinc-300">取消</button>
+                <button onClick={() => setAlistUploadFile(null)} className="px-2 py-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>取消</button>
               </div>
             )}
 
             {/* 消息提示 */}
             {alistMsg && (
-              <div className={`px-4 py-1.5 text-[11px] font-bold border-b border-zinc-800/50 ${alistMsg.startsWith('✅') ? 'text-green-400 bg-green-500/5' : alistMsg.startsWith('🚀') ? 'text-blue-400 bg-blue-500/5' : 'text-yellow-400 bg-yellow-500/5'}`}>
+              <div className={`px-4 py-1.5 text-[11px] font-bold ${alistMsg.startsWith('✅') ? 'bg-green-500/10 text-green-500' : alistMsg.startsWith('🚀') ? 'bg-blue-500/10 text-blue-500' : 'bg-yellow-500/10 text-yellow-500'}`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                 {alistMsg}
               </div>
             )}
@@ -919,17 +948,17 @@ export default function Home() {
                   {alistPath !== '/' && (
                     <button
                       onClick={() => { const parent = alistPath.replace(/\/[^/]+\/?$/, '') || '/'; alistListDir(parent); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800/60 transition-colors text-left"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-card-hover)] transition-colors text-left"
                     >
                       <span className="text-base">⬆️</span>
-                      <span className="text-[11px] text-zinc-500 font-mono">..</span>
+                      <span className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>..</span>
                     </button>
                   )}
 
                   {alistFiles.map((file: any, idx: number) => {
                     const filePath = `${alistPath.replace(/\/+$/, '')}/${file.name}`;
                     return (
-                      <div key={idx} className="flex items-center gap-2 px-4 py-2 hover:bg-zinc-800/40 transition-colors group">
+                      <div key={idx} className="flex items-center gap-2 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors group">
                         {/* 复选框 */}
                         {!file.is_dir ? (
                           <input type="checkbox" checked={alistSelected.has(file.name)} onChange={() => alistToggleSelect(file.name)}
@@ -944,21 +973,21 @@ export default function Home() {
                           <div className="flex-1 flex items-center gap-2">
                             <input value={alistNewName} onChange={e => setAlistNewName(e.target.value)}
                               onKeyDown={e => { if (e.key === 'Enter') alistRename(filePath); if (e.key === 'Escape') setAlistRenaming(null); }}
-                              className="flex-1 bg-black/60 border border-zinc-700 rounded px-2 py-0.5 text-[11px] text-white outline-none focus:border-pink-500" autoFocus />
-                            <button onClick={() => alistRename(filePath)} className="text-[10px] text-pink-400 font-bold hover:text-pink-300">✓</button>
-                            <button onClick={() => setAlistRenaming(null)} className="text-[10px] text-zinc-500 hover:text-zinc-300">✕</button>
+                              className="flex-1 rounded px-2 py-0.5 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} autoFocus />
+                            <button onClick={() => alistRename(filePath)} className="text-[10px] font-bold hover:opacity-80 text-accent">✓</button>
+                            <button onClick={() => setAlistRenaming(null)} className="text-[10px] hover:opacity-80" style={{ color: 'var(--text-muted)' }}>✕</button>
                           </div>
                         ) : (
                           <>
                             {/* 文件名 */}
-                            <button onClick={() => alistNavigate(file)}
-                              className="flex-1 text-left text-[11px] font-mono text-zinc-300 hover:text-pink-400 transition-colors truncate">
+                            <button onClick={() => alistNavigate(file)} style={{ color: 'var(--text-primary)' }}
+                              className="flex-1 text-left text-[11px] font-mono hover:opacity-70 transition-opacity truncate">
                               {file.name}
                             </button>
 
-                            {/* 文件大小 */}
+                            {/* 文件大小 — 手机端也显示 */}
                             {!file.is_dir && (
-                              <span className="text-[10px] text-zinc-600 shrink-0 hidden sm:block">
+                              <span className="text-[10px] shrink-0" style={{ color: 'var(--text-faint)' }}>
                                 {formatSize(file.size || 0)}
                               </span>
                             )}
@@ -991,18 +1020,18 @@ export default function Home() {
             </div>
 
             {/* 底部状态栏 */}
-            <div className="px-4 py-2 border-t border-zinc-800/50 flex items-center justify-between text-[10px] text-zinc-600 bg-black/20">
+            <div className="px-4 py-2 flex items-center justify-between text-[10px]" style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-card)', color: 'var(--text-faint)' }}>
               <div className="flex items-center gap-3">
-                <button onClick={alistSelectAll} className="hover:text-pink-400 transition-colors">
+                <button onClick={alistSelectAll} className="hover:opacity-100 opacity-80 transition-opacity">
                   {alistSelected.size > 0 ? `☑ ${alistSelected.size} 个文件` : `${alistFiles.length} 个项目`}
                 </button>
                 {alistSelected.size > 0 && (
-                  <button onClick={alistBatchDownload} className="text-[10px] text-pink-400 hover:text-pink-300 font-bold flex items-center gap-1">
+                  <button onClick={alistBatchDownload} className="text-[10px] font-bold flex items-center gap-1 text-accent">
                     ↓ 批量下载
                   </button>
                 )}
               </div>
-              <button onClick={() => window.open(getAlistBase(), '_blank')} className="hover:text-pink-400 transition-colors">
+              <button onClick={() => window.open(getAlistBase(), '_blank')} className="hover:opacity-100 opacity-80 transition-opacity">
                 在 AList 中打开 ↗
               </button>
             </div>
@@ -1010,6 +1039,11 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {/* 底部版权 */}
+      <footer className="text-center py-3 text-[9px]" style={{ color: 'var(--text-faint)' }}>
+        © {new Date().getFullYear()} 成都七中科学技术协会 (STA)
+      </footer>
     </div>
   );
 }

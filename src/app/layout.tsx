@@ -1,18 +1,15 @@
 import type { Metadata } from "next";
-import { Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
-
 export const metadata: Metadata = {
-  title: "百度网盘 · AList 下载器",
-  description: "高速下载百度网盘文件，支持 4 种大文件下载模式",
+  title: "成都七中STA · 科协网盘",
+  description: "成七科协 — 百度网盘文件共享平台",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh">
-      <body className={`${geistMono.variable} antialiased`}>
+    <html lang="zh" suppressHydrationWarning>
+      <body className="antialiased">
         {children}
       </body>
     </html>
