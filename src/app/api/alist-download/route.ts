@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
 import { getSettings } from '@/lib/users';
 
-const DEFAULT_ALIST_URL = (process.env.ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
+const DEFAULT_ALIST_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
 const DEFAULT_ALIST_PASSWORD = process.env.ALIST_PASSWORD || '';
 
