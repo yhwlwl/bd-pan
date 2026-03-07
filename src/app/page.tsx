@@ -46,6 +46,7 @@ export default function Home() {
   const [alistRenaming, setAlistRenaming] = useState<string | null>(null);
   const [alistNewName, setAlistNewName] = useState('');
   const [alistDownloadModal, setAlistDownloadModal] = useState<{ name: string; filePath: string; sign?: string } | null>(null);
+  const [alistGeneratedUrl, setAlistGeneratedUrl] = useState<string | null>(null);
 
   // 管理面板
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -850,8 +851,30 @@ export default function Home() {
                 <div className="text-[10px] uppercase tracking-widest font-bold" style={{ color: 'var(--text-muted)' }}>大文件下载 ≥20MB</div>
                 <div className="text-xs font-mono truncate max-w-[260px] mt-1" style={{ color: 'var(--text-primary)' }}>{alistDownloadModal.name}</div>
               </div>
-              <button onClick={() => setAlistDownloadModal(null)} className="hover:opacity-100 opacity-60 text-lg transition-opacity">✕</button>
+              <button onClick={() => { setAlistDownloadModal(null); setAlistGeneratedUrl(null); }} className="hover:opacity-100 opacity-60 text-lg transition-opacity">✕</button>
             </div>
+            {alistGeneratedUrl ? (
+              <div className="space-y-3">
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>✅ 链接获取成功，请手动长按下方输入框全选并复制：</div>
+                <textarea
+                  readOnly
+                  value={alistGeneratedUrl}
+                  className="w-full h-24 p-2 text-[10px] sm:text-[11px] font-mono rounded-lg outline-none resize-none"
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  onClick={(e) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    target.select();
+                  }}
+                />
+                <button
+                  onClick={() => { setAlistDownloadModal(null); setAlistGeneratedUrl(null); }}
+                  className="w-full flex items-center justify-center rounded-lg px-3 py-2.5 text-[11px] font-bold mt-2"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                >
+                  关闭
+                </button>
+              </div>
+            ) : (
             <div className="space-y-2">
               {/* 自动加UA直接下载 */}
               <button
@@ -875,19 +898,27 @@ export default function Home() {
 
               {/* 复制直链 */}
               <button
-                onClick={() => {
-                  fetchAlist({ action: 'get', path: alistDownloadModal.filePath })
-                    .then(r => r.json())
-                    .then(data => {
-                      const sign = data.code === 200 ? (data.data?.sign || '') : '';
-                      const url = sign ? `${getAlistBase()}/d${alistDownloadModal!.filePath}?sign=${sign}` : `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
-                      navigator.clipboard.writeText(url);
+                onClick={async () => {
+                  setAlistMsg('⏳ 正在获取直链，请稍候...');
+                  try {
+                    const r = await fetchAlist({ action: 'get', path: alistDownloadModal.filePath });
+                    const data = await r.json();
+                    let url = `${getAlistBase()}/d${alistDownloadModal.filePath}`;
+                    if (data.code === 200 && data.data?.sign) {
+                      url = `${getAlistBase()}/d${alistDownloadModal.filePath}?sign=${data.data.sign}`;
+                    }
+                    try {
+                      await navigator.clipboard.writeText(url);
                       setAlistMsg('✅ 直链已复制！粘贴到迅雷/IDM即可满速下载');
-                    }).catch(() => {
-                      navigator.clipboard.writeText(`${getAlistBase()}/d${alistDownloadModal!.filePath}`);
-                      setAlistMsg('✅ 链接已复制');
-                    });
-                  setAlistDownloadModal(null);
+                    } catch {
+                      setAlistMsg('⚠️ 自动复制失败，请手动复制提取的链接');
+                    }
+                    setAlistGeneratedUrl(url); // 始终在界面展示出链接，方便手动复制
+                  } catch {
+                    const fallbackUrl = `${getAlistBase()}/d${alistDownloadModal.filePath}`;
+                    setAlistGeneratedUrl(fallbackUrl);
+                    setAlistMsg('⚠️ 接口异常，显示后备链接');
+                  }
                 }}
                 className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
               >
@@ -933,6 +964,7 @@ export default function Home() {
                 </div>
               </button>
             </div>
+            )}
           </div>
         </div>
       )}
