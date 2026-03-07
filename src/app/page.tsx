@@ -879,7 +879,7 @@ export default function Home() {
                   <div className="p-4 rounded-2xl bg-blue-600/10 border border-blue-500/30">
                     <div className="flex items-center gap-2 mb-2">
                        <span className="text-sm">☁️</span>
-                      <span className="text-sm font-black uppercase text-blue-400">Cloudflare 边缘加速</span>
+                      <span className="text-sm font-black uppercase text-blue-200">Cloudflare 边缘加速</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
                       通过部署在海外的 CF Workers 节点中转文件请求，绕过国内直连限制。
@@ -900,7 +900,7 @@ export default function Home() {
                   <div className="p-4 rounded-2xl bg-emerald-600/10 border border-emerald-500/30">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm">🚀</span>
-                      <span className="text-sm font-black uppercase text-emerald-400">复制直链 (搭配 IDM/迅雷)</span>
+                      <span className="text-sm font-black uppercase text-emerald-200">复制直链 (搭配 IDM/迅雷)</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
                       直接调取百度网盘 CDN 原始地址。配合多线程下载器可突破单线程限速。
@@ -921,7 +921,7 @@ export default function Home() {
                   <div className="p-4 rounded-2xl bg-pink-600/10 border border-pink-500/30 opacity-90">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm">🔥</span>
-                      <span className="text-sm font-black uppercase text-pink-400">服务器中转下载</span>
+                      <span className="text-sm font-black uppercase text-pink-200">服务器中转下载</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
                       由 STA 服务器代下后转发。服务器位于海外，受限于网络波动与昂贵的流量费。
