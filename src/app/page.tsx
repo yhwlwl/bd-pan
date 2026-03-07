@@ -853,23 +853,28 @@ export default function Home() {
               <button onClick={() => setAlistDownloadModal(null)} className="hover:opacity-100 opacity-60 text-lg transition-opacity">✕</button>
             </div>
             <div className="space-y-2">
-              {/* 自动加UA直接下载 */}
+              {/* Cloudflare Workers 边缘代理 (首选) */}
               <button
                 onClick={() => {
-                  let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal.filePath)}`;
-                  if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
-                  const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-                  if (ccConfigStr) {
-                    downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
-                  }
-                  window.open(downloadUrl, '_blank');
+                  setAlistMsg('⏳ 正在连接 cf.ryantan.fun 代理节点，请稍候...');
+                  fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
+                    .then(r => r.json())
+                    .then(data => {
+                      if (data.code === 200 && data.data?.raw_url) {
+                        const cfUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(data.data.raw_url)}`;
+                        setAlistMsg('✅ 获取直链成功，正在跳转下载...');
+                        window.location.href = cfUrl;
+                      } else {
+                        setAlistMsg('❌ 获取直链失败，无法走 CF 代理');
+                      }
+                    }).catch(() => setAlistMsg('❌ 接口异常'));
                   setAlistDownloadModal(null);
                 }}
                 className="w-full flex items-center justify-between border rounded-lg px-3 py-2.5 text-left border-accent bg-accent-bg"
               >
                 <div>
-                  <div className="text-[11px] font-bold text-pink-400">🔥 直接下载（自动加 UA: pan.baidu.com）</div>
-                  <div className="text-[10px] text-zinc-500">服务器自动添加 User-Agent 请求头，一键下载</div>
+                  <div className="text-[11px] font-bold text-blue-400">🌟 Cloudflare 边缘加速 (强烈推荐)</div>
+                  <div className="text-[10px] text-zinc-500">通过海外节点无痕中转，不消耗公益服务器流量</div>
                 </div>
               </button>
 
@@ -893,32 +898,27 @@ export default function Home() {
               >
                 <div>
                   <div className="text-[11px] font-bold text-emerald-400">🚀 复制直链（迅雷/IDM）</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>速度最快，但是需要迅雷/IDM等下载器</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>适合超大文件，满速下载且不消耗服务器流量</div>
                 </div>
               </button>
 
-              {/* Cloudflare Workers 边缘代理 */}
+              {/* 自动加UA直接下载 */}
               <button
                 onClick={() => {
-                  setAlistMsg('⏳ 正在连接 cf.ryantan.fun 代理节点，请稍候...');
-                  fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
-                    .then(r => r.json())
-                    .then(data => {
-                      if (data.code === 200 && data.data?.raw_url) {
-                        const cfUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(data.data.raw_url)}`;
-                        setAlistMsg('✅ 获取直链成功，正在跳转下载...');
-                        window.location.href = cfUrl;
-                      } else {
-                        setAlistMsg('❌ 获取直链失败，无法走 CF 代理');
-                      }
-                    }).catch(() => setAlistMsg('❌ 接口异常'));
+                  let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal.filePath)}`;
+                  if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
+                  const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
+                  if (ccConfigStr) {
+                    downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
+                  }
+                  window.open(downloadUrl, '_blank');
                   setAlistDownloadModal(null);
                 }}
                 className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
               >
                 <div>
-                  <div className="text-[11px] font-bold text-blue-400">☁️ Cloudflare 边缘加速</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>通过 CF Workers 中转，速度与方案一差不多</div>
+                  <div className="text-[11px] font-bold text-pink-400">🔥 服务器中转下载 (备用)</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>消耗服务器流量，仅在方案一失效时使用</div>
                 </div>
               </button>
 
@@ -929,7 +929,7 @@ export default function Home() {
               >
                 <div>
                   <div className="text-[11px] font-bold" style={{ color: 'var(--text-primary)' }}>⚡ 302直链跳转（不加UA）</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>直接跳转百度CDN，大文件大概率被拦截</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>直接跳转百度CDN，大文件可能被拦截阻断</div>
                 </div>
               </button>
             </div>
