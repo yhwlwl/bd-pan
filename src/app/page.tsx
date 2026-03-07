@@ -900,6 +900,7 @@ export default function Home() {
               {/* Cloudflare Workers 边缘代理 */}
               <button
                 onClick={() => {
+                  setAlistMsg('⏳ 正在连接 cf.ryantan.fun 代理节点，请稍候...');
                   fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
                     .then(r => r.json())
                     .then(data => {
