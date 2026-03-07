@@ -906,14 +906,8 @@ export default function Home() {
                     .then(data => {
                       if (data.code === 200 && data.data?.raw_url) {
                         const cfUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(data.data.raw_url)}`;
-                        // 新窗口打开下载链接，防止当前页面因等待下载响应而假死卡死
-                        const a = document.createElement('a');
-                        a.href = cfUrl;
-                        a.target = '_blank';
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        setAlistMsg('✅ 代理节点连接成功，即将开始下载');
+                        setAlistMsg('✅ 获取直链成功，正在跳转下载...');
+                        window.location.href = cfUrl;
                       } else {
                         setAlistMsg('❌ 获取直链失败，无法走 CF 代理');
                       }
