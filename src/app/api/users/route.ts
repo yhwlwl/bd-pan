@@ -11,8 +11,8 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-        users: getUsers(),
-        settings: getSettings(),
+        users: await getUsers(),
+        settings: await getSettings(),
     });
 }
 
@@ -30,29 +30,29 @@ export async function POST(request: Request) {
         switch (action) {
             case 'add': {
                 const { username, password, role } = body as { username: string; password: string; role: Role };
-                const result = addUser(username, password, role);
+                const result = await addUser(username, password, role);
                 if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-                return NextResponse.json({ ok: true, users: getUsers() });
+                return NextResponse.json({ ok: true, users: await getUsers() });
             }
 
             case 'remove': {
                 const { username } = body as { username: string };
-                const result = removeUser(username);
+                const result = await removeUser(username);
                 if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-                return NextResponse.json({ ok: true, users: getUsers() });
+                return NextResponse.json({ ok: true, users: await getUsers() });
             }
 
             case 'updateRole': {
                 const { username, role } = body as { username: string; role: Role };
-                const result = updateUserRole(username, role);
+                const result = await updateUserRole(username, role);
                 if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-                return NextResponse.json({ ok: true, users: getUsers() });
+                return NextResponse.json({ ok: true, users: await getUsers() });
             }
 
             case 'updateSettings': {
                 const { settings } = body as { settings: { allowGuestDownload?: boolean } };
-                updateSettings(settings);
-                return NextResponse.json({ ok: true, settings: getSettings() });
+                await updateSettings(settings);
+                return NextResponse.json({ ok: true, settings: await getSettings() });
             }
 
             default:

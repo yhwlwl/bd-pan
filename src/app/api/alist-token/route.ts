@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { verifyAdminToken } from '../_auth';
 
-const ALIST_URL = (process.env.ALIST_URL || 'http://47.108.222.119:5244').replace(/\/+$/, '');
+const ALIST_URL = (process.env.ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const ALIST_USERNAME = process.env.ALIST_USERNAME || '';
 const ALIST_PASSWORD = process.env.ALIST_PASSWORD || '';
 

@@ -8,7 +8,7 @@ export async function POST(request: Request) {
 
         // 游客模式
         if (body.guest === true) {
-            const settings = getSettings();
+            const settings = await getSettings();
             if (!settings.allowGuestDownload) {
                 return NextResponse.json({ error: '游客模式已被管理员关闭' }, { status: 403 });
             }
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: '请填写用户名和密码' }, { status: 400 });
         }
 
-        const user = findUser(username, password);
+        const user = await findUser(username, password);
         if (!user) {
             return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
         }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '../_auth';
 
-const DEFAULT_ALIST_URL = (process.env.ALIST_URL || 'http://47.108.222.119:5244').replace(/\/+$/, '');
+const DEFAULT_ALIST_URL = (process.env.ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
 const DEFAULT_ALIST_PASSWORD = process.env.ALIST_PASSWORD || '';
 

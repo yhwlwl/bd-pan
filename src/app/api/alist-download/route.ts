@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
 import { getSettings } from '@/lib/users';
 
-const DEFAULT_ALIST_URL = (process.env.ALIST_URL || 'http://47.108.222.119:5244').replace(/\/+$/, '');
+const DEFAULT_ALIST_URL = (process.env.ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
 const DEFAULT_ALIST_PASSWORD = process.env.ALIST_PASSWORD || '';
 
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
 
         // 游客需要检查 allowGuestDownload
         if (user.role === 'guest') {
-            const settings = getSettings();
+            const settings = await getSettings();
             if (!settings.allowGuestDownload) {
                 return new Response('管理员已关闭游客下载功能', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
             }
