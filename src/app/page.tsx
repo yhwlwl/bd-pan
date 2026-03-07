@@ -993,7 +993,7 @@ export default function Home() {
                             )}
 
                             {/* 修改时间 */}
-                            <span className="text-[10px] text-zinc-700 shrink-0 hidden md:block">
+                            <span className="text-[10px] shrink-0 ml-2" style={{ color: 'var(--text-faint)' }}>
                               {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
                             </span>
 
@@ -1041,8 +1041,9 @@ export default function Home() {
       </main>
 
       {/* 底部版权 */}
-      <footer className="text-center py-3 text-[9px]" style={{ color: 'var(--text-faint)' }}>
-        © {new Date().getFullYear()} 成都七中科学技术协会 (STA)
+      <footer className="text-center py-4 text-[9px]" style={{ color: 'var(--text-faint)' }}>
+        <div>© {new Date().getFullYear()} 成都七中科学技术协会 (STA)</div>
+        <div className="mt-1 opacity-80">本网站由25级网络部搭建运营。</div>
       </footer>
     </div>
   );
