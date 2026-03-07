@@ -26,6 +26,7 @@ export default function Home() {
   const [alistError, setAlistError] = useState<string | null>(null);
   const [alistMsg, setAlistMsg] = useState<string | null>(null);
   const [alistSelected, setAlistSelected] = useState<Set<string>>(new Set());
+  const [alistProvider, setAlistProvider] = useState<string>('');
 
   // 文件操作
   const [alistShowMkdir, setAlistShowMkdir] = useState(false);
@@ -216,6 +217,7 @@ export default function Home() {
       if (data.code === 200) {
         setAlistFiles(data.data?.content || []);
         setAlistPath(path);
+        setAlistProvider(data.data?.provider || '');
         setAlistSelected(new Set());
       } else {
         setAlistError(data.message || '加载失败');
@@ -252,14 +254,16 @@ export default function Home() {
       alistListDir(newPath);
     } else {
       const filePath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
-      // Instead of parsing path string, use the provider returned from AList 
-      // Baidu might be BaiduNetdisk, Aliyun might be AliyundriveOpen etc.
-      const provider = (item.provider || '').toLowerCase();
-      const isBaidu = provider.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
-      const isAliyun = provider.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
+      // Use directory-level provider from AList API (data.data.provider)
+      const prov = alistProvider.toLowerCase();
+      const isBaidu = prov.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
+      const isAliyun = prov.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
       
       if (isBaidu && (item.size || 0) >= SIZE_THRESHOLD) {
         setAlistDownloadModal({ name: item.name, filePath, sign: item.sign });
+      } else if (isBaidu) {
+        // 百度网盘小文件也走代理下载（需要 UA: pan.baidu.com）
+        alistProxyDownload(filePath, item.name);
       } else if (isAliyun) {
         alistProxyDownload(filePath, item.name);
       } else {
@@ -269,14 +273,15 @@ export default function Home() {
   };
 
   const alistBatchDownload = () => {
+    const prov = alistProvider.toLowerCase();
+    const isBaidu = prov.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
+    const isAliyun = prov.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
+    
     alistSelected.forEach(name => {
       const file = alistFiles.find((f: any) => f.name === name);
       const filePath = `${alistPath.replace(/\/+$/, '')}/${name}`;
-      const provider = (file?.provider || '').toLowerCase();
-      const isBaidu = provider.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
-      const isAliyun = provider.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
-      
-      if (isAliyun || (isBaidu && file && (file.size || 0) >= SIZE_THRESHOLD)) {
+      if (isBaidu || isAliyun) {
+        // 百度和阿里云盘都走代理下载
         alistProxyDownload(filePath, name);
       } else {
         alistDirectDownload(filePath, file?.sign);
