@@ -871,15 +871,31 @@ export default function Home() {
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              <section className="space-y-4">
+                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">1. 关于下载限制与本站优势</h4>
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                  <p className="text-xs leading-relaxed text-zinc-100">
+                    <span className="font-bold text-pink-400">为什么会有这么多复杂的下载方式？</span><br/>
+                    百度网盘对于大于 <span className="font-bold text-white">20MB</span> 的文件，会强制要求客户端发送特定的 <code className="text-[10px] bg-black/30 px-1 py-0.5 rounded text-pink-300">User-Agent: pan.baidu.com</code> 才能下载，否则会直接阻断（比如返回 403 错误）。
+                  </p>
+                  <div className="h-px w-full bg-white/10"></div>
+                  <p className="text-xs leading-relaxed text-zinc-100">
+                    <span className="font-bold text-emerald-400">STA-PAN 的最大优势：对手机端极度友好！</span><br/>
+                    如果你直接使用AList，也就是之前的那个版本，手机上通常只能靠专门抓包或安装带有改 UA 功能的特殊浏览器/插件才能下载大文件。
+                    <br/>而在本站：我们通过 <span className="font-bold text-blue-300">Cloudflare 代理</span> 或是 <span className="font-bold text-blue-300">服务器中转</span>，在云端帮你**自动补齐了 UA**，所以你在手机上可以像下普通文件一样，直接浏览器点击完成极速下载，完全**免除任何插件配置。**只不过会牺牲速度，但总比在手机上下不了好
+                  </p>
+                </div>
+              </section>
+
               {/* 下载方式对比 */}
               <section className="space-y-4">
-                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">1. 下载方式详细原理</h4>
+                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">2. 大文件 (≥20MB) 下载方式</h4>
                 <div className="grid grid-cols-1 gap-4">
                   {/* CF 边缘加速 */}
                   <div className="p-4 rounded-2xl bg-blue-600/10 border border-blue-500/30">
                     <div className="flex items-center gap-2 mb-2">
                        <span className="text-sm">☁️</span>
-                      <span className="text-sm font-black uppercase text-blue-200">Cloudflare 边缘加速</span>
+                      <span className="text-sm font-black uppercase text-blue-100">Cloudflare 边缘加速</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
                       通过部署在海外的 CF Workers 节点中转文件请求，绕过国内直连限制。
@@ -887,7 +903,7 @@ export default function Home() {
                     <div className="space-y-1.5 pt-2 border-t border-blue-500/10">
                       <div className="text-[11px] flex items-center gap-2">
                         <span className="text-white font-bold shrink-0">✅ 推荐度:</span>
-                        <span className="text-blue-300 font-bold">⭐⭐⭐⭐⭐ (普通同学首选)</span>
+                        <span className="text-blue-300 font-bold">⭐⭐⭐⭐⭐ (手机端首选)</span>
                       </div>
                       <div className="text-[11px] flex items-start gap-2">
                         <span className="text-white font-bold shrink-0">✨ 优点:</span>
@@ -921,7 +937,7 @@ export default function Home() {
                   <div className="p-4 rounded-2xl bg-pink-600/10 border border-pink-500/30 opacity-90">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm">🔥</span>
-                      <span className="text-sm font-black uppercase text-pink-200">服务器中转下载</span>
+                      <span className="text-sm font-black uppercase text-pink-100">服务器中转下载</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
                       由 STA 服务器代下后转发。服务器位于海外，受限于网络波动与昂贵的流量费。
@@ -933,7 +949,7 @@ export default function Home() {
                       </div>
                       <div className="text-[11px] flex items-start gap-2">
                         <span className="text-white font-bold shrink-0">❌ 缺点:</span>
-                        <span className="text-pink-100">消耗服务器有限的带宽与流量，大文件容易中断，请尽量避开。</span>
+                        <span className="text-pink-100">消耗服务器有限的带宽与流量（每个月只有10个G），请尽量避开。</span>
                       </div>
                     </div>
                   </div>
@@ -942,11 +958,11 @@ export default function Home() {
 
               {/* IDM 配置指南 */}
               <section className="space-y-4">
-                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">2. IDM 满速配置教程 (极速 50MB/s)</h4>
+                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">3. IDM/NDM 满速配置教程 (极速 50MB/s)</h4>
                 <div className="p-5 rounded-3xl bg-white/5 border border-white/10 space-y-4">
                   <div className="flex items-start gap-4">
                     <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">1</div>
-                    <p className="text-xs text-zinc-100">下载安装官方版 <a href="https://www.internetdownloadmanager.com/" target="_blank" className="text-accent underline font-bold">IDM</a> (电脑端专用)。</p>
+                    <p className="text-xs text-zinc-100">下载安装官方版 <a href="https://www.internetdownloadmanager.com/" target="_blank" className="text-accent underline font-bold">IDM（NDM同理）</a> (电脑端专用)。</p>
                   </div>
                   <div className="flex items-start gap-4">
                     <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">2</div>
@@ -968,11 +984,31 @@ export default function Home() {
                 </div>
               </section>
 
+              {/* 大小文件逻辑汇总 */}
+              <section className="space-y-4">
+                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">4. 新手点我：到底怎么下载？</h4>
+                <div className="p-4 rounded-2xl bg-emerald-600/10 border border-emerald-500/30 text-xs text-zinc-100 leading-relaxed shadow-lg">
+                  <div className="mb-2">
+                    <span className="text-emerald-400 font-bold">● 小于 20MB 的文件：</span>
+                    点击文件列表中的文件，<span className="text-white font-bold bg-emerald-400/20 px-1 py-0.5 rounded">直接下载</span>，无需任何额外操作！
+                  </div>
+                  <div>
+                    <span className="text-pink-400 font-bold">● 大于 20MB 的文件：</span>
+                    因受百度网盘限制，点击大文件后会弹出备选通道（参见上面的第 2 点）。
+                    <ul className="list-disc pl-5 mt-2 space-y-1.5 text-[11px] text-zinc-300">
+                      <li><strong className="text-blue-300">手机端直接点：</strong> 无脑选第一个 <span className="bg-blue-500/20 px-1 py-0.5 rounded">Cloudflare 边缘加速</span>，这是手机端满速、免插件的最优解。</li>
+                      <li><strong className="text-emerald-300">电脑端最快下载：</strong> 如果有 IDM 或迅雷或NDM，选第二个 <span className="bg-emerald-500/20 px-1 py-0.5 rounded">复制直链</span>。</li>
+                      <li>如果上述挂了，才选第三个“服务器中转”（尽量少用）。</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
               {/* 温馨提示 */}
               <div className="p-5 rounded-3xl bg-accent/10 border border-accent/30 text-center shadow-lg">
                 <p className="text-xs text-zinc-100 leading-relaxed">
-                  💖 社区服务器由科协同学自费及公益维护。<br/>
-                  <span className="text-white font-black">推荐优先使用 IDM + 直链方案</span>，<br/>
+                  💖 服务器及网站由网络部同学搭建及公益维护。<br/>
+                  <span className="text-white font-black">推荐优先使用 IDM等插件直链方案</span>，<br/>
                   将有限的资源留给更需要的手机端用户。
                 </p>
               </div>
