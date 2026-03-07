@@ -252,8 +252,12 @@ export default function Home() {
       alistListDir(newPath);
     } else {
       const filePath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
-      const isBaidu = alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
-      const isAliyun = alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun') || alistPath.startsWith('/aliyun_new');
+      // Instead of parsing path string, use the provider returned from AList 
+      // Baidu might be BaiduNetdisk, Aliyun might be AliyundriveOpen etc.
+      const provider = (item.provider || '').toLowerCase();
+      const isBaidu = provider.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
+      const isAliyun = provider.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
+      
       if (isBaidu && (item.size || 0) >= SIZE_THRESHOLD) {
         setAlistDownloadModal({ name: item.name, filePath, sign: item.sign });
       } else if (isAliyun) {
@@ -265,11 +269,13 @@ export default function Home() {
   };
 
   const alistBatchDownload = () => {
-    const isBaidu = alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
-    const isAliyun = alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun') || alistPath.startsWith('/aliyun_new');
     alistSelected.forEach(name => {
       const file = alistFiles.find((f: any) => f.name === name);
       const filePath = `${alistPath.replace(/\/+$/, '')}/${name}`;
+      const provider = (file?.provider || '').toLowerCase();
+      const isBaidu = provider.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
+      const isAliyun = provider.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
+      
       if (isAliyun || (isBaidu && file && (file.size || 0) >= SIZE_THRESHOLD)) {
         alistProxyDownload(filePath, name);
       } else {
