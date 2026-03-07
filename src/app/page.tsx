@@ -873,13 +873,13 @@ export default function Home() {
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
               {/* 下载方式对比 */}
               <section className="space-y-4">
-                <h4 className="text-[11px] font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">1. 下载方式详细原理</h4>
+                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">1. 下载方式详细原理</h4>
                 <div className="grid grid-cols-1 gap-4">
                   {/* CF 边缘加速 */}
                   <div className="p-4 rounded-2xl bg-blue-600/10 border border-blue-500/30">
                     <div className="flex items-center gap-2 mb-2">
                        <span className="text-sm">☁️</span>
-                      <span className="text-[11px] font-black uppercase text-blue-400">Cloudflare 边缘加速</span>
+                      <span className="text-sm font-black uppercase text-blue-400">Cloudflare 边缘加速</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
                       通过部署在海外的 CF Workers 节点中转文件请求，绕过国内直连限制。
@@ -900,7 +900,7 @@ export default function Home() {
                   <div className="p-4 rounded-2xl bg-emerald-600/10 border border-emerald-500/30">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm">🚀</span>
-                      <span className="text-[11px] font-black uppercase text-emerald-400">复制直链 (搭配 IDM/迅雷)</span>
+                      <span className="text-sm font-black uppercase text-emerald-400">复制直链 (搭配 IDM/迅雷)</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
                       直接调取百度网盘 CDN 原始地址。配合多线程下载器可突破单线程限速。
@@ -921,7 +921,7 @@ export default function Home() {
                   <div className="p-4 rounded-2xl bg-pink-600/10 border border-pink-500/30 opacity-90">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm">🔥</span>
-                      <span className="text-[11px] font-black uppercase text-pink-400">服务器中转下载</span>
+                      <span className="text-sm font-black uppercase text-pink-400">服务器中转下载</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
                       由 STA 服务器代下后转发。服务器位于海外，受限于网络波动与昂贵的流量费。
@@ -942,7 +942,7 @@ export default function Home() {
 
               {/* IDM 配置指南 */}
               <section className="space-y-4">
-                <h4 className="text-[11px] font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">2. IDM 满速配置教程 (极速 50MB/s)</h4>
+                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">2. IDM 满速配置教程 (极速 50MB/s)</h4>
                 <div className="p-5 rounded-3xl bg-white/5 border border-white/10 space-y-4">
                   <div className="flex items-start gap-4">
                     <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">1</div>
