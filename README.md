@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# STA-PAN (科协网盘)
 
-## Getting Started
+STA-PAN 是成都七中科学技术协会 (STA) 推出的专属网盘前端系统。本项目深度对接 AList，针对百度网盘大文件下载做了专业级的优化与重构，并搭载了高颜值的玻璃拟态 (Glassmorphism) UI，支持多用户与细粒度权限管控。
 
-First, run the development server:
+## 🌟 核心功能指南
+
+### 1. 登录与账号系统
+
+本系统拥有独立的账号认证架构，区分了两种基础角色类型，并支持对具体操作的细粒度开关：
+
+- **👑 管理权限 (admin / manager)** 
+  - `admin` 为系统内置超级管理员，拥有全局最高权限。
+  - `manager` 角色可由超管自由创建，拥有上传、删除、重命名文件的能力，并可以访问配置面板。
+- **👤 游客体验者 (guest)** 
+  - 只拥有文件浏览和下载的权限，无法修改网盘内容。非常适合用于社区内的大面积资料分享。
+
+> **细粒度权限控制**：在超管面板中，可以为除了 `admin` 外的任何具体用户开启或关闭对应的四项权限：「👀 浏览」、「⬇️ 下载」、「⬆️ 上传」、「🗑️ 删除」、「📝 重命名」。
+
+### 2. 突破限制的大文件下载解析
+
+**为什么需要不同的下载方式？**
+百度网盘对 **≥20MB** 的文件有严格的验证限制：强制要求请求必须携带 `User-Agent: pan.baidu.com` 的请求头，否则会出现 403 Forbidden 报错或直接阻断。
+在此基础上，本站设计了以下下载逻辑：
+
+- **🔹 小文件 ( < 20MB )**
+  在文件列表中点击，**直接触发浏览器原生下载**，无需任何额外环境和配置，所见即所得。
+
+- **🔹 大文件 ( ≥ 20MB )**
+  点击后会弹出由系统优化的 3 条专用通道，请根据使用环境选择：
+  1. **☁️ Cloudflare 边缘加速（强烈推荐，手机端福音）**
+     - **原理**：我们在海外部署了 Cloudflare Workers 中转节点，在云端隐性为你补齐了缺失的 User-Agent。
+     - **优势**：完美解决了手机浏览器或普通软件无法修改 UA 的痛点。只要网络正常，点击就能零配置满速直下！
+  2. **🚀 复制直链（桌面端最高速选择）**
+     - **原理**：直接暴露真实的含有时效签名的百度原生 CDN 链接。
+     - **配合要求**：复制链接后，配合桌面端的多线程下载神器 **IDM**（并且在 IDM 设置内加入 User-Agent：`pan.baidu.com`）。
+     - **优势**：这是最残暴的满速方案（高达 50MB/s 左右），且因为不经过中转，完全不消耗社区公益服务器的流量！
+  3. **🔥 服务器中转下载（备用及兜底）**
+     - **原理**：直接由 STA 承载该网站运行的后端服务器向百度进行 API 请求并转发流量回到你的设备。
+     - **缺点**：非常消耗小水管服务器的流量，文件很大时也容易中断，仅作以上方式不可用的紧急兜底。
+
+### 3. 极客与零碎功能
+
+- **⚙️ 自定义本地 AList 节点注入**
+  如果你自己搭建过 AList 但苦于前端太简陋，管理员可以点击面板的设置按钮，注入自定义的 `AList URL` 和 `账号密码`。设置后，该浏览器上这套极为优美的 STA-PAN UI 将直接接管你的本地 AList 目录树！
+  
+- **📜 自动化的更新历史 (Changelog)**
+  右下角的版本号直通“更新日志弹窗”。该日志模块直接从本项目的 Git Commits 自动脱敏并生成通俗的说明，展示整个产品的演进时间线。
+
+- **🌗 昼夜双重玻璃拟态视觉**
+  全站支持亮色与暗色模式的无缝切花，全屏贯穿的玻璃反射材质动画让网盘列表也能具有顶级应用的科技感。
+
+---
+### 部署与配置
+
+本项目基于 Node.js 与 Next.js (App Router) 架构，可以直接托管于 Vercel。
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# 或基于 Vercel 一键分发并连接你的独立 Supabase 数据库
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+*© 成都七中科学技术协会 (STA).*
