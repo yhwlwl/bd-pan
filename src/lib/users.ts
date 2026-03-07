@@ -26,6 +26,10 @@ export interface GlobalSettings {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+if (!supabaseUrl || !supabaseKey) {
+    console.warn('⚠️ [users] Supabase 环境变量缺失，功能将受限');
+}
+
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 // === 获取权限 ===
