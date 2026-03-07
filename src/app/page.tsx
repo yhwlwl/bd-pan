@@ -801,7 +801,7 @@ export default function Home() {
               >
                 <div>
                   <div className="text-[11px] font-bold text-emerald-400">🚀 复制直链（迅雷/IDM）</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>仅服务端代理下载，兼容性好但速度取决于你的服务器</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>速度最快，但是需要迅雷/IDM等下载器</div>
                 </div>
               </button>
 
@@ -824,7 +824,7 @@ export default function Home() {
               >
                 <div>
                   <div className="text-[11px] font-bold text-blue-400">☁️ Cloudflare 边缘加速</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>通过 CF Workers 中转，可多线程，需部署 Worker</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>通过 CF Workers 中转，速度与方案一差不多</div>
                 </div>
               </button>
 
@@ -835,7 +835,7 @@ export default function Home() {
               >
                 <div>
                   <div className="text-[11px] font-bold" style={{ color: 'var(--text-primary)' }}>⚡ 302直链跳转（不加UA）</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>直接跳转百度CDN，大文件可能被拦截</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>直接跳转百度CDN，大文件大概率被拦截</div>
                 </div>
               </button>
             </div>
@@ -987,13 +987,13 @@ export default function Home() {
 
                             {/* 文件大小 — 手机端也显示 */}
                             {!file.is_dir && (
-                              <span className="text-[10px] shrink-0" style={{ color: 'var(--text-faint)' }}>
+                              <span className="text-[10px] shrink-0 font-bold" style={{ color: 'var(--text-secondary)' }}>
                                 {formatSize(file.size || 0)}
                               </span>
                             )}
 
                             {/* 修改时间 */}
-                            <span className="text-[10px] shrink-0 ml-2" style={{ color: 'var(--text-faint)' }}>
+                            <span className="text-[10px] shrink-0 ml-2" style={{ color: 'var(--text-muted)' }}>
                               {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
                             </span>
 
