@@ -664,7 +664,7 @@ export default function Home() {
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] text-zinc-400 mb-1 block">AList_URL [必须项]</label>
-                <input type="text" value={customUrl} onChange={e => setCustomUrl(e.target.value)} placeholder="如: http://47.108.222.119:5244" className="w-full bg-black border border-zinc-800 rounded px-2.5 py-2 text-[11px] text-white outline-none focus:border-pink-500" />
+                <input type="text" value={customUrl} onChange={e => setCustomUrl(e.target.value)} placeholder="如: https://frp-gap.com:37492" className="w-full bg-black border border-zinc-800 rounded px-2.5 py-2 text-[11px] text-white outline-none focus:border-pink-500" />
               </div>
               <div>
                 <label className="text-[10px] text-zinc-400 mb-1 block">AList_Username [用于后台/直链获取]</label>
