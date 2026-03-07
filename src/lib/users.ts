@@ -16,6 +16,7 @@ export interface UserPermissions {
     upload: boolean;
     delete: boolean;
     rename: boolean;
+    preview: boolean;
 }
 
 export interface GlobalSettings {
@@ -34,13 +35,13 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
 
 // === 获取权限 ===
 export async function getUserPermissions(username: string, role: Role): Promise<UserPermissions> {
-    const defaultManager: UserPermissions = { view: true, download: true, upload: true, delete: true, rename: true };
+    const defaultManager: UserPermissions = { view: true, download: true, upload: true, delete: true, rename: true, preview: true };
     
     const settings = await getSettings();
-    const defaultGuest: UserPermissions = { view: true, download: true, upload: false, delete: false, rename: false };
+    const defaultGuest: UserPermissions = { view: true, download: true, upload: false, delete: false, rename: false, preview: true };
 
     if (role === 'admin') {
-        return { view: true, download: true, upload: true, delete: true, rename: true };
+        return { view: true, download: true, upload: true, delete: true, rename: true, preview: true };
     }
 
     const defaultPerms = role === 'manager' ? defaultManager : defaultGuest;

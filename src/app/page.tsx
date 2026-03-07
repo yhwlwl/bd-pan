@@ -14,6 +14,7 @@ export interface UserPermissions {
   upload: boolean;
   delete: boolean;
   rename: boolean;
+  preview: boolean;
 }
 
 export default function Home() {
@@ -49,8 +50,9 @@ export default function Home() {
   const [alistDownloadModal, setAlistDownloadModal] = useState<{ name: string; filePath: string; sign?: string } | null>(null);
 
   // 文件预览
-  const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf'; filePath: string; sign?: string; size?: number } | null>(null);
+  const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive'; filePath: string; sign?: string; size?: number } | null>(null);
   const [previewText, setPreviewText] = useState<string>('');
+  const [previewArchiveFiles, setPreviewArchiveFiles] = useState<any[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
 
   // 更新日志弹窗
@@ -90,12 +92,13 @@ export default function Home() {
     return null;
   };
 
-  const getPreviewType = (name: string): 'image' | 'video' | 'text' | 'pdf' | null => {
+  const getPreviewType = (name: string): 'image' | 'video' | 'text' | 'pdf' | 'archive' | null => {
     const ext = name.split('.').pop()?.toLowerCase() || '';
     if (['jpg','jpeg','png','gif','webp','svg','bmp','ico'].includes(ext)) return 'image';
     if (['mp4','webm','ogg','mov'].includes(ext)) return 'video';
     if (['txt','md','log','json','csv','xml','html','css','js','ts','tsx','py','java','c','cpp','h','yaml','yml','ini','cfg','conf','sh','bat','sql','go','rs','rb','php','swift','kt'].includes(ext)) return 'text';
     if (ext === 'pdf') return 'pdf';
+    if (['zip','rar','7z','tar','gz'].includes(ext)) return 'archive';
     return null;
   };
 
@@ -105,11 +108,27 @@ export default function Home() {
 
     setPreviewLoading(true);
     setPreviewText('');
+    setPreviewArchiveFiles([]);
 
     const prov = alistProvider.toLowerCase();
     const isBaidu = prov.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
 
     try {
+      if (type === 'archive') {
+         // AList 压缩包挂载支持：请求 /api/fs/list on filePath (压缩包也会被当做目录处理)
+         const listRes = await fetchAlist({ action: 'list', path: filePath, password: '' });
+         const listData = await listRes.json();
+         if (listData.code === 200 && listData.data?.content) {
+            setPreviewArchiveFiles(listData.data.content);
+            setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
+         } else {
+            setPreviewText(`⚠️ 无法解析压缩包目录结构该存储节点尚未开启后端解压支持。\n详细错误: ${listData.message || '未知'}`);
+            setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
+         }
+         setPreviewLoading(false);
+         return true;
+      }
+
       // 获取文件直链
       const res = await fetchAlist({ action: 'get', path: filePath });
       const data = await res.json();
@@ -121,16 +140,21 @@ export default function Home() {
 
       let previewUrl = data.data.raw_url;
 
-      // 百度网盘需要走代理
-      if (isBaidu) {
-        if ((item.size || 0) >= SIZE_THRESHOLD) {
-          previewUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(previewUrl)}`;
-        } else {
-          previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
-          if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
-          const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-          if (ccConfigStr) previewUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
-        }
+      // 百度网盘需要走代理（对需要直接获取内容的 text，使用服务器代理才能绕过 CORS）
+      if (isBaidu && type === 'text') {
+         previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
+         if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
+         const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
+         if (ccConfigStr) previewUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
+      } else if (isBaidu) {
+         if ((item.size || 0) >= SIZE_THRESHOLD) {
+            previewUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(previewUrl)}`;
+         } else {
+            previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
+            if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
+            const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
+            if (ccConfigStr) previewUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
+         }
       }
 
       // 文本文件需要 fetch 内容
@@ -142,8 +166,8 @@ export default function Home() {
             const textRes = await fetch(previewUrl);
             const text = await textRes.text();
             setPreviewText(text);
-          } catch {
-            setPreviewText('⚠️ 无法加载文件内容，请尝试下载查看。');
+          } catch (err: any) {
+            setPreviewText(`⚠️ 无法加载文件内容，请尝试下载查看。${err.message}`);
           }
         }
       }
@@ -388,6 +412,10 @@ export default function Home() {
       // 检测是否可预览
       const previewType = getPreviewType(item.name);
       if (previewType) {
+        if (!userPerms?.preview) {
+          setAlistMsg('❌ 您没有在线预览的权限');
+          return;
+        }
         openPreview(item, filePath);
         return;
       }
@@ -797,15 +825,16 @@ export default function Home() {
                     </div>
                     {/* 权限设置 (仅非admin) */}
                     {u.username !== 'admin' && (
-                      <div className="pt-2 mt-1 border-t grid grid-cols-2 md:grid-cols-5 gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                      <div className="pt-2 mt-1 border-t grid grid-cols-2 md:grid-cols-6 gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
                         {[
                           { key: 'view', label: '👀 浏览' },
+                          { key: 'preview', label: '👁️ 预览' },
                           { key: 'download', label: '⬇️ 下载' },
                           { key: 'upload', label: '⬆️ 上传' },
                           { key: 'delete', label: '🗑️ 删除' },
                           { key: 'rename', label: '📝 重命名' }
                         ].map(perm => {
-                          const uPerms = u.permissions as any || {};
+                          const uPerms = (u.permissions || {}) as any as Record<string, boolean>;
                           const isOn = uPerms[perm.key] === true;
                           const viewOff = perm.key !== 'view' && !uPerms.view;
                           return (
@@ -818,7 +847,7 @@ export default function Home() {
                                   let newPerms = { ...uPerms, [perm.key]: e.target.checked };
                                   // 关闭浏览时，其他权限也全部关闭
                                   if (perm.key === 'view' && !e.target.checked) {
-                                    newPerms = { view: false, download: false, upload: false, delete: false, rename: false };
+                                    newPerms = { view: false, preview: false, download: false, upload: false, delete: false, rename: false };
                                   }
                                   adminAction('updatePermissions', { username: u.username, permissions: newPerms });
                                 }}
@@ -1158,11 +1187,39 @@ export default function Home() {
               ) : previewFile?.type === 'video' ? (
                 <video src={previewFile.url} controls autoPlay className="max-w-full max-h-[78vh] rounded-lg shadow-2xl" style={{ outline: 'none' }} />
               ) : previewFile?.type === 'pdf' ? (
-                <iframe src={previewFile.url} className="w-full h-[78vh] rounded-lg border-0" title={previewFile.name} />
+                <iframe src={previewFile.url} className="w-full h-[78vh] rounded-lg border-0 bg-white" title={previewFile.name} />
               ) : previewFile?.type === 'text' ? (
                 <pre className="w-full h-full overflow-auto text-xs leading-relaxed text-zinc-300 font-mono p-6 rounded-xl whitespace-pre-wrap break-words" style={{ background: '#111', maxHeight: '78vh' }}>
                   {previewText || '加载中...'}
                 </pre>
+              ) : previewFile?.type === 'archive' ? (
+                <div className="w-full h-full overflow-auto text-xs text-zinc-300 p-6 rounded-xl" style={{ background: '#111', maxHeight: '78vh' }}>
+                  <div className="font-bold text-lg mb-4 text-emerald-400">📦 压缩包内容预览</div>
+                  {previewArchiveFiles.length > 0 ? (
+                    <div className="space-y-2">
+                       <div className="grid grid-cols-12 gap-2 text-zinc-500 border-b border-zinc-800 pb-2 mb-2 font-bold px-2">
+                         <div className="col-span-8">文件名 Name</div>
+                         <div className="col-span-4 text-right">大小 Size</div>
+                       </div>
+                       {previewArchiveFiles.map((af, i) => (
+                         <div key={i} className="grid grid-cols-12 gap-2 items-center hover:bg-white/5 p-2 rounded transition-colors cursor-pointer group">
+                           <div className="col-span-8 flex items-center gap-2 truncate">
+                             <span className="text-sm opacity-80">{af.is_dir ? '📁' : '📄'}</span>
+                             <span className={af.is_dir ? 'text-blue-400 font-bold' : 'text-zinc-300'}>{af.name}</span>
+                           </div>
+                           <div className="col-span-4 text-right text-zinc-500 font-mono text-[10px]">
+                             {!af.is_dir && formatSize(af.size)}
+                           </div>
+                         </div>
+                       ))}
+                       <div className="mt-6 text-zinc-500 text-center text-xs opacity-60">
+                         仅支持查看压缩包顶级根目录。<br/>如需解压具体文件或查看多层内部结构，请点击上方按钮下载至本地。
+                       </div>
+                    </div>
+                  ) : (
+                    <div className="text-zinc-400 whitespace-pre-wrap">{previewText}</div>
+                  )}
+                </div>
               ) : null}
             </div>
           </div>
