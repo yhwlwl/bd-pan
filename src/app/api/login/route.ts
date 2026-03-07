@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { signToken } from '../_auth';
-import { findUser, getSettings } from '@/lib/users';
+import { findUser, getSettings, getUserPermissions } from '@/lib/users';
 
 export async function POST(request: Request) {
     try {
@@ -14,7 +14,8 @@ export async function POST(request: Request) {
             }
             const token = signToken('guest', 'guest');
             if (!token) return NextResponse.json({ error: '服务端配置异常' }, { status: 500 });
-            return NextResponse.json({ token, role: 'guest', username: 'guest' });
+            const permissions = await getUserPermissions('guest', 'guest');
+            return NextResponse.json({ token, role: 'guest', username: 'guest', permissions });
         }
 
         // 用户名密码登录
@@ -31,7 +32,8 @@ export async function POST(request: Request) {
         const token = signToken(user.username, user.role);
         if (!token) return NextResponse.json({ error: '服务端配置异常' }, { status: 500 });
 
-        return NextResponse.json({ token, role: user.role, username: user.username });
+        const permissions = await getUserPermissions(user.username, user.role);
+        return NextResponse.json({ token, role: user.role, username: user.username, permissions });
     } catch {
         return NextResponse.json({ error: '登录接口异常' }, { status: 500 });
     }

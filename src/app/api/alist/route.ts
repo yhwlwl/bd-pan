@@ -88,7 +88,9 @@ export async function POST(request: Request) {
         const writeActions = ['mkdir', 'remove', 'rename', 'upload'];
 
         if (action === 'list' || action === 'get') {
-            if (!perms.view) return NextResponse.json({ code: 403, message: '无权浏览文件' }, { status: 403 });
+            // 根目录始终允许浏览，子目录需要 view 权限
+            const isRoot = !path || path === '/';
+            if (!isRoot && !perms.view) return NextResponse.json({ code: 403, message: '无权浏览子目录' }, { status: 403 });
         }
         if (action === 'mkdir') {
             if (!perms.upload) return NextResponse.json({ code: 403, message: '无权创建文件夹（需要上传权限）' }, { status: 403 });

@@ -194,10 +194,12 @@ export default function Home() {
       setUserToken(data.token);
       setUserRole(data.role);
       setUsername(data.username);
+      setUserPerms(data.permissions || null);
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('BDPAN_TOKEN', data.token);
         window.localStorage.setItem('BDPAN_ROLE', data.role);
         window.localStorage.setItem('BDPAN_USERNAME', data.username);
+        if (data.permissions) window.localStorage.setItem('BDPAN_PERMS', JSON.stringify(data.permissions));
       }
       setLoginUsername('');
       setLoginPassword('');
@@ -219,10 +221,12 @@ export default function Home() {
       setUserToken(data.token);
       setUserRole(data.role);
       setUsername(data.username);
+      setUserPerms(data.permissions || null);
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('BDPAN_TOKEN', data.token);
         window.localStorage.setItem('BDPAN_ROLE', data.role);
         window.localStorage.setItem('BDPAN_USERNAME', data.username);
+        if (data.permissions) window.localStorage.setItem('BDPAN_PERMS', JSON.stringify(data.permissions));
       }
     } catch { setAuthError('登录接口异常'); }
     finally { setAuthLoading(false); }
@@ -285,8 +289,11 @@ export default function Home() {
   };
 
   const alistNavigate = (item: any) => {
-    if (!canView && item.is_dir) { setAlistMsg('❌ 无浏览权限'); return; }
-    if (!canDownload && !item.is_dir) { setAlistMsg('❌ 无下载权限'); return; }
+    if (item.is_dir) {
+      // 浏览权限：根目录始终允许，子目录需要 view 权限
+      if (!canView) { setAlistMsg('❌ 无浏览子目录权限'); return; }
+    }
+    if (!item.is_dir && !canDownload) { setAlistMsg('❌ 无下载权限'); return; }
 
     if (item.is_dir) {
       const newPath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
@@ -496,7 +503,7 @@ export default function Home() {
           <div className="text-center mb-6">
             <div className="text-3xl mb-2">☁️</div>
             <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>成都七中STA · 科协网盘</h1>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>成都七中学生科技协会 · 百度网盘文件共享</p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>成都七中科学技术协会 · 百度网盘文件共享平台</p>
           </div>
           <div className="space-y-3">
             <input
@@ -674,7 +681,7 @@ export default function Home() {
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        {u.username !== 'admin' && (
+                        {u.username !== 'admin' && u.username !== 'guest' && (
                           <>
                             <select
                               value={u.role}
@@ -704,15 +711,21 @@ export default function Home() {
                           { key: 'delete', label: '🗑️ 删除' },
                           { key: 'rename', label: '📝 重命名' }
                         ].map(perm => {
-                          const userPerms = u.permissions as any || {};
-                          const isOn = userPerms[perm.key] === true;
+                          const uPerms = u.permissions as any || {};
+                          const isOn = uPerms[perm.key] === true;
+                          const viewOff = perm.key !== 'view' && !uPerms.view;
                           return (
-                            <label key={perm.key} className="flex items-center gap-1.5 cursor-pointer hover:opacity-80">
+                            <label key={perm.key} className={`flex items-center gap-1.5 cursor-pointer ${viewOff ? 'opacity-30 pointer-events-none' : 'hover:opacity-80'}`}>
                               <input 
                                 type="checkbox" 
                                 checked={isOn}
+                                disabled={viewOff}
                                 onChange={(e) => {
-                                  const newPerms = { ...userPerms, [perm.key]: e.target.checked };
+                                  let newPerms = { ...uPerms, [perm.key]: e.target.checked };
+                                  // 关闭浏览时，其他权限也全部关闭
+                                  if (perm.key === 'view' && !e.target.checked) {
+                                    newPerms = { view: false, download: false, upload: false, delete: false, rename: false };
+                                  }
                                   adminAction('updatePermissions', { username: u.username, permissions: newPerms });
                                 }}
                                 className="w-2.5 h-2.5 accent-pink-500"
