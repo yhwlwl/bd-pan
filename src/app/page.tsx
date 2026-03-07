@@ -857,7 +857,7 @@ export default function Home() {
 
       {/* 使用说明弹窗 */}
       {showManual && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 backdrop-blur-md" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setShowManual(false)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 backdrop-blur-md" style={{ background: 'rgba(0,0,0,0.7)' }} onClick={() => setShowManual(false)}>
           <div className="w-full max-w-xl max-h-[85vh] flex flex-col glass-strong rounded-3xl overflow-hidden animate-in shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
               <div className="flex items-center gap-3">
@@ -872,78 +872,108 @@ export default function Home() {
             
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
               {/* 下载方式对比 */}
-              <section className="space-y-3">
+              <section className="space-y-4">
                 <h4 className="text-[11px] font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">1. 下载方式详细原理</h4>
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/20">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-xs font-bold text-blue-400">☁️ Cloudflare 边缘加速</span>
+                <div className="grid grid-cols-1 gap-4">
+                  {/* CF 边缘加速 */}
+                  <div className="p-4 rounded-2xl bg-blue-600/10 border border-blue-500/30">
+                    <div className="flex items-center gap-2 mb-2">
+                       <span className="text-sm">☁️</span>
+                      <span className="text-[11px] font-black uppercase text-blue-400">Cloudflare 边缘加速</span>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-zinc-300">
-                      通过我们在海外部署的 CF Workers 节点中转请求。
-                      <span className="block mt-1 text-white">✅ 推荐度：⭐⭐⭐⭐⭐ (普通同学首选)</span>
-                      <span className="block text-zinc-400">优点：不消耗服务器流量，无需配置代理，兼容性好。</span>
+                    <p className="text-xs leading-relaxed text-zinc-100 mb-2">
+                      通过部署在海外的 CF Workers 节点中转文件请求，绕过国内直连限制。
                     </p>
+                    <div className="space-y-1.5 pt-2 border-t border-blue-500/10">
+                      <div className="text-[11px] flex items-center gap-2">
+                        <span className="text-white font-bold shrink-0">✅ 推荐度:</span>
+                        <span className="text-blue-300 font-bold">⭐⭐⭐⭐⭐ (普通同学首选)</span>
+                      </div>
+                      <div className="text-[11px] flex items-start gap-2">
+                        <span className="text-white font-bold shrink-0">✨ 优点:</span>
+                        <span className="text-blue-100">无需手动改 UA，不消耗服务器流量，移动端兼容性极佳。</span>
+                      </div>
+                    </div>
                   </div>
                   
-                  <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-xs font-bold text-emerald-400">🚀 复制直链 (搭配 IDM/迅雷)</span>
+                  {/* IDM 直链 */}
+                  <div className="p-4 rounded-2xl bg-emerald-600/10 border border-emerald-500/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm">🚀</span>
+                      <span className="text-[11px] font-black uppercase text-emerald-400">复制直链 (搭配 IDM/迅雷)</span>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-zinc-300">
-                      直接获取百度网盘 CDN 的原始链接。
-                      <span className="block mt-1 text-white">✅ 推荐度：⭐⭐⭐⭐⭐ (有条件同学首选，极速)</span>
-                      <span className="block text-zinc-400">优点：单线程可达 5MB/s，多线程（IDM）可刷满 50MB/s。</span>
+                    <p className="text-xs leading-relaxed text-zinc-100 mb-2">
+                      直接调取百度网盘 CDN 原始地址。配合多线程下载器可突破单线程限速。
                     </p>
+                    <div className="space-y-1.5 pt-2 border-t border-emerald-500/10">
+                      <div className="text-[11px] flex items-center gap-2">
+                        <span className="text-white font-bold shrink-0">✅ 推荐度:</span>
+                        <span className="text-emerald-300 font-bold">⭐⭐⭐⭐⭐ (满速极速体验)</span>
+                      </div>
+                      <div className="text-[11px] flex items-start gap-2">
+                        <span className="text-white font-bold shrink-0">✨ 优点:</span>
+                        <span className="text-emerald-100 font-bold">速度可达 50MB/s。由于是点对点下载，对社区服务器零负载。</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-pink-500/5 border border-pink-500/20">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-xs font-bold text-pink-400">🔥 服务器中转下载</span>
+                  {/* 服务器中转 */}
+                  <div className="p-4 rounded-2xl bg-pink-600/10 border border-pink-500/30 opacity-90">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm">🔥</span>
+                      <span className="text-[11px] font-black uppercase text-pink-400">服务器中转下载</span>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-zinc-300">
-                      通过 STA 核心服务器代理下载并转发给你。
-                      <span className="block mt-1 text-white">⚠️ 推荐度：⭐ (作为备用方案)</span>
-                      <span className="block text-zinc-400">缺点：消耗服务器昂贵的出站流量（Vercel 额度有限），请大家尽量通过前两种方式下载。</span>
+                    <p className="text-xs leading-relaxed text-zinc-100 mb-2">
+                      由 STA 服务器代下后转发。服务器位于海外，受限于网络波动与昂贵的流量费。
                     </p>
+                    <div className="space-y-1.5 pt-2 border-t border-pink-500/10">
+                      <div className="text-[11px] flex items-center gap-2">
+                        <span className="text-white font-bold shrink-0">⚠️ 推荐度:</span>
+                        <span className="text-pink-300 font-bold">⭐ (仅做故障备用)</span>
+                      </div>
+                      <div className="text-[11px] flex items-start gap-2">
+                        <span className="text-white font-bold shrink-0">❌ 缺点:</span>
+                        <span className="text-pink-100">消耗服务器有限的带宽与流量，大文件容易中断，请尽量避开。</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </section>
 
               {/* IDM 配置指南 */}
-              <section className="space-y-3">
+              <section className="space-y-4">
                 <h4 className="text-[11px] font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">2. IDM 满速配置教程 (极速 50MB/s)</h4>
-                <div className="p-4 rounded-2xl bg-zinc-800/20 border border-white/5 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 mt-0.5">1</div>
-                    <p className="text-[11px] text-zinc-300">下载并安装 <a href="https://www.internetdownloadmanager.com/" target="_blank" className="text-accent underline">IDM (Internet Download Manager)</a>。</p>
+                <div className="p-5 rounded-3xl bg-white/5 border border-white/10 space-y-4">
+                  <div className="flex items-start gap-4">
+                    <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">1</div>
+                    <p className="text-xs text-zinc-100">下载安装官方版 <a href="https://www.internetdownloadmanager.com/" target="_blank" className="text-accent underline font-bold">IDM</a> (电脑端专用)。</p>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 mt-0.5">2</div>
-                    <p className="text-[11px] text-zinc-300">
-                      打开 IDM 菜单：<span className="text-white">选项 (Options) -&gt; 下载 (Downloads)</span>。
+                  <div className="flex items-start gap-4">
+                    <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">2</div>
+                    <p className="text-xs text-zinc-100">
+                      进入设置：<span className="font-bold text-white border-b border-white/30">选项 (Options) -&gt; 下载 (Downloads)</span>。
                     </p>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 mt-0.5">3</div>
-                    <div className="flex-1 space-y-2">
-                       <p className="text-[11px] text-zinc-300">在最下方找到 <span className="text-white">“手动添加下载任务时使用的用户代理 (User-Agent)”</span>，填入：</p>
-                       <code className="block p-2 rounded bg-black/40 border border-white/5 text-[11px] font-mono text-pink-400 select-all">pan.baidu.com</code>
+                  <div className="flex items-start gap-4">
+                    <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">3</div>
+                    <div className="flex-1 space-y-3">
+                       <p className="text-xs text-zinc-100">在底部找到 <span className="font-bold text-white uppercase tracking-tighter">“手动添加任务时使用的 UA”</span>，复制填写：</p>
+                       <code className="block p-3 rounded-xl bg-black border border-white/20 text-sm font-mono text-pink-400 select-all text-center">pan.baidu.com</code>
                     </div>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 mt-0.5">4</div>
-                    <p className="text-[11px] text-zinc-300">回到网盘，点击 <span className="text-emerald-400">复制直链</span>，并在 IDM 中 <span className="text-white">新建任务</span> 粘贴即可。</p>
+                  <div className="flex items-start gap-4">
+                    <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">4</div>
+                    <p className="text-xs text-zinc-100">在网盘点击 <span className="text-emerald-400 font-bold underline">复制直链</span>，在 IDM 中新建粘贴即可起飞。</p>
                   </div>
                 </div>
               </section>
 
               {/* 温馨提示 */}
-              <div className="p-4 rounded-2xl bg-pink-500/5 border border-pink-500/10 text-center">
-                <p className="text-[11px] text-zinc-300">
-                  💖 每一份服务器流量都来之不易。<br/>
-                  <span className="text-white font-bold">推荐有条件的同学优先使用 IDM + 直链</span>，<br/>
-                  让服务器把有限的带宽留给更需要的手机端同学。
+              <div className="p-5 rounded-3xl bg-accent/10 border border-accent/30 text-center shadow-lg">
+                <p className="text-xs text-zinc-100 leading-relaxed">
+                  💖 社区服务器由科协同学自费及公益维护。<br/>
+                  <span className="text-white font-black">推荐优先使用 IDM + 直链方案</span>，<br/>
+                  将有限的资源留给更需要的手机端用户。
                 </p>
               </div>
             </div>
