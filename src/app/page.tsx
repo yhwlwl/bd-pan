@@ -7,11 +7,20 @@ const SIZE_THRESHOLD = 20 * 1024 * 1024; // 20MB
 type Role = 'admin' | 'manager' | 'guest';
 type Theme = 'light' | 'dark';
 
+export interface UserPermissions {
+  view: boolean;
+  download: boolean;
+  upload: boolean;
+  delete: boolean;
+  rename: boolean;
+}
+
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [userToken, setUserToken] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<Role | null>(null);
   const [username, setUsername] = useState<string | null>(null);
+  const [userPerms, setUserPerms] = useState<UserPermissions | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
 
   // 登录表单
@@ -40,8 +49,8 @@ export default function Home() {
 
   // 管理面板
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role }[]>([]);
-  const [adminSettings, setAdminSettings] = useState<{ allowGuestDownload: boolean }>({ allowGuestDownload: true });
+  const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
+  const [adminSettings, setAdminSettings] = useState<{ allowGuestDownload: boolean; permissions?: Record<string, UserPermissions> }>({ allowGuestDownload: true, permissions: {} });
   const [newUserName, setNewUserName] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
   const [newUserRole, setNewUserRole] = useState<'manager' | 'guest'>('manager');
@@ -53,8 +62,12 @@ export default function Home() {
   const [customUser, setCustomUser] = useState('');
   const [customPass, setCustomPass] = useState('');
 
-  const canWrite = userRole === 'admin' || userRole === 'manager';
   const isAdmin = userRole === 'admin';
+  const canDownload = userPerms ? userPerms.download : false;
+  const canUpload = userPerms ? userPerms.upload : false;
+  const canDelete = userPerms ? userPerms.delete : false;
+  const canRename = userPerms ? userPerms.rename : false;
+  const canView = userPerms ? userPerms.view : false;
 
   const getCustomConfig = () => {
     if (typeof window !== 'undefined') {
@@ -110,10 +123,14 @@ export default function Home() {
       const savedToken = window.localStorage.getItem('BDPAN_TOKEN');
       const savedRole = window.localStorage.getItem('BDPAN_ROLE') as Role | null;
       const savedUser = window.localStorage.getItem('BDPAN_USERNAME');
+      const savedPerms = window.localStorage.getItem('BDPAN_PERMS');
       if (savedToken && savedRole) {
         setUserToken(savedToken);
         setUserRole(savedRole);
         setUsername(savedUser);
+        if (savedPerms) {
+          try { setUserPerms(JSON.parse(savedPerms)); } catch { }
+        }
       }
 
       // 访客追踪
@@ -215,12 +232,14 @@ export default function Home() {
     setUserToken(null);
     setUserRole(null);
     setUsername(null);
+    setUserPerms(null);
     setAlistFiles([]);
     setAlistPath('/');
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('BDPAN_TOKEN');
       window.localStorage.removeItem('BDPAN_ROLE');
       window.localStorage.removeItem('BDPAN_USERNAME');
+      window.localStorage.removeItem('BDPAN_PERMS');
     }
   };
 
@@ -238,6 +257,7 @@ export default function Home() {
         setAlistSelected(new Set());
       } else {
         setAlistError(data.message || '加载失败');
+        if (data.code === 401 || data.code === 403) setAlistFiles([]);
       }
     } catch { setAlistError('网盘接口异常'); }
     finally { setAlistLoading(false); }
@@ -265,6 +285,9 @@ export default function Home() {
   };
 
   const alistNavigate = (item: any) => {
+    if (!canView && item.is_dir) { setAlistMsg('❌ 无浏览权限'); return; }
+    if (!canDownload && !item.is_dir) { setAlistMsg('❌ 无下载权限'); return; }
+
     if (item.is_dir) {
       const newPath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
       setAlistSelected(new Set());
@@ -598,6 +621,31 @@ export default function Home() {
               </div>
             )}
 
+            {/* 安全设置：超管密码 */}
+            <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+              <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>安全设置</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  placeholder="新超级管理员密码"
+                  id="admin-new-password"
+                  className="flex-1 rounded px-2.5 py-2 text-[11px] outline-none"
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                />
+                <button
+                  onClick={() => {
+                    const input = document.getElementById('admin-new-password') as HTMLInputElement;
+                    if (!input.value.trim()) return;
+                    adminAction('changeAdminPassword', { password: input.value });
+                    input.value = '';
+                  }}
+                  className="px-4 py-2 bg-red-500/80 text-white text-[11px] font-bold rounded hover:opacity-100 transition-opacity"
+                >
+                  修改密码
+                </button>
+              </div>
+            </div>
+
             {/* 全局设置 */}
             <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>全局设置</div>
@@ -617,33 +665,64 @@ export default function Home() {
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>用户列表</div>
               <div className="space-y-2">
                 {adminUsers.map((u) => (
-                  <div key={u.username} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono" style={{ color: 'var(--text-primary)' }}>{u.username}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded border ${roleBadgeColor(u.role)}`}>
-                        {roleLabel(u.role)}
-                      </span>
+                  <div key={u.username} className="flex flex-col gap-2 rounded-lg px-3 py-2" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-mono" style={{ color: 'var(--text-primary)' }}>{u.username}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded border ${roleBadgeColor(u.role)}`}>
+                          {roleLabel(u.role)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {u.username !== 'admin' && (
+                          <>
+                            <select
+                              value={u.role}
+                              onChange={(e) => adminAction('updateRole', { username: u.username, role: e.target.value })}
+                              className="rounded px-1.5 py-0.5 text-[10px] outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                            >
+                              <option value="manager">管理员</option>
+                              <option value="guest">游客</option>
+                            </select>
+                            <button
+                              onClick={() => { if (confirm(`确认删除用户 ${u.username}？`)) adminAction('remove', { username: u.username }); }}
+                              className="hover:text-red-500 transition-colors" style={{ color: 'var(--text-muted)' }}
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {u.username !== 'admin' && (
-                        <>
-                          <select
-                            value={u.role}
-                            onChange={(e) => adminAction('updateRole', { username: u.username, role: e.target.value })}
-                            className="rounded px-1.5 py-0.5 text-[10px] outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                          >
-                            <option value="manager">管理员</option>
-                            <option value="guest">游客</option>
-                          </select>
-                          <button
-                            onClick={() => { if (confirm(`确认删除用户 ${u.username}？`)) adminAction('remove', { username: u.username }); }}
-                            className="hover:text-red-500 transition-colors" style={{ color: 'var(--text-muted)' }}
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                          </button>
-                        </>
-                      )}
-                    </div>
+                    {/* 权限设置 (仅非admin) */}
+                    {u.username !== 'admin' && (
+                      <div className="pt-2 mt-1 border-t grid grid-cols-2 md:grid-cols-5 gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                        {[
+                          { key: 'view', label: '👀 浏览' },
+                          { key: 'download', label: '⬇️ 下载' },
+                          { key: 'upload', label: '⬆️ 上传' },
+                          { key: 'delete', label: '🗑️ 删除' },
+                          { key: 'rename', label: '📝 重命名' }
+                        ].map(perm => {
+                          const userPerms = u.permissions as any || {};
+                          const isOn = userPerms[perm.key] === true;
+                          return (
+                            <label key={perm.key} className="flex items-center gap-1.5 cursor-pointer hover:opacity-80">
+                              <input 
+                                type="checkbox" 
+                                checked={isOn}
+                                onChange={(e) => {
+                                  const newPerms = { ...userPerms, [perm.key]: e.target.checked };
+                                  adminAction('updatePermissions', { username: u.username, permissions: newPerms });
+                                }}
+                                className="w-2.5 h-2.5 accent-pink-500"
+                              />
+                              <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>{perm.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -857,7 +936,7 @@ export default function Home() {
                 <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>· AList</span>
               </div>
               <div className="flex items-center gap-2">
-                {canWrite && (
+                {canUpload && (
                   <>
                     <button onClick={() => setAlistShowMkdir(!alistShowMkdir)}
                       className="text-[10px] px-2 py-1 rounded transition-opacity hover:opacity-80" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }} title="新建文件夹">
@@ -899,7 +978,7 @@ export default function Home() {
             </div>
 
             {/* 新建文件夹 */}
-            {alistShowMkdir && canWrite && (
+            {alistShowMkdir && canUpload && (
               <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
                 <input value={alistMkdirName} onChange={e => setAlistMkdirName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && alistMkdir()}
@@ -911,7 +990,7 @@ export default function Home() {
             )}
 
             {/* 待上传确认 */}
-            {alistUploadFile && canWrite && (
+            {alistUploadFile && canUpload && (
               <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
                 <span className="text-[11px] flex-1 truncate" style={{ color: 'var(--text-muted)' }}>📎 {alistUploadFile.name}</span>
                 <button onClick={alistUpload} disabled={alistUploading} className="px-2 py-1 text-[10px] bg-accent text-white rounded font-bold hover:opacity-80 disabled:opacity-50">
@@ -997,17 +1076,21 @@ export default function Home() {
                               {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
                             </span>
 
-                            {/* 管理操作（仅 admin/manager） */}
-                            {canWrite && (
+                            {/* 管理操作 */}
+                            {(canRename || canDelete) && (
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                <button onClick={() => { setAlistRenaming(filePath); setAlistNewName(file.name); }}
-                                  className="text-zinc-600 hover:text-blue-400 transition-colors p-0.5" title="重命名">
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                </button>
-                                <button onClick={() => alistRemove(file.name)}
-                                  className="text-zinc-600 hover:text-red-500 transition-colors p-0.5" title="删除">
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
+                                {canRename && (
+                                  <button onClick={() => { setAlistRenaming(filePath); setAlistNewName(file.name); }}
+                                    className="text-zinc-600 hover:text-blue-400 transition-colors p-0.5" title="重命名">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                  </button>
+                                )}
+                                {canDelete && (
+                                  <button onClick={() => alistRemove(file.name)}
+                                    className="text-zinc-600 hover:text-red-500 transition-colors p-0.5" title="删除">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  </button>
+                                )}
                               </div>
                             )}
                           </>

@@ -1,16 +1,22 @@
 import { NextResponse } from 'next/server';
-import { requireRole } from '../_auth';
+import { verifyToken } from '../_auth';
+import { getUserPermissions } from '@/lib/users';
 
 const DEFAULT_ALIST_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
 const DEFAULT_ALIST_PASSWORD = process.env.ALIST_PASSWORD || '';
 
 export async function PUT(request: Request) {
-    // 仅 admin / manager 可上传
+    // 获取当前用户及权限
     const authHeader = request.headers.get('authorization') || undefined;
-    const user = requireRole(authHeader, 'admin', 'manager');
+    const user = verifyToken(authHeader);
     if (!user) {
-        return NextResponse.json({ code: 403, message: '权限不足，仅管理员可上传文件' }, { status: 403 });
+        return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
+    }
+
+    const perms = await getUserPermissions(user.username, user.role);
+    if (!perms.upload) {
+        return NextResponse.json({ code: 403, message: '权限不足，无权上传文件' }, { status: 403 });
     }
 
     try {

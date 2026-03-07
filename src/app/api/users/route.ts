@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '../_auth';
-import { getUsers, addUser, removeUser, updateUserRole, getSettings, updateSettings } from '@/lib/users';
-import type { Role } from '@/lib/users';
+import { getUsers, addUser, removeUser, updateUserRole, getSettings, updateSettings, updateAdminPassword } from '@/lib/users';
+import type { Role, UserPermissions } from '@/lib/users';
 
 // GET: 获取用户列表和全局设置（仅 admin）
 export async function GET(request: Request) {
@@ -52,7 +52,24 @@ export async function POST(request: Request) {
             case 'updateSettings': {
                 const { settings } = body as { settings: { allowGuestDownload?: boolean } };
                 await updateSettings(settings);
-                return NextResponse.json({ ok: true, settings: await getSettings() });
+                return NextResponse.json({ ok: true, settings: await getSettings(), users: await getUsers() });
+            }
+
+            case 'changeAdminPassword': {
+                const { password } = body as { password?: string };
+                if (!password) return NextResponse.json({ error: '新密码不能留空' }, { status: 400 });
+                const result = await updateAdminPassword(password);
+                if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+                return NextResponse.json({ ok: true });
+            }
+
+            case 'updatePermissions': {
+                const { username, permissions } = body as { username: string; permissions: UserPermissions };
+                const currentSettings = await getSettings();
+                const globalPerms = currentSettings.permissions || {};
+                globalPerms[username] = permissions;
+                await updateSettings({ permissions: globalPerms });
+                return NextResponse.json({ ok: true, users: await getUsers(), settings: await getSettings() });
             }
 
             default:

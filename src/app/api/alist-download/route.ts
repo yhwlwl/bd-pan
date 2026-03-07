@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
-import { getSettings } from '@/lib/users';
+import { getUserPermissions } from '@/lib/users';
 
 const DEFAULT_ALIST_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
@@ -43,12 +43,10 @@ export async function GET(request: Request) {
             return new Response('请先登录', { status: 401, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
         }
 
-        // 游客需要检查 allowGuestDownload
-        if (user.role === 'guest') {
-            const settings = await getSettings();
-            if (!settings.allowGuestDownload) {
-                return new Response('管理员已关闭游客下载功能', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-            }
+        // 检查下载权限
+        const perms = await getUserPermissions(user.username, user.role);
+        if (!perms.download) {
+            return new Response('权限不足，无权下载文件', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
         }
 
         let customConfig: any = null;

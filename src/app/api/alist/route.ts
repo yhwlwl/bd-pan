@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { verifyToken, requireRole } from '../_auth';
+import { verifyToken } from '../_auth';
+import { getUserPermissions } from '@/lib/users';
 
 const DEFAULT_ALIST_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
@@ -80,12 +81,23 @@ export async function POST(request: Request) {
             return NextResponse.json({ code: 400, message: '缺少 action 参数' }, { status: 400 });
         }
 
-        // 写操作仅 admin / manager 可执行
-        const writeActions = ['mkdir', 'remove', 'rename'];
-        if (writeActions.includes(action)) {
-            if (!requireRole(authHeader, 'admin', 'manager')) {
-                return NextResponse.json({ code: 403, message: '权限不足，仅管理员可执行此操作' }, { status: 403 });
-            }
+        // 获取用户颗粒度权限
+        const perms = await getUserPermissions(user.username, user.role);
+
+        // 写操作与读取操作精细权限校验
+        const writeActions = ['mkdir', 'remove', 'rename', 'upload'];
+
+        if (action === 'list' || action === 'get') {
+            if (!perms.view) return NextResponse.json({ code: 403, message: '无权浏览文件' }, { status: 403 });
+        }
+        if (action === 'mkdir') {
+            if (!perms.upload) return NextResponse.json({ code: 403, message: '无权创建文件夹（需要上传权限）' }, { status: 403 });
+        }
+        if (action === 'remove') {
+            if (!perms.delete) return NextResponse.json({ code: 403, message: '无权删除文件' }, { status: 403 });
+        }
+        if (action === 'rename') {
+            if (!perms.rename) return NextResponse.json({ code: 403, message: '无权修改文件/文件夹名' }, { status: 403 });
         }
 
         let result: any;
