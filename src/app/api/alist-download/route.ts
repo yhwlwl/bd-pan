@@ -52,7 +52,12 @@ export async function GET(request: Request) {
         let customConfig: any = null;
         if (configB64) {
             try {
-                customConfig = JSON.parse(Buffer.from(configB64, 'base64').toString('utf8'));
+                const s = Buffer.from(configB64, 'base64').toString('utf8');
+                try {
+                    customConfig = JSON.parse(s);
+                } catch {
+                    customConfig = JSON.parse(decodeURIComponent(s));
+                }
             } catch (e) {
                 // ignore
             }
@@ -118,7 +123,8 @@ export async function GET(request: Request) {
         }
 
         const responseHeaders = new Headers();
-        responseHeaders.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+        const isPreview = searchParams.get('preview') === '1';
+        responseHeaders.set('Content-Disposition', `${isPreview ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(filename)}`);
 
         const contentType = fileRes.headers.get('Content-Type') || 'application/octet-stream';
         responseHeaders.set('Content-Type', contentType);

@@ -1,7 +1,6 @@
 
 "use client";
 import { useState, useEffect } from 'react';
-import JSZip from 'jszip';
 import CHANGELOG_DATA from '../data/changelog.json';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
@@ -53,10 +52,10 @@ export default function Home() {
 
   // 文件预览
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive'; filePath: string; sign?: string; size?: number } | null>(null);
-  const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number } | null>(null);
+  const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' } | null>(null);
   const [previewText, setPreviewText] = useState<string>('');
-  const [previewArchiveFiles, setPreviewArchiveFiles] = useState<any[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewStarted, setPreviewStarted] = useState(false);
 
   // 更新日志弹窗
   const [showChangelog, setShowChangelog] = useState(false);
@@ -66,7 +65,8 @@ export default function Home() {
   // 管理面板
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
-  const [adminSettings, setAdminSettings] = useState<{ enableGuestMode: boolean; permissions?: Record<string, UserPermissions> }>({ enableGuestMode: true, permissions: {} });
+  const [adminSettings, setAdminSettings] = useState<{ enableGuestMode: boolean; disableThirdDownload?: boolean; permissions?: Record<string, UserPermissions> }>({ enableGuestMode: true, permissions: {} });
+  const [globalDisableThird, setGlobalDisableThird] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
   const [newUserRole, setNewUserRole] = useState<'manager' | 'guest'>('manager');
@@ -97,11 +97,11 @@ export default function Home() {
 
   const getPreviewType = (name: string): 'image' | 'video' | 'text' | 'pdf' | 'archive' | null => {
     const ext = name.split('.').pop()?.toLowerCase() || '';
-    if (['jpg','jpeg','png','gif','webp','svg','bmp','ico'].includes(ext)) return 'image';
-    if (['mp4','webm','ogg','mov'].includes(ext)) return 'video';
-    if (['txt','md','log','json','csv','xml','html','css','js','ts','tsx','py','java','c','cpp','h','yaml','yml','ini','cfg','conf','sh','bat','sql','go','rs','rb','php','swift','kt'].includes(ext)) return 'text';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) return 'image';
+    if (['mp4', 'webm', 'ogg', 'mov'].includes(ext)) return 'video';
+    if (['txt', 'md', 'log', 'json', 'csv', 'xml', 'html', 'css', 'js', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'yaml', 'yml', 'ini', 'cfg', 'conf', 'sh', 'bat', 'sql', 'go', 'rs', 'rb', 'php', 'swift', 'kt'].includes(ext)) return 'text';
     if (ext === 'pdf') return 'pdf';
-    if (['zip','rar','7z','tar','gz'].includes(ext)) return 'archive';
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'archive';
     return null;
   };
 
@@ -111,90 +111,42 @@ export default function Home() {
 
     // 检查是否有预览权限
     if (!userPerms?.preview) {
-        setAlistMsg('❌ 您没有在线预览的权限');
-        return false;
+      setAlistMsg('❌ 您没有在线预览的权限');
+      return false;
     }
 
-    setPreviewItemMeta({ name: item.name, filePath, sign: item.sign, size: item.size });
-    setPreviewLoading(true);
+    setPreviewItemMeta({ name: item.name, filePath, sign: item.sign, size: item.size, type });
+    setPreviewStarted(false);
+    setPreviewFile(null);
     setPreviewText('');
-    setPreviewArchiveFiles([]);
+    return true;
+  };
+
+  const loadPreviewContent = async () => {
+    if (!previewItemMeta || !previewItemMeta.type) return;
+    const { name, filePath, sign, size, type } = previewItemMeta;
+
+    setPreviewLoading(true);
+    setPreviewStarted(true);
+    setPreviewText('');
+
+    // 记录预览日志
+    logUserAction('预览', filePath);
 
     const prov = alistProvider.toLowerCase();
-    const isBaidu = prov.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
+    const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
 
     try {
       if (type === 'archive') {
-         const ext = item.name.split('.').pop()?.toLowerCase();
-         if (ext === 'zip') {
-             if ((item.size || 0) > 50 * 1024 * 1024) {
-                const limitMb = ((item.size||0)/1024/1024).toFixed(2);
-                setPreviewText("⚠️ 压缩包过大 (" + limitMb + " MB)\n纯前端解析会占用大量设备内存并可能导致浏览器崩溃。\n超过 50MB 的 ZIP 包请直接下载至本地解压。");
-                setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
-                setPreviewLoading(false);
-                return true;
-             }
-             
-             try {
-                // 1. 获取 raw_url
-                const pRes = await fetch('/api/alist', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'get', path: filePath }),
-                });
-                const d = await pRes.json();
-                if (d.code !== 200 || !d.data?.raw_url) throw new Error(d.message);
-                
-                // 2. Fetch 二进制流并交给 JSZip 解析
-                const zipRes = await fetch(d.data.raw_url);
-                const arrayBuffer = await zipRes.arrayBuffer();
-                const zip = await JSZip.loadAsync(arrayBuffer);
-                
-                const filesList: any[] = [];
-                zip.forEach((relativePath, zipEntry) => {
-                    const parts = relativePath.split('/');
-                    // 仅展示顶级文件和目录
-                    if (parts.length === 1 || (parts.length === 2 && zipEntry.dir)) {
-                        filesList.push({
-                            name: zipEntry.dir ? parts[0] : relativePath,
-                            is_dir: zipEntry.dir,
-                            size: (zipEntry as any)._data?.uncompressedSize || 0
-                        });
-                    }
-                });
-                
-                // 去重目录 (JSZip可能会重复目录枚举)
-                const uniqueFiles = Array.from(new Map(filesList.map(f => [f.name, f])).values());
-                
-                // 排序：文件夹在前，文件在后，同类按字母数字排序
-                uniqueFiles.sort((a, b) => {
-                  if (a.is_dir && !b.is_dir) return -1;
-                  if (!a.is_dir && b.is_dir) return 1;
-                  return a.name.localeCompare(b.name, undefined, { numeric: true });
-                });
-                
-                setPreviewArchiveFiles(uniqueFiles);
-                setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
-             } catch (err: any) {
-                setPreviewText("⚠️ ZIP 解析失败或拉取跨域被阻止：\n" + (err.message || String(err)));
-                setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
-             }
-         } else {
-             // rar, 7z 等
-             setPreviewText("⚠️ 不支持的纯前端解析格式: " + (ext?.toUpperCase() || '') + "\n浏览器环境下纯原生仅支持解包 ZIP 格式档案。\n请点击上方下载按钮下载后使用本地软件解压。");
-             setPreviewFile({ name: item.name, url: '', type, filePath, sign: item.sign, size: item.size });
-         }
-         
-         setPreviewLoading(false);
-         return true;
+        const ext = name.split('.').pop()?.toLowerCase();
+        setPreviewText(`⚠️ 不支持前端解析格式: ${ext?.toUpperCase() || '未知'}\n为保证浏览稳定性，系统已将提取引擎卸载。\n请点击底部下载按钮直接下载，如有特殊需求请联系系统维护者。`);
+        setPreviewFile({ name, url: '', type, filePath, sign, size });
+        setPreviewLoading(false);
+        return true;
       }
 
       // 获取文件直链
-      const res = await fetch('/api/alist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get', path: filePath }),
-      });
+      const res = await fetchAlist({ action: 'get', path: filePath });
       const data = await res.json();
       if (data.code !== 200 || !data.data?.raw_url) {
         setAlistMsg('❌ 获取文件预览链接失败');
@@ -203,27 +155,23 @@ export default function Home() {
       }
 
       let previewUrl = data.data.raw_url;
+      const isActuallyBaidu = isBaidu || previewUrl.includes('baidupcs.com') || previewUrl.includes('baidu.com');
 
-      // 百度网盘需要走代理（对需要直接获取内容的 text，使用服务器代理才能绕过 CORS）
-      if (isBaidu && type === 'text') {
-         previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
-         if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
-         const ccStr = getCustomConfig();
-         if (ccStr) previewUrl += `&c=${btoa(encodeURIComponent(JSON.stringify(ccStr)))}`;
-      } else if (isBaidu) {
-         if ((item.size || 0) >= SIZE_THRESHOLD) {
-            previewUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(previewUrl)}`;
-         } else {
-            previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
-            if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
-            const ccStr = getCustomConfig();
-            if (ccStr) previewUrl += `&c=${btoa(encodeURIComponent(JSON.stringify(ccStr)))}`;
-         }
+      // 跨域代理方案 (解决 CORS & 防盗链问题)
+      if (isActuallyBaidu && (size || 0) >= SIZE_THRESHOLD) {
+        // CF 边缘节点加速代理 (仅限百度大文件预览)
+        previewUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(previewUrl)}`;
+      } else if ((size || 0) < SIZE_THRESHOLD || isActuallyBaidu) {
+        // 本地服务端代理 (支持极小文件或百度网盘所有文件预览)
+        previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}&preview=1`;
+        if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
+        const ccObj = getCustomConfig();
+        if (ccObj) previewUrl += `&c=${btoa(JSON.stringify(ccObj))}`;
       }
 
       // 文本文件需要 fetch 内容
       if (type === 'text') {
-        if ((item.size || 0) > 2 * 1024 * 1024) {
+        if ((size || 0) > 2 * 1024 * 1024) {
           setPreviewText('⚠️ 文件超过 2MB，无法在线预览。请下载后查看。');
         } else {
           try {
@@ -236,14 +184,28 @@ export default function Home() {
         }
       }
 
-      setPreviewFile({ name: item.name, url: previewUrl, type, filePath, sign: item.sign, size: item.size });
+      setPreviewFile({ name, url: previewUrl, type, filePath, sign, size });
       setPreviewLoading(false);
       return true;
-    } catch {
-      setAlistMsg('❌ 预览加载失败');
+    } catch (err: any) {
+      setPreviewText(`❌ 预览加载出错: ${err.message || '未知错误'}`);
       setPreviewLoading(false);
       return false;
     }
+  };
+
+  const logUserAction = async (action_type: string, action_item: string) => {
+    try {
+      await fetch('/api/log-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: username || '游客',
+          action_type,
+          action_item
+        })
+      });
+    } catch { }
   };
 
   const getAlistBase = () => {
@@ -326,6 +288,18 @@ export default function Home() {
           }).catch(() => { });
         });
     }
+
+    // 获取公共设置
+    fetch('/api/global-settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data && typeof data.disableThirdDownload === 'boolean') {
+          setGlobalDisableThird(data.disableThirdDownload);
+        }
+      })
+      .catch(() => { });
+
+
   }, []);
 
   // Token 存在时自动加载目录
@@ -347,7 +321,7 @@ export default function Home() {
   const handleLogin = async () => {
     const uname = loginUsername.trim();
     const pwd = loginPassword.trim();
-    if (!uname || !pwd) { setAuthError('请填写用户名和密码'); return; }
+    if (!uname || !pwd) { setAuthError('请填写用户名及访问密钥'); return; }
     setAuthLoading(true);
     setAuthError(null);
     try {
@@ -436,16 +410,18 @@ export default function Home() {
 
   // === 下载逻辑 ===
   const alistDirectDownload = (filePath: string, fileSign?: string) => {
+    logUserAction('直连下载', filePath);
     const url = fileSign ? `${getAlistBase()}/d${filePath}?sign=${fileSign}` : `${getAlistBase()}/d${filePath}`;
     window.open(url, '_blank');
   };
 
   const alistProxyDownload = (filePath: string, fileName: string) => {
+    logUserAction('代理下载', filePath);
     let downloadUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
     if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
     const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
     if (ccConfigStr) {
-      downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
+      downloadUrl += `&c=${btoa(ccConfigStr)}`;
     }
     const a = document.createElement('a');
     a.href = downloadUrl;
@@ -470,8 +446,8 @@ export default function Home() {
       const filePath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
       // Use directory-level provider from AList API (data.data.provider)
       const prov = alistProvider.toLowerCase();
-      const isBaidu = prov.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
-      const isAliyun = prov.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
+      const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
+      const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
 
       // 检测是否可预览
       const previewType = getPreviewType(item.name);
@@ -483,7 +459,7 @@ export default function Home() {
         openPreview(item, filePath);
         return;
       }
-      
+
       if (isBaidu && (item.size || 0) >= SIZE_THRESHOLD) {
         setAlistDownloadModal({ name: item.name, filePath, sign: item.sign });
       } else if (isBaidu) {
@@ -499,9 +475,9 @@ export default function Home() {
 
   const alistBatchDownload = () => {
     const prov = alistProvider.toLowerCase();
-    const isBaidu = prov.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
-    const isAliyun = prov.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
-    
+    const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
+    const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
+
     alistSelected.forEach(name => {
       const file = alistFiles.find((f: any) => f.name === name);
       const filePath = `${alistPath.replace(/\/+$/, '')}/${name}`;
@@ -547,7 +523,7 @@ export default function Home() {
     try {
       const res = await fetchAlist({ action: 'remove', path: alistPath, names: [name] });
       const data = await res.json();
-      if (data.code === 200) { setAlistMsg('✅ 删除成功'); alistListDir(alistPath); }
+      if (data.code === 200) { setAlistMsg('✅ 删除成功'); logUserAction('删除', `${alistPath.replace(/\/+$/, '')}/${name}`); alistListDir(alistPath); }
       else setAlistMsg(`❌ ${data.message}`);
     } catch { setAlistMsg('❌ 接口异常'); }
   };
@@ -558,7 +534,7 @@ export default function Home() {
     try {
       const res = await fetchAlist({ action: 'rename', path: filePath, newName: alistNewName.trim() });
       const data = await res.json();
-      if (data.code === 200) { setAlistMsg('✅ 重命名成功'); setAlistRenaming(null); setAlistNewName(''); alistListDir(alistPath); }
+      if (data.code === 200) { setAlistMsg('✅ 重命名成功'); logUserAction('重命名', `${filePath} -> ${alistNewName.trim()}`); setAlistRenaming(null); setAlistNewName(''); alistListDir(alistPath); }
       else setAlistMsg(`❌ ${data.message}`);
     } catch { setAlistMsg('❌ 接口异常'); }
   };
@@ -592,7 +568,7 @@ export default function Home() {
       });
 
       const uploadData = await uploadRes.json();
-      if (uploadData.code === 200) { setAlistMsg('✅ 上传成功'); setAlistUploadFile(null); alistListDir(alistPath); }
+      if (uploadData.code === 200) { setAlistMsg('✅ 上传成功'); logUserAction('上传', uploadPath); setAlistUploadFile(null); alistListDir(alistPath); }
       else setAlistMsg(`❌ ${uploadData.message}`);
     } catch (e: any) { setAlistMsg(`❌ 上传失败: ${e.message}`); }
     finally { setAlistUploading(false); }
@@ -607,7 +583,12 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.users) setAdminUsers(data.users);
-      if (data.settings) setAdminSettings(data.settings);
+      if (data.settings) {
+        setAdminSettings(data.settings);
+        if (typeof data.settings.disableThirdDownload === 'boolean') {
+          setGlobalDisableThird(data.settings.disableThirdDownload);
+        }
+      }
     } catch { }
   };
 
@@ -623,7 +604,12 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) { setAdminMsg(`❌ ${data.error}`); return; }
       if (data.users) setAdminUsers(data.users);
-      if (data.settings) setAdminSettings(data.settings);
+      if (data.settings) {
+        setAdminSettings(data.settings);
+        if (typeof data.settings.disableThirdDownload === 'boolean') {
+           setGlobalDisableThird(data.settings.disableThirdDownload);
+        }
+      }
       setAdminMsg('✅ 操作成功');
     } catch { setAdminMsg('❌ 接口异常'); }
   };
@@ -820,7 +806,7 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <input
                   type="password"
-                  placeholder="新超级管理员密码"
+                  placeholder="新管理员密码"
                   id="admin-new-password"
                   className="flex-1 rounded px-2.5 py-2 text-[11px] outline-none"
                   style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
@@ -834,21 +820,31 @@ export default function Home() {
                   }}
                   className="px-4 py-2 bg-red-500/80 text-white text-[11px] font-bold rounded hover:opacity-100 transition-opacity"
                 >
-                  修改密码
+                  修改密钥
                 </button>
               </div>
             </div>
 
+
             {/* 全局设置 */}
             <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>全局设置</div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>启用游客模式 · {adminSettings.enableGuestMode ? '已开启' : '已关闭'}</span>
                 <button
                   onClick={() => adminAction('updateSettings', { settings: { enableGuestMode: !adminSettings.enableGuestMode } })}
                   className={`w-10 h-5 rounded-full transition-colors relative ${adminSettings.enableGuestMode ? 'bg-emerald-500' : 'bg-zinc-700'}`}
                 >
                   <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${adminSettings.enableGuestMode ? 'left-5' : 'left-0.5'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>禁用边缘加速下载 (方式3) · {adminSettings.disableThirdDownload ? '已禁用' : '已启用'}</span>
+                <button
+                  onClick={() => adminAction('updateSettings', { settings: { disableThirdDownload: !adminSettings.disableThirdDownload } })}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${adminSettings.disableThirdDownload ? 'bg-red-500' : 'bg-zinc-700'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${adminSettings.disableThirdDownload ? 'left-5' : 'left-0.5'}`} />
                 </button>
               </div>
             </div>
@@ -903,8 +899,8 @@ export default function Home() {
                           const viewOff = perm.key !== 'view' && !uPerms.view;
                           return (
                             <label key={perm.key} className={`flex items-center gap-1.5 cursor-pointer ${viewOff ? 'opacity-30 pointer-events-none' : 'hover:opacity-80'}`}>
-                              <input 
-                                type="checkbox" 
+                              <input
+                                type="checkbox"
                                 checked={isOn}
                                 disabled={viewOff}
                                 onChange={(e) => {
@@ -939,7 +935,7 @@ export default function Home() {
                   />
                   <input
                     type="password" value={newUserPass} onChange={e => setNewUserPass(e.target.value)}
-                    placeholder="密码" className="flex-1 rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                    placeholder="密钥" className="flex-1 rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   />
                 </div>
                 <div className="flex gap-2">
@@ -947,12 +943,12 @@ export default function Home() {
                     value={newUserRole} onChange={e => setNewUserRole(e.target.value as 'manager' | 'guest')}
                     className="flex-1 rounded px-2.5 py-2 text-[11px] outline-none border-accent" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   >
-                    <option value="manager">管理员（可上传/管理）</option>
+                    <option value="manager">核心成员（可上传/管理）</option>
                     <option value="guest">游客（仅浏览/下载）</option>
                   </select>
                   <button
                     onClick={() => {
-                      if (!newUserName.trim() || !newUserPass.trim()) { setAdminMsg('❌ 用户名和密码不能为空'); return; }
+                      if (!newUserName.trim() || !newUserPass.trim()) { setAdminMsg('❌ 用户名和密钥不能为空'); return; }
                       adminAction('add', { username: newUserName.trim(), password: newUserPass.trim(), role: newUserRole });
                       setNewUserName(''); setNewUserPass('');
                     }}
@@ -1042,20 +1038,20 @@ export default function Home() {
               </div>
               <button onClick={() => setShowManual(false)} className="hover:opacity-100 opacity-60 transition-opacity p-2 -mr-2 text-lg">✕</button>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
               <section className="space-y-4">
                 <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">1. 关于下载限制与本站优势</h4>
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
                   <p className="text-xs leading-relaxed text-zinc-100">
-                    <span className="font-bold text-pink-400">为什么会有这么多复杂的下载方式？</span><br/>
+                    <span className="font-bold text-pink-400">为什么会有这么多复杂的下载方式？</span><br />
                     百度网盘对于大于 <span className="font-bold text-white">20MB</span> 的文件，会强制要求客户端发送特定的 <code className="text-[10px] bg-black/30 px-1 py-0.5 rounded text-pink-300">User-Agent: pan.baidu.com</code> 才能下载，否则会直接阻断（比如返回 403 错误）。
                   </p>
                   <div className="h-px w-full bg-white/10"></div>
                   <p className="text-xs leading-relaxed text-zinc-100">
-                    <span className="font-bold text-emerald-400">STA-PAN 的最大优势：对手机端极度友好！</span><br/>
+                    <span className="font-bold text-emerald-400">STA-PAN 的最大优势：对手机端极度友好！</span><br />
                     如果你直接使用AList，也就是之前的那个版本，手机上通常只能靠专门抓包或安装带有改 UA 功能的特殊浏览器/插件才能下载大文件。
-                    <br/>而在本站：我们通过 <span className="font-bold text-blue-300">Cloudflare 代理</span> 或是 <span className="font-bold text-blue-300">服务器中转</span>，在云端帮你**自动补齐了 UA**，所以你在手机上可以像下普通文件一样，直接浏览器点击完成极速下载，完全**免除任何插件配置。**只不过会牺牲速度，但总比在手机上下不了好
+                    <br />而在本站：我们通过 <span className="font-bold text-blue-300">Cloudflare 代理</span> 或是 <span className="font-bold text-blue-300">服务器中转</span>，在云端帮你**自动补齐了 UA**，所以你在手机上可以像下普通文件一样，直接浏览器点击完成极速下载，完全**免除任何插件配置。**只不过会牺牲速度，但总比在手机上下不了好
                   </p>
                 </div>
               </section>
@@ -1067,7 +1063,7 @@ export default function Home() {
                   {/* CF 边缘加速 */}
                   <div className="p-4 rounded-2xl bg-blue-600/10 border border-blue-500/30">
                     <div className="flex items-center gap-2 mb-2">
-                       <span className="text-sm">☁️</span>
+                      <span className="text-sm">☁️</span>
                       <span className="text-sm font-black uppercase text-blue-100">Cloudflare 边缘加速</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
@@ -1084,7 +1080,7 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* IDM 直链 */}
                   <div className="p-4 rounded-2xl bg-emerald-600/10 border border-emerald-500/30">
                     <div className="flex items-center gap-2 mb-2">
@@ -1146,8 +1142,8 @@ export default function Home() {
                   <div className="flex items-start gap-4">
                     <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">3</div>
                     <div className="flex-1 space-y-3">
-                       <p className="text-xs text-zinc-100">在底部找到 <span className="font-bold text-white uppercase tracking-tighter">“手动添加任务时使用的 UA”</span>，复制填写：</p>
-                       <code className="block p-3 rounded-xl bg-black border border-white/20 text-sm font-mono text-pink-400 select-all text-center">pan.baidu.com</code>
+                      <p className="text-xs text-zinc-100">在底部找到 <span className="font-bold text-white uppercase tracking-tighter">“手动添加任务时使用的 UA”</span>，复制填写：</p>
+                      <code className="block p-3 rounded-xl bg-black border border-white/20 text-sm font-mono text-pink-400 select-all text-center">pan.baidu.com</code>
                     </div>
                   </div>
                   <div className="flex items-start gap-4">
@@ -1180,15 +1176,15 @@ export default function Home() {
               {/* 温馨提示 */}
               <div className="p-5 rounded-3xl bg-accent/10 border border-accent/30 text-center shadow-lg">
                 <p className="text-xs text-zinc-100 leading-relaxed">
-                  💖 服务器及网站由网络部同学搭建及公益维护。<br/>
-                  <span className="text-white font-black">推荐优先使用 IDM等插件直链方案</span>，<br/>
+                  💖 服务器及网站由网络部同学搭建及公益维护。<br />
+                  <span className="text-white font-black">推荐优先使用 IDM等插件直链方案</span>，<br />
                   将有限的资源留给更需要的手机端用户。
                 </p>
               </div>
             </div>
 
             <div className="p-4 border-t" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
-              <button 
+              <button
                 onClick={() => setShowManual(false)}
                 className="w-full py-2.5 rounded-xl bg-accent text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-lg shadow-accent/20"
               >
@@ -1200,7 +1196,7 @@ export default function Home() {
       )}
 
       {/* 文件预览弹窗 */}
-      {(previewFile || previewLoading) && previewItemMeta && (
+      {previewItemMeta && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-xl" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); }}>
           <div className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-3xl overflow-hidden animate-in shadow-2xl border border-white/10" style={{ background: 'var(--bg-app)' }} onClick={e => e.stopPropagation()}>
             {/* 顶部栏 */}
@@ -1217,13 +1213,13 @@ export default function Home() {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {((previewFile || previewLoading) && previewItemMeta) && (
+                {previewItemMeta && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       const prov = alistProvider.toLowerCase();
-                      const isBaidu = prov.includes('baidu') || alistPath.startsWith('/百度网盘') || alistPath.startsWith('/baidu');
-                      const isAliyun = prov.includes('aliyun') || alistPath.startsWith('/阿里云盘') || alistPath.startsWith('/aliyun');
+                      const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
+                      const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
                       if (isBaidu && (previewItemMeta.size || 0) >= SIZE_THRESHOLD) {
                         setAlistDownloadModal({ name: previewItemMeta.name, filePath: previewItemMeta.filePath, sign: previewItemMeta.sign });
                       } else if (isBaidu || isAliyun) {
@@ -1238,14 +1234,23 @@ export default function Home() {
                     ⬇️ 下载
                   </button>
                 )}
-                <button onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); }} className="hover:opacity-100 opacity-60 transition-opacity p-2 text-lg">✕</button>
+                <button onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setPreviewStarted(false); }} className="hover:opacity-100 opacity-60 transition-opacity p-2 text-lg">✕</button>
               </div>
             </div>
-            
+
             {/* 预览主体 */}
             <div className="flex-1 overflow-auto flex items-center justify-center p-4" style={{ background: '#0a0a0a' }}>
-              {previewLoading && !previewFile ? (
+              {!previewStarted ? (
+                <div className="flex flex-col items-center justify-center gap-4">
+                  <div className="text-zinc-500 text-sm">点击下方按钮开始加载并预览文件</div>
+                  <button onClick={loadPreviewContent} className="px-6 py-2.5 bg-accent hover:opacity-80 text-white font-bold rounded-lg shadow-[0_0_15px_rgba(236,72,153,0.3)] transition-all">
+                    ▶️ 点击加载预览
+                  </button>
+                </div>
+              ) : previewLoading && !previewFile ? (
                 <div className="text-zinc-400 text-sm animate-pulse">⏳ 正在加载预览...</div>
+              ) : previewText && previewText.startsWith('❌') ? (
+                <div className="text-red-400 text-sm p-6 text-center">{previewText}</div>
               ) : previewFile?.type === 'image' ? (
                 <img src={previewFile.url} alt={previewFile.name} className="max-w-full max-h-[78vh] object-contain rounded-lg shadow-2xl" />
               ) : previewFile?.type === 'video' ? (
@@ -1257,32 +1262,9 @@ export default function Home() {
                   {previewText || '加载中...'}
                 </pre>
               ) : previewFile?.type === 'archive' ? (
-                <div className="w-full h-full overflow-auto text-xs text-zinc-300 p-6 rounded-xl" style={{ background: '#111', maxHeight: '78vh' }}>
+                <div className="w-full h-full flex flex-col items-center justify-center items-center overflow-auto text-xs text-zinc-300 p-6 rounded-xl" style={{ background: '#111', maxHeight: '78vh' }}>
                   <div className="font-bold text-lg mb-4 text-emerald-400">📦 压缩包内容预览</div>
-                  {previewArchiveFiles.length > 0 ? (
-                    <div className="space-y-2">
-                       <div className="grid grid-cols-12 gap-2 text-zinc-500 border-b border-zinc-800 pb-2 mb-2 font-bold px-2">
-                         <div className="col-span-8">文件名 Name</div>
-                         <div className="col-span-4 text-right">大小 Size</div>
-                       </div>
-                       {previewArchiveFiles.map((af, i) => (
-                         <div key={i} className="grid grid-cols-12 gap-2 items-center hover:bg-white/5 p-2 rounded transition-colors cursor-pointer group">
-                           <div className="col-span-8 flex items-center gap-2 truncate">
-                             <span className="text-sm opacity-80">{af.is_dir ? '📁' : '📄'}</span>
-                             <span className={af.is_dir ? 'text-blue-400 font-bold' : 'text-zinc-300'}>{af.name}</span>
-                           </div>
-                           <div className="col-span-4 text-right text-zinc-500 font-mono text-[10px]">
-                             {!af.is_dir && formatSize(af.size)}
-                           </div>
-                         </div>
-                       ))}
-                       <div className="mt-6 text-zinc-500 text-center text-xs opacity-60">
-                         仅支持查看压缩包顶级根目录。<br/>如需解压具体文件或查看多层内部结构，请点击上方按钮下载至本地。
-                       </div>
-                    </div>
-                  ) : (
-                    <div className="text-zinc-400 whitespace-pre-wrap">{previewText}</div>
-                  )}
+                  <div className="text-zinc-400 whitespace-pre-wrap text-center">{previewText}</div>
                 </div>
               ) : null}
             </div>
@@ -1338,32 +1320,42 @@ export default function Home() {
               <button onClick={() => setAlistDownloadModal(null)} className="hover:opacity-100 opacity-60 text-lg transition-opacity">✕</button>
             </div>
             <div className="space-y-2">
-              {/* Cloudflare Workers 边缘代理 (首选) */}
+              {/* Cloudflare Workers 边缘代理 (方法1) */}
               <button
                 onClick={() => {
-                  setAlistMsg('⏳ 正在连接 cf.ryantan.fun 代理节点，请稍候...');
+                  setAlistMsg('⏳ 正在连接 cf.ryantan.fun 代理节点...');
                   fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
                     .then(r => r.json())
                     .then(data => {
                       if (data.code === 200 && data.data?.raw_url) {
                         const cfUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(data.data.raw_url)}`;
-                        setAlistMsg('✅ 获取直链成功，正在跳转下载...');
                         window.location.href = cfUrl;
                       } else {
-                        setAlistMsg('❌ 获取直链失败，无法走 CF 代理');
+                        setAlistMsg('❌ 获取直链失败');
                       }
                     }).catch(() => setAlistMsg('❌ 接口异常'));
                   setAlistDownloadModal(null);
                 }}
-                className="w-full flex items-center justify-between border rounded-lg px-3 py-2.5 text-left border-accent bg-accent-bg"
+                className="w-full flex items-center justify-between border rounded-xl px-4 py-3 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-sm group"
+                style={{ 
+                  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%)',
+                  borderColor: 'rgba(59, 130, 246, 0.3)'
+                }}
               >
                 <div>
-                  <div className="text-[11px] font-bold text-blue-400">🌟 Cloudflare 边缘加速 (强烈推荐)</div>
-                  <div className="text-[10px] text-zinc-500">通过海外节点无痕中转，不消耗公益服务器流量</div>
+                  <div className="text-[12px] font-bold pb-1 text-blue-400 group-hover:text-blue-300 transition-colors">
+                    🌟 Cloudflare 边缘加速 (强烈推荐)
+                  </div>
+                  <div className="text-[10px] text-zinc-500">通过海外节点无痕中转，全球加速，不耗服务器流量</div>
+                </div>
+                <div className="text-blue-500/30 group-hover:text-blue-400 transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                  </svg>
                 </div>
               </button>
 
-              {/* 复制直链 */}
+              {/* 复制直链 (方法2) */}
               <button
                 onClick={() => {
                   fetchAlist({ action: 'get', path: alistDownloadModal.filePath })
@@ -1371,13 +1363,12 @@ export default function Home() {
                     .then(data => {
                       if (data.code === 200 && data.data?.raw_url) {
                         navigator.clipboard.writeText(data.data.raw_url);
-                        setAlistMsg('✅ 百度CDN真实直链已复制！粘贴到迅雷/IDM即可满速下载（记得配好UA: pan.baidu.com）');
+                        setAlistMsg('✅ 百度CDN真实直链已复制！粘贴到迅雷/IDM即可满速下载');
                       } else {
-                        // fallback: 用 AList /d/ 地址
                         const sign = data.code === 200 ? (data.data?.sign || '') : '';
                         const url = sign ? `${getAlistBase()}/d${alistDownloadModal!.filePath}?sign=${sign}` : `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
                         navigator.clipboard.writeText(url);
-                        setAlistMsg('✅ 链接已复制（备用地址）');
+                        setAlistMsg('✅ 链接已复制（备用）');
                       }
                     }).catch(() => {
                       const url = `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
@@ -1386,17 +1377,27 @@ export default function Home() {
                     });
                   setAlistDownloadModal(null);
                 }}
-                className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                className="w-full flex items-center justify-between rounded-xl px-4 py-3 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] border shadow-sm group"
+                style={{ 
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)',
+                  borderColor: 'rgba(16, 185, 129, 0.3)'
+                }}
               >
                 <div>
-                  <div className="text-[11px] font-bold text-emerald-400">🚀 复制直链（迅雷/IDM/NDM）</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>复制百度CDN原始地址，搭配IDM/NDM配好UA可达50MB/s。不消耗服务器流量</div>
+                  <div className="text-[12px] font-bold text-emerald-200 group-hover:text-emerald-100 transition-colors">🚀 复制直链 (迅雷/IDM/NDM)</div>
+                  <div className="text-[10px] text-zinc-300 group-hover:text-zinc-200 transition-colors">搭配 IDM/NDM 并设置 UA 为 pan.baidu.com 可满速</div>
+                </div>
+                <div className="text-emerald-500/30 group-hover:text-emerald-400 transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                  </svg>
                 </div>
               </button>
 
-              {/* 自动加UA直接下载 */}
+              {/* 自动加UA直接下载 (方法3 - 可禁用) */}
               <button
                 onClick={() => {
+                  if (globalDisableThird) return;
                   let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal.filePath)}`;
                   if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
                   const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
@@ -1406,22 +1407,26 @@ export default function Home() {
                   window.open(downloadUrl, '_blank');
                   setAlistDownloadModal(null);
                 }}
-                className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                disabled={globalDisableThird}
+                className={`w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left transition-all ${globalDisableThird ? 'bg-[#1a1a1a] border-zinc-800 opacity-60 cursor-not-allowed' : 'border-zinc-700 bg-black/40 hover:border-pink-500/50'}`}
+                style={!globalDisableThird ? { border: '1px solid var(--border-color)', color: 'var(--text-primary)' } : {}}
               >
                 <div>
-                  <div className="text-[11px] font-bold text-pink-400">🔥 服务器中转下载 (备用)</div>
+                  <div className={`text-[11px] font-bold ${globalDisableThird ? 'text-zinc-500' : 'text-pink-400'}`}>
+                    🔥 服务器中转下载 {globalDisableThird ? '(已被系统禁用)' : '(备用)'}
+                  </div>
                   <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>消耗服务器流量，仅在方案一失效时使用</div>
                 </div>
               </button>
 
-              {/* ⚡ 302 直链 */}
+              {/* ⚡ 302 直链 (方法4) */}
               <button
                 onClick={() => { alistDirectDownload(alistDownloadModal.filePath, alistDownloadModal.sign); setAlistDownloadModal(null); }}
-                className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left border border-zinc-700 bg-black/40 hover:border-zinc-500 transition-colors"
               >
                 <div>
-                  <div className="text-[11px] font-bold" style={{ color: 'var(--text-primary)' }}>⚡ 302直链跳转（不加UA）</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>直接跳转百度CDN，大文件可能被拦截阻断</div>
+                  <div className="text-[11px] font-bold text-zinc-300">⚡ 302 直链跳转（不加 UA）</div>
+                  <div className="text-[10px] text-zinc-500">直接跳转百度 CDN，大文件可能被拦截阻断</div>
                 </div>
               </button>
             </div>
