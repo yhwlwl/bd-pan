@@ -22,6 +22,7 @@ export interface UserPermissions {
 export interface GlobalSettings {
     enableGuestMode: boolean;
     permissions?: Record<string, UserPermissions>;
+    disableThirdDownload?: boolean;
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -161,7 +162,7 @@ export async function updateAdminPassword(newPassword: string): Promise<{ ok: bo
 // === 全局设置 ===
 
 export async function getSettings(): Promise<GlobalSettings> {
-    const defaults: GlobalSettings = { enableGuestMode: true, permissions: {} };
+    const defaults: GlobalSettings = { enableGuestMode: true, permissions: {}, disableThirdDownload: false };
     if (!supabase) return defaults;
 
     const { data, error } = await supabase
@@ -174,6 +175,7 @@ export async function getSettings(): Promise<GlobalSettings> {
     return {
         enableGuestMode: typeof val.enableGuestMode === 'boolean' ? val.enableGuestMode : (typeof val.allowGuestDownload === 'boolean' ? val.allowGuestDownload : true),
         permissions: (val.permissions || {}) as Record<string, UserPermissions>,
+        disableThirdDownload: typeof val.disableThirdDownload === 'boolean' ? val.disableThirdDownload : false,
     };
 }
 

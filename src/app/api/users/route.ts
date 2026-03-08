@@ -7,7 +7,7 @@ import type { Role, UserPermissions } from '../../../lib/users';
 export async function GET(request: Request) {
     const auth = requireRole(request.headers.get('authorization') || undefined, 'admin');
     if (!auth) {
-        return NextResponse.json({ error: '需要管理员权限' }, { status: 401 });
+        return NextResponse.json({ error: '权限不足，无法访问核心组件' }, { status: 401 });
     }
 
     return NextResponse.json({
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     const auth = requireRole(request.headers.get('authorization') || undefined, 'admin');
     if (!auth) {
-        return NextResponse.json({ error: '需要管理员权限' }, { status: 401 });
+        return NextResponse.json({ error: '权限不足，申请被拦截' }, { status: 401 });
     }
 
     try {
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
             }
 
             case 'updateSettings': {
-                const { settings } = body as { settings: { enableGuestMode?: boolean } };
+                const { settings } = body as { settings: any };
                 await updateSettings(settings);
                 return NextResponse.json({ ok: true, settings: await getSettings(), users: await getUsers() });
             }
