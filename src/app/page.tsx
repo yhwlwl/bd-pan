@@ -409,14 +409,14 @@ export default function Home() {
   };
 
   // === 下载逻辑 ===
-  const alistDirectDownload = (filePath: string, fileSign?: string) => {
-    logUserAction('直连下载', filePath);
+  const alistDirectDownload = (filePath: string, fileSign?: string, actionType: string = '直连下载') => {
+    logUserAction(actionType, filePath);
     const url = fileSign ? `${getAlistBase()}/d${filePath}?sign=${fileSign}` : `${getAlistBase()}/d${filePath}`;
     window.open(url, '_blank');
   };
 
-  const alistProxyDownload = (filePath: string, fileName: string) => {
-    logUserAction('代理下载', filePath);
+  const alistProxyDownload = (filePath: string, fileName: string, actionType: string = '代理下载') => {
+    logUserAction(actionType, filePath);
     let downloadUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
     if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
     const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
@@ -464,11 +464,11 @@ export default function Home() {
         setAlistDownloadModal({ name: item.name, filePath, sign: item.sign });
       } else if (isBaidu) {
         // 百度网盘小文件也走代理下载（需要 UA: pan.baidu.com）
-        alistProxyDownload(filePath, item.name);
+        alistProxyDownload(filePath, item.name, '下载 - 小文件直链下载');
       } else if (isAliyun) {
-        alistProxyDownload(filePath, item.name);
+        alistProxyDownload(filePath, item.name, '下载 - 阿里云盘直链下载');
       } else {
-        alistDirectDownload(filePath, item.sign);
+        alistDirectDownload(filePath, item.sign, '下载 - 普通直链下载');
       }
     }
   };
@@ -1324,6 +1324,7 @@ export default function Home() {
               <button
                 onClick={() => {
                   setAlistMsg('⏳ 正在连接 cf.ryantan.fun 代理节点...');
+                  logUserAction('下载 - Cloudflare 边缘加速', alistDownloadModal.filePath);
                   fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
                     .then(r => r.json())
                     .then(data => {
@@ -1358,6 +1359,7 @@ export default function Home() {
               {/* 复制直链 (方法2) */}
               <button
                 onClick={() => {
+                  logUserAction('下载 - 复制直链', alistDownloadModal.filePath);
                   fetchAlist({ action: 'get', path: alistDownloadModal.filePath })
                     .then(r => r.json())
                     .then(data => {
@@ -1398,6 +1400,7 @@ export default function Home() {
               <button
                 onClick={() => {
                   if (globalDisableThird) return;
+                  logUserAction('下载 - 服务器中转下载', alistDownloadModal.filePath);
                   let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal.filePath)}`;
                   if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
                   const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
@@ -1421,7 +1424,7 @@ export default function Home() {
 
               {/* ⚡ 302 直链 (方法4) */}
               <button
-                onClick={() => { alistDirectDownload(alistDownloadModal.filePath, alistDownloadModal.sign); setAlistDownloadModal(null); }}
+                onClick={() => { alistDirectDownload(alistDownloadModal.filePath, alistDownloadModal.sign, '下载 - 302 直链跳转 (不加 UA)'); setAlistDownloadModal(null); }}
                 className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left border border-zinc-700 bg-black/40 hover:border-zinc-500 transition-colors"
               >
                 <div>
