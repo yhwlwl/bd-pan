@@ -23,6 +23,7 @@ export interface GlobalSettings {
     enableGuestMode: boolean;
     permissions?: Record<string, UserPermissions>;
     disableThirdDownload?: boolean;
+    downloadChannel?: 'ecs' | 'frp';  // 'ecs' = 成都云服务器优先, 'frp' = 原 NAS(frp) 优先
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -176,6 +177,7 @@ export async function getSettings(): Promise<GlobalSettings> {
         enableGuestMode: typeof val.enableGuestMode === 'boolean' ? val.enableGuestMode : (typeof val.allowGuestDownload === 'boolean' ? val.allowGuestDownload : true),
         permissions: (val.permissions || {}) as Record<string, UserPermissions>,
         disableThirdDownload: typeof val.disableThirdDownload === 'boolean' ? val.disableThirdDownload : false,
+        downloadChannel: (val.downloadChannel === 'ecs' || val.downloadChannel === 'frp') ? val.downloadChannel : 'ecs',
     };
 }
 

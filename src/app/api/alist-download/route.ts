@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
-import { getUserPermissions } from '../../../lib/users';
+import { getUserPermissions, getSettings } from '../../../lib/users';
 
-const DEFAULT_ALIST_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
-const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
-const DEFAULT_ALIST_PASSWORD = process.env.ALIST_PASSWORD || '';
+// ECS 成都节点 (主)
+const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'http://8.137.91.213:5244').replace(/\/+$/, '');
+const ECS_USER = process.env.ALIST_USERNAME || '';
+const ECS_PASS = process.env.ALIST_PASSWORD || '';
+// FRP NAS 节点 (备)
+const FRP_URL = (process.env.NEXT_PUBLIC_ALIST_URL_FALLBACK || 'https://frp-gap.com:37492').replace(/\/+$/, '');
+const FRP_USER = process.env.ALIST_USERNAME_FALLBACK || '';
+const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 
 const tokenCache = new Map<string, { token: string; expiry: number }>();
 
@@ -63,9 +68,17 @@ export async function GET(request: Request) {
             }
         }
 
-        const url = customConfig?.url ? customConfig.url.replace(/\/+$/, '') : DEFAULT_ALIST_URL;
-        const aUser = customConfig?.user || DEFAULT_ALIST_USERNAME;
-        const aPass = customConfig?.pass || DEFAULT_ALIST_PASSWORD;
+        let url: string, aUser: string, aPass: string;
+        if (customConfig?.url) {
+            url = customConfig.url.replace(/\/+$/, '');
+            aUser = customConfig.user || '';
+            aPass = customConfig.pass || '';
+        } else {
+            const settings = await getSettings();
+            const channel = settings.downloadChannel || 'ecs';
+            if (channel === 'ecs') { url = ECS_URL; aUser = ECS_USER; aPass = ECS_PASS; }
+            else { url = FRP_URL; aUser = FRP_USER; aPass = FRP_PASS; }
+        }
 
         const token = await getAlistToken(url, aUser, aPass);
         const filename = path.split('/').pop() || 'download';

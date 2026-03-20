@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
-import { getUserPermissions } from '../../../lib/users';
+import { getUserPermissions, getSettings } from '../../../lib/users';
 
-const DEFAULT_ALIST_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
-const DEFAULT_ALIST_USERNAME = process.env.ALIST_USERNAME || '';
-const DEFAULT_ALIST_PASSWORD = process.env.ALIST_PASSWORD || '';
+// ECS 成都节点 (主)
+const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'http://8.137.91.213:5244').replace(/\/+$/, '');
+const ECS_USER = process.env.ALIST_USERNAME || '';
+const ECS_PASS = process.env.ALIST_PASSWORD || '';
+// FRP NAS 节点 (备)
+const FRP_URL = (process.env.NEXT_PUBLIC_ALIST_URL_FALLBACK || 'https://frp-gap.com:37492').replace(/\/+$/, '');
+const FRP_USER = process.env.ALIST_USERNAME_FALLBACK || '';
+const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 
 export async function PUT(request: Request) {
     // 获取当前用户及权限
@@ -24,11 +29,16 @@ export async function PUT(request: Request) {
         const customUser = request.headers.get('x-alist-username');
         const customPass = request.headers.get('x-alist-password');
 
-        const config = {
-            url: customUrl ? customUrl.replace(/\/+$/, '') : DEFAULT_ALIST_URL,
-            user: customUser || DEFAULT_ALIST_USERNAME,
-            pass: customPass || DEFAULT_ALIST_PASSWORD,
-        };
+        let config: { url: string; user: string; pass: string };
+        if (customUrl) {
+            config = { url: customUrl.replace(/\/+$/, ''), user: customUser || '', pass: customPass || '' };
+        } else {
+            const settings = await getSettings();
+            const channel = settings.downloadChannel || 'ecs';
+            config = channel === 'ecs'
+                ? { url: ECS_URL, user: ECS_USER, pass: ECS_PASS }
+                : { url: FRP_URL, user: FRP_USER, pass: FRP_PASS };
+        }
 
         // 1. 获取 AList Token
         const tokenRes = await fetch(`${config.url}/api/auth/login`, {

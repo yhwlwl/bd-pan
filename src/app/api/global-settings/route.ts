@@ -7,7 +7,8 @@ export async function GET() {
     // Expose only public safe settings
     return NextResponse.json({
       disableThirdDownload: settings.disableThirdDownload === true,
-      enableGuestMode: settings.enableGuestMode
+      enableGuestMode: settings.enableGuestMode,
+      downloadChannel: settings.downloadChannel || 'ecs',
     });
   } catch (error: any) {
     return NextResponse.json({ disableThirdDownload: false }, { status: 500 });

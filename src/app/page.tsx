@@ -65,12 +65,14 @@ export default function Home() {
   // 管理面板
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
-  const [adminSettings, setAdminSettings] = useState<{ enableGuestMode: boolean; disableThirdDownload?: boolean; permissions?: Record<string, UserPermissions> }>({ enableGuestMode: true, permissions: {} });
+  const [adminSettings, setAdminSettings] = useState<{ enableGuestMode: boolean; disableThirdDownload?: boolean; downloadChannel?: 'ecs' | 'frp'; permissions?: Record<string, UserPermissions> }>({ enableGuestMode: true, permissions: {}, downloadChannel: 'ecs' });
   const [globalDisableThird, setGlobalDisableThird] = useState(false);
+  const [downloadChannel, setDownloadChannel] = useState<'ecs' | 'frp'>('ecs');
   const [newUserName, setNewUserName] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
   const [newUserRole, setNewUserRole] = useState<'manager' | 'guest'>('manager');
   const [adminMsg, setAdminMsg] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // === 远端 AList 设置（仅本地生效） ===
   const [showSettings, setShowSettings] = useState(false);
@@ -295,6 +297,9 @@ export default function Home() {
       .then(data => {
         if (data && typeof data.disableThirdDownload === 'boolean') {
           setGlobalDisableThird(data.disableThirdDownload);
+        }
+        if (data && (data.downloadChannel === 'ecs' || data.downloadChannel === 'frp')) {
+          setDownloadChannel(data.downloadChannel);
         }
       })
       .catch(() => { });
@@ -543,35 +548,86 @@ export default function Home() {
     if (!alistUploadFile || !userToken) return;
     setAlistUploading(true);
     setAlistMsg(null);
+    setUploadProgress(0);
     try {
       const uploadPath = alistPath.replace(/\/+$/, '') + '/' + alistUploadFile.name;
       const encodedFilePath = uploadPath.split('/').map(encodeURIComponent).join('/');
 
-      const headers: Record<string, string> = {
-        'Authorization': `Bearer ${userToken}`,
-        'File-Path': encodedFilePath,
-        'Content-Type': alistUploadFile.type || 'application/octet-stream',
-        'Content-Length': String(alistUploadFile.size),
-      };
-
-      const cc = getCustomConfig();
-      if (cc) {
-        if (cc.url) headers['x-alist-url'] = cc.url;
-        if (cc.user) headers['x-alist-username'] = cc.user;
-        if (cc.pass) headers['x-alist-password'] = cc.pass;
+      // 1. 尝试直连 ECS 上传（绕过 Vercel，极速）
+      let directSuccess = false;
+      try {
+        const tokenRes = await fetch('/api/alist-token', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${userToken}` },
+        });
+        const tokenData = await tokenRes.json();
+        if (tokenData.token && tokenData.url) {
+          setAlistMsg('🚀 直连云端节点上传中...');
+          const uploadData: any = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', `${tokenData.url}/api/fs/put`);
+            xhr.setRequestHeader('Authorization', tokenData.token);
+            xhr.setRequestHeader('File-Path', encodedFilePath);
+            xhr.setRequestHeader('Content-Type', alistUploadFile!.type || 'application/octet-stream');
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+            };
+            xhr.onload = () => {
+              try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
+            };
+            xhr.onerror = () => reject(new Error('CORS_OR_NETWORK'));
+            xhr.send(alistUploadFile);
+          });
+          if (uploadData.code === 200) {
+            directSuccess = true;
+            setAlistMsg('✅ 极速上传成功 (直连 ECS)');
+            logUserAction('上传(直连)', uploadPath);
+            setAlistUploadFile(null);
+            alistListDir(alistPath);
+          } else {
+            setAlistMsg(`❌ ${uploadData.message}`);
+            directSuccess = true; // 虽然失败但不需要 fallback
+          }
+        }
+      } catch (directErr: any) {
+        // 直连失败（CORS 或网络问题），降级到 Vercel 代理
+        console.warn('[upload] 直连失败，降级到 Vercel 代理:', directErr.message);
       }
 
-      const uploadRes = await fetch('/api/alist-upload', {
-        method: 'PUT',
-        headers,
-        body: alistUploadFile,
-      });
-
-      const uploadData = await uploadRes.json();
-      if (uploadData.code === 200) { setAlistMsg('✅ 上传成功'); logUserAction('上传', uploadPath); setAlistUploadFile(null); alistListDir(alistPath); }
-      else setAlistMsg(`❌ ${uploadData.message}`);
+      // 2. Fallback: 通过 Vercel Dashboard 代理上传
+      if (!directSuccess) {
+        setAlistMsg('⏳ 通过 Dashboard 中转上传中...');
+        setUploadProgress(0);
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${userToken}`,
+          'File-Path': encodedFilePath,
+          'Content-Type': alistUploadFile.type || 'application/octet-stream',
+          'Content-Length': String(alistUploadFile.size),
+        };
+        const cc = getCustomConfig();
+        if (cc) {
+          if (cc.url) headers['x-alist-url'] = cc.url;
+          if (cc.user) headers['x-alist-username'] = cc.user;
+          if (cc.pass) headers['x-alist-password'] = cc.pass;
+        }
+        const uploadData: any = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', '/api/alist-upload');
+          Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+          };
+          xhr.onload = () => {
+            try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
+          };
+          xhr.onerror = () => reject(new Error('网络异常'));
+          xhr.send(alistUploadFile);
+        });
+        if (uploadData.code === 200) { setAlistMsg('✅ 上传成功 (中转)'); logUserAction('上传(中转)', uploadPath); setAlistUploadFile(null); alistListDir(alistPath); }
+        else setAlistMsg(`❌ ${uploadData.message}`);
+      }
     } catch (e: any) { setAlistMsg(`❌ 上传失败: ${e.message}`); }
-    finally { setAlistUploading(false); }
+    finally { setAlistUploading(false); setUploadProgress(null); }
   };
 
   // === 管理面板操作 ===
@@ -587,6 +643,9 @@ export default function Home() {
         setAdminSettings(data.settings);
         if (typeof data.settings.disableThirdDownload === 'boolean') {
           setGlobalDisableThird(data.settings.disableThirdDownload);
+        }
+        if (data.settings.downloadChannel === 'ecs' || data.settings.downloadChannel === 'frp') {
+          setDownloadChannel(data.settings.downloadChannel);
         }
       }
     } catch { }
@@ -846,6 +905,26 @@ export default function Home() {
                 >
                   <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${adminSettings.disableThirdDownload ? 'left-5' : 'left-0.5'}`} />
                 </button>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                <div>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>下载/上传渠道</span>
+                  <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-faint)' }}>ECS = 成都 200M · FRP = NAS 备用</div>
+                </div>
+                <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                  <button
+                    onClick={() => { adminAction('updateSettings', { settings: { downloadChannel: 'ecs' } }); setDownloadChannel('ecs'); }}
+                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
+                      downloadChannel === 'ecs' ? 'bg-pink-500 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >🚀 ECS</button>
+                  <button
+                    onClick={() => { adminAction('updateSettings', { settings: { downloadChannel: 'frp' } }); setDownloadChannel('frp'); }}
+                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
+                      downloadChannel === 'frp' ? 'bg-blue-500 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >📡 FRP</button>
+                </div>
               </div>
             </div>
 
@@ -1320,6 +1399,41 @@ export default function Home() {
               <button onClick={() => setAlistDownloadModal(null)} className="hover:opacity-100 opacity-60 text-lg transition-opacity">✕</button>
             </div>
             <div className="space-y-2">
+                            {/* 云端节点极速下载 (200M - 服务器代理加UA) */}
+              <button
+                onClick={() => {
+                  setAlistMsg('⏳ 正在连接云端极速节点 (200M)...');
+                  logUserAction('下载 - 云端节点极速下载', alistDownloadModal!.filePath);
+                  // 仿照 Method 3 策略：走 /api/alist-download 代理，服务器端自动加 UA: pan.baidu.com
+                  let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal!.filePath)}`;
+                  if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
+                  const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
+                  if (ccConfigStr) {
+                    downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
+                  }
+                  window.open(downloadUrl, '_blank');
+                  setAlistMsg('🚀 已启动云端极速通道 (自动处理 UA)');
+                  setAlistDownloadModal(null);
+                }}
+                className="w-full flex items-center justify-between border rounded-xl px-4 py-3 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-sm group"
+                style={{ 
+                  background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.1) 0%, rgba(219, 39, 119, 0.05) 100%)',
+                  borderColor: 'rgba(236, 72, 153, 0.3)'
+                }}
+              >
+                <div>
+                  <div className="text-[12px] font-bold pb-0.5 text-pink-400 group-hover:text-pink-300 transition-colors">
+                    🚀 云端节点极速下载 (25MB/s)
+                  </div>
+                  <div className="text-[10px] text-zinc-400">成都 200M 服务器代理中转，自动携带百度 UA，无文件大小限制</div>
+                </div>
+                <div className="text-pink-500/30 group-hover:text-pink-400 transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+              </button>
+
               {/* Cloudflare Workers 边缘代理 (方法1) */}
               <button
                 onClick={() => {
@@ -1504,14 +1618,24 @@ export default function Home() {
               </div>
             )}
 
-            {/* 待上传确认 */}
+            {/* 待上传确认 + 进度条 */}
             {alistUploadFile && canUpload && (
-              <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
-                <span className="text-[11px] flex-1 truncate" style={{ color: 'var(--text-muted)' }}>📎 {alistUploadFile.name}</span>
-                <button onClick={alistUpload} disabled={alistUploading} className="px-2 py-1 text-[10px] bg-accent text-white rounded font-bold hover:opacity-80 disabled:opacity-50">
-                  {alistUploading ? '上传中...' : '确认上传'}
-                </button>
-                <button onClick={() => setAlistUploadFile(null)} className="px-2 py-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>取消</button>
+              <div className="px-4 py-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] flex-1 truncate" style={{ color: 'var(--text-muted)' }}>📎 {alistUploadFile.name} <span className="text-[9px] opacity-60">({(alistUploadFile.size / 1024 / 1024).toFixed(1)} MB)</span></span>
+                  <button onClick={alistUpload} disabled={alistUploading} className="px-2 py-1 text-[10px] bg-accent text-white rounded font-bold hover:opacity-80 disabled:opacity-50">
+                    {alistUploading ? `${uploadProgress ?? 0}%` : '确认上传'}
+                  </button>
+                  {!alistUploading && <button onClick={() => setAlistUploadFile(null)} className="px-2 py-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>取消</button>}
+                </div>
+                {alistUploading && uploadProgress !== null && (
+                  <div className="mt-2 w-full rounded-full h-1.5 overflow-hidden" style={{ background: 'var(--border-color)' }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${uploadProgress}%`, background: 'linear-gradient(90deg, #ec4899, #f97316)' }}
+                    />
+                  </div>
+                )}
               </div>
             )}
 
