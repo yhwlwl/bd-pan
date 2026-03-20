@@ -562,7 +562,7 @@ export default function Home() {
         });
         const tokenData = await tokenRes.json();
         if (tokenData.token && tokenData.url) {
-          setAlistMsg('🚀 直连云端节点上传中...');
+          setAlistMsg('🚀 正在通过阿里云极速线路直传...');
           const uploadData: any = await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open('PUT', `${tokenData.url}/api/fs/put`);
@@ -666,7 +666,7 @@ export default function Home() {
       if (data.settings) {
         setAdminSettings(data.settings);
         if (typeof data.settings.disableThirdDownload === 'boolean') {
-           setGlobalDisableThird(data.settings.disableThirdDownload);
+          setGlobalDisableThird(data.settings.disableThirdDownload);
         }
       }
       setAdminMsg('✅ 操作成功');
@@ -909,20 +909,18 @@ export default function Home() {
               <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div>
                   <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>下载/上传渠道</span>
-                  <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-faint)' }}>ECS = 成都 200M · FRP = NAS 备用</div>
+                  <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-faint)' }}>ECS = 阿里云极速线路 · FRP = NAS 备用</div>
                 </div>
                 <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
                   <button
                     onClick={() => { adminAction('updateSettings', { settings: { downloadChannel: 'ecs' } }); setDownloadChannel('ecs'); }}
-                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
-                      downloadChannel === 'ecs' ? 'bg-pink-500 text-white' : 'text-zinc-400 hover:text-zinc-200'
-                    }`}
+                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${downloadChannel === 'ecs' ? 'bg-pink-500 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                      }`}
                   >🚀 ECS</button>
                   <button
                     onClick={() => { adminAction('updateSettings', { settings: { downloadChannel: 'frp' } }); setDownloadChannel('frp'); }}
-                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
-                      downloadChannel === 'frp' ? 'bg-blue-500 text-white' : 'text-zinc-400 hover:text-zinc-200'
-                    }`}
+                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${downloadChannel === 'frp' ? 'bg-blue-500 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                      }`}
                   >📡 FRP</button>
                 </div>
               </div>
@@ -1135,10 +1133,29 @@ export default function Home() {
                 </div>
               </section>
 
-              {/* 下载方式对比 */}
               <section className="space-y-4">
-                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">2. 大文件 (≥20MB) 下载方式</h4>
+                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">2. 大文件 (≥20MB) 下载方式对比</h4>
                 <div className="grid grid-cols-1 gap-4">
+                  {/* 阿里云极速线路 */}
+                  <div className="p-4 rounded-2xl bg-pink-600/10 border border-pink-500/30">
+                    <div className="flex items-center gap-2 mb-2">
+                       <span className="text-sm">🚀</span>
+                       <span className="text-sm font-black uppercase text-pink-100 italic">阿里云极速线路 (最推荐)</span>
+                    </div>
+                    <p className="text-xs leading-relaxed text-zinc-100 mb-2">
+                      利用阿里云国内 BGP 骨干网中转，自动处理百度 UA。
+                    </p>
+                    <div className="space-y-1.5 pt-2 border-t border-pink-500/10">
+                      <div className="text-[11px] flex items-center gap-2">
+                        <span className="text-white font-bold shrink-0">✅ 推荐度:</span>
+                        <span className="text-pink-400 font-bold">⭐⭐⭐⭐⭐ (最快的)</span>
+                      </div>
+                      <div className="text-[11px] flex items-start gap-2">
+                        <span className="text-white font-bold shrink-0">✨ 优点:</span>
+                        <span className="text-pink-100">国内线路，速度极快，对手机浏览器直下最友好。</span>
+                      </div>
+                    </div>
+                  </div>
                   {/* CF 边缘加速 */}
                   <div className="p-4 rounded-2xl bg-blue-600/10 border border-blue-500/30">
                     <div className="flex items-center gap-2 mb-2">
@@ -1151,11 +1168,11 @@ export default function Home() {
                     <div className="space-y-1.5 pt-2 border-t border-blue-500/10">
                       <div className="text-[11px] flex items-center gap-2">
                         <span className="text-white font-bold shrink-0">✅ 推荐度:</span>
-                        <span className="text-blue-300 font-bold">⭐⭐⭐⭐⭐ (手机端首选)</span>
+                        <span className="text-blue-300 font-bold">⭐⭐⭐</span>
                       </div>
                       <div className="text-[11px] flex items-start gap-2">
                         <span className="text-white font-bold shrink-0">✨ 优点:</span>
-                        <span className="text-blue-100">无需手动改 UA，不消耗服务器流量，移动端兼容性极佳。</span>
+                        <span className="text-blue-100">不通过阿里云，在阿里云服务器失效时作为首选下载方案</span>
                       </div>
                     </div>
                   </div>
@@ -1172,11 +1189,11 @@ export default function Home() {
                     <div className="space-y-1.5 pt-2 border-t border-emerald-500/10">
                       <div className="text-[11px] flex items-center gap-2">
                         <span className="text-white font-bold shrink-0">✅ 推荐度:</span>
-                        <span className="text-emerald-300 font-bold">⭐⭐⭐⭐⭐ (满速极速体验)</span>
+                        <span className="text-emerald-300 font-bold">⭐⭐⭐⭐⭐ (满速)</span>
                       </div>
                       <div className="text-[11px] flex items-start gap-2">
                         <span className="text-white font-bold shrink-0">✨ 优点:</span>
-                        <span className="text-emerald-100 font-bold">速度可达 50MB/s。由于是点对点下载，对社区服务器零负载。</span>
+                        <span className="text-emerald-100 font-bold">速度可达 50MB/s。由于是点对点下载</span>
                       </div>
                     </div>
                   </div>
@@ -1185,10 +1202,10 @@ export default function Home() {
                   <div className="p-4 rounded-2xl bg-pink-600/10 border border-pink-500/30 opacity-90">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm">🔥</span>
-                      <span className="text-sm font-black uppercase text-pink-100">服务器中转下载</span>
+                      <span className="text-sm font-black uppercase text-pink-100">vercel中转下载</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
-                      由 STA 服务器代下后转发。服务器位于海外，受限于网络波动与昂贵的流量费。
+                      由 vercel 服务器代理加UA，每个月有7G下载限额，不推荐
                     </p>
                     <div className="space-y-1.5 pt-2 border-t border-pink-500/10">
                       <div className="text-[11px] flex items-center gap-2">
@@ -1197,7 +1214,7 @@ export default function Home() {
                       </div>
                       <div className="text-[11px] flex items-start gap-2">
                         <span className="text-white font-bold shrink-0">❌ 缺点:</span>
-                        <span className="text-pink-100">消耗服务器有限的带宽与流量（每个月只有10个G），请尽量避开。</span>
+                        <span className="text-pink-100">消耗服务器有限的带宽与流量（每个月只有7G），请尽量避开。</span>
                       </div>
                     </div>
                   </div>
@@ -1244,22 +1261,15 @@ export default function Home() {
                     <span className="text-pink-400 font-bold">● 大于 20MB 的文件：</span>
                     因受百度网盘限制，点击大文件后会弹出备选通道（参见上面的第 2 点）。
                     <ul className="list-disc pl-5 mt-2 space-y-1.5 text-[11px] text-zinc-300">
-                      <li><strong className="text-blue-300">手机端直接点：</strong> 无脑选第一个 <span className="bg-blue-500/20 px-1 py-0.5 rounded">Cloudflare 边缘加速</span>，这是手机端满速、免插件的最优解。</li>
+                      <li><strong className="text-blue-300">手机端直接点：</strong> 无脑选第一个 <span className="bg-blue-500/20 px-1 py-0.5 rounded">阿里云服务器代理下载</span>，这是手机端满速、免插件的最优解。</li>
                       <li><strong className="text-emerald-300">电脑端最快下载：</strong> 如果有 IDM 或迅雷或NDM，选第二个 <span className="bg-emerald-500/20 px-1 py-0.5 rounded">复制直链</span>。</li>
-                      <li>如果上述挂了，才选第三个“服务器中转”（尽量少用）。</li>
+                      <li>如果阿里云挂了，选cloudflare。上述挂了，才选“vercel”（尽量少用）。</li>
                     </ul>
                   </div>
                 </div>
               </section>
 
-              {/* 温馨提示 */}
-              <div className="p-5 rounded-3xl bg-accent/10 border border-accent/30 text-center shadow-lg">
-                <p className="text-xs text-zinc-100 leading-relaxed">
-                  💖 服务器及网站由网络部同学搭建及公益维护。<br />
-                  <span className="text-white font-black">推荐优先使用 IDM等插件直链方案</span>，<br />
-                  将有限的资源留给更需要的手机端用户。
-                </p>
-              </div>
+              
             </div>
 
             <div className="p-4 border-t" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
@@ -1399,11 +1409,11 @@ export default function Home() {
               <button onClick={() => setAlistDownloadModal(null)} className="hover:opacity-100 opacity-60 text-lg transition-opacity">✕</button>
             </div>
             <div className="space-y-2">
-                            {/* 云端节点极速下载 (200M - 服务器代理加UA) */}
+              {/* 云端节点极速下载 (200M - 服务器代理加UA) */}
               <button
                 onClick={() => {
-                  setAlistMsg('⏳ 正在连接云端极速节点 (200M)...');
-                  logUserAction('下载 - 云端节点极速下载', alistDownloadModal!.filePath);
+                  setAlistMsg('⏳ 正在连接阿里云服务器...');
+                  logUserAction('下载 - 阿里云服务器极速下载', alistDownloadModal!.filePath);
                   // 仿照 Method 3 策略：走 /api/alist-download 代理，服务器端自动加 UA: pan.baidu.com
                   let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal!.filePath)}`;
                   if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
@@ -1412,20 +1422,20 @@ export default function Home() {
                     downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
                   }
                   window.open(downloadUrl, '_blank');
-                  setAlistMsg('🚀 已启动云端极速通道 (自动处理 UA)');
+                  setAlistMsg('🚀 已启动阿里云服务器通道 (自动处理 UA)');
                   setAlistDownloadModal(null);
                 }}
                 className="w-full flex items-center justify-between border rounded-xl px-4 py-3 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-sm group"
-                style={{ 
+                style={{
                   background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.1) 0%, rgba(219, 39, 119, 0.05) 100%)',
                   borderColor: 'rgba(236, 72, 153, 0.3)'
                 }}
               >
                 <div>
                   <div className="text-[12px] font-bold pb-0.5 text-pink-400 group-hover:text-pink-300 transition-colors">
-                    🚀 云端节点极速下载 (25MB/s)
+                    🚀 阿里云服务器极速下载 (最推荐)
                   </div>
-                  <div className="text-[10px] text-zinc-400">成都 200M 服务器代理中转，自动携带百度 UA，无文件大小限制</div>
+                  <div className="text-[10px] text-zinc-400">阿里云服务器代理中转，自动携带百度 UA，无文件大小限制</div>
                 </div>
                 <div className="text-pink-500/30 group-hover:text-pink-400 transition-colors">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1452,14 +1462,14 @@ export default function Home() {
                   setAlistDownloadModal(null);
                 }}
                 className="w-full flex items-center justify-between border rounded-xl px-4 py-3 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-sm group"
-                style={{ 
+                style={{
                   background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%)',
                   borderColor: 'rgba(59, 130, 246, 0.3)'
                 }}
               >
                 <div>
                   <div className="text-[12px] font-bold pb-1 text-blue-400 group-hover:text-blue-300 transition-colors">
-                    🌟 Cloudflare 边缘加速 (强烈推荐)
+                    🌟 Cloudflare 边缘加速
                   </div>
                   <div className="text-[10px] text-zinc-500">通过海外节点无痕中转，全球加速，不耗服务器流量</div>
                 </div>
@@ -1494,7 +1504,7 @@ export default function Home() {
                   setAlistDownloadModal(null);
                 }}
                 className="w-full flex items-center justify-between rounded-xl px-4 py-3 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] border shadow-sm group"
-                style={{ 
+                style={{
                   background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)',
                   borderColor: 'rgba(16, 185, 129, 0.3)'
                 }}
@@ -1514,7 +1524,7 @@ export default function Home() {
               <button
                 onClick={() => {
                   if (globalDisableThird) return;
-                  logUserAction('下载 - 服务器中转下载', alistDownloadModal.filePath);
+                  logUserAction('下载 - vercel服务器中转下载', alistDownloadModal.filePath);
                   let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal.filePath)}`;
                   if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
                   const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
