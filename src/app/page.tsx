@@ -1139,8 +1139,8 @@ export default function Home() {
                   {/* 阿里云极速线路 */}
                   <div className="p-4 rounded-2xl bg-pink-600/10 border border-pink-500/30">
                     <div className="flex items-center gap-2 mb-2">
-                       <span className="text-sm">🚀</span>
-                       <span className="text-sm font-black uppercase text-pink-100 italic">阿里云极速线路 (最推荐)</span>
+                      <span className="text-sm">🚀</span>
+                      <span className="text-sm font-black uppercase text-pink-100 italic">阿里云极速线路 (最推荐)</span>
                     </div>
                     <p className="text-xs leading-relaxed text-zinc-100 mb-2">
                       利用阿里云国内 BGP 骨干网中转，自动处理百度 UA。
@@ -1269,7 +1269,7 @@ export default function Home() {
                 </div>
               </section>
 
-              
+
             </div>
 
             <div className="p-4 border-t" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
