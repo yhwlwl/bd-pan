@@ -55,9 +55,20 @@ export async function PUT(request: Request) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: config.user, password: config.pass }),
         });
+
+        const contentType = tokenRes.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            const rawText = await tokenRes.text();
+            console.error('[alist-upload] 非 JSON 响应:', rawText);
+            return jsonRes({ 
+                code: 500, 
+                message: `AList 接口返回非 JSON 数据 (可能被防火墙拦截)。返回内容: ${rawText.substring(0, 50)}` 
+            }, 500);
+        }
+
         const tokenData = await tokenRes.json();
         if (tokenData.code !== 200 || !tokenData.data?.token) {
-            return jsonRes({ code: 500, message: 'AList Token 获取失败: ' + (tokenData.message || '未知') }, 500);
+            return jsonRes({ code: 500, message: 'AList Token 获取失败: ' + (tokenData.message || '登录凭据错误') }, 500);
         }
         const alistToken = tokenData.data.token;
 
