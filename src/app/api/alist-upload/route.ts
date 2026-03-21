@@ -56,8 +56,8 @@ export async function PUT(request: Request) {
             body: JSON.stringify({ username: config.user, password: config.pass }),
         });
 
-        const contentType = tokenRes.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
+        const responseContentType = tokenRes.headers.get('content-type') || '';
+        if (!responseContentType.includes('application/json')) {
             const rawText = await tokenRes.text();
             console.error('[alist-upload] 非 JSON 响应:', rawText);
             return jsonRes({ 
