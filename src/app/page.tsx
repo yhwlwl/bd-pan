@@ -321,7 +321,7 @@ export default function Home() {
     }
 
     // 获取公共设置
-    fetch('/api/global-settings')
+    fetch('/api/global-settings', { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         if (data && data.downloadModes) {
