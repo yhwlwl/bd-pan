@@ -1,8 +1,6 @@
-import { verifyTokenEdge } from '../_auth-edge';
+import { NextResponse } from 'next/server';
+import { verifyToken } from '../_auth';
 import { getUserPermissions, getSettings } from '../../../lib/users';
-
-// 使用 Edge Runtime —— 突破 Vercel Serverless 的 4.5MB body 限制
-export const runtime = 'edge';
 
 // ECS 成都节点 (主)
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'http://8.137.91.213:5244').replace(/\/+$/, '');
@@ -13,24 +11,17 @@ const FRP_URL = (process.env.NEXT_PUBLIC_ALIST_URL_FALLBACK || 'https://frp-gap.
 const FRP_USER = process.env.ALIST_USERNAME_FALLBACK || '';
 const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 
-function jsonRes(obj: any, status = 200) {
-    return new Response(JSON.stringify(obj), {
-        status,
-        headers: { 'Content-Type': 'application/json' },
-    });
-}
-
 export async function PUT(request: Request) {
-    // Edge 兼容的 Token 校验
+    // 获取当前用户及权限
     const authHeader = request.headers.get('authorization') || undefined;
-    const user = await verifyTokenEdge(authHeader);
+    const user = verifyToken(authHeader);
     if (!user) {
-        return jsonRes({ code: 401, message: '请先登录' }, 401);
+        return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
     }
 
     const perms = await getUserPermissions(user.username, user.role);
     if (!perms.upload) {
-        return jsonRes({ code: 403, message: '权限不足，无权上传文件' }, 403);
+        return NextResponse.json({ code: 403, message: '权限不足，无权上传文件' }, { status: 403 });
     }
 
     try {
@@ -55,54 +46,42 @@ export async function PUT(request: Request) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: config.user, password: config.pass }),
         });
-
-        const responseContentType = tokenRes.headers.get('content-type') || '';
-        if (!responseContentType.includes('application/json')) {
-            const rawText = await tokenRes.text();
-            console.error('[alist-upload] 非 JSON 响应:', rawText);
-            return jsonRes({ 
-                code: 500, 
-                message: `AList 接口返回非 JSON 数据 (可能被防火墙拦截)。返回内容: ${rawText.substring(0, 50)}` 
-            }, 500);
-        }
-
         const tokenData = await tokenRes.json();
         if (tokenData.code !== 200 || !tokenData.data?.token) {
-            return jsonRes({ code: 500, message: 'AList Token 获取失败: ' + (tokenData.message || '登录凭据错误') }, 500);
+            return NextResponse.json({ code: 500, message: 'AList 目标实例 Token 获取失败' }, { status: 500 });
         }
         const alistToken = tokenData.data.token;
 
         // 2. 拿到要上传的路径信息
         const filePath = request.headers.get('File-Path');
         if (!filePath) {
-            return jsonRes({ code: 400, message: '缺少 File-Path 请求头' }, 400);
+            return NextResponse.json({ code: 400, message: '缺少 File-Path 请求头' }, { status: 400 });
         }
 
-        const contentType = request.headers.get('Content-Type') || 'application/octet-stream';
         const contentLength = request.headers.get('Content-Length');
+        const contentType = request.headers.get('Content-Type') || 'application/octet-stream';
 
-        // 3. 流式转发到 AList Server
-        const uploadHeaders: Record<string, string> = {
-            'Authorization': alistToken,
-            'File-Path': filePath,
-            'Content-Type': contentType,
-        };
-        if (contentLength) {
-            uploadHeaders['Content-Length'] = contentLength;
-        }
-
+        // 3. Proxy 到 AList Server
         const uploadRes = await fetch(`${config.url}/api/fs/put`, {
             method: 'PUT',
-            headers: uploadHeaders,
-            body: request.body,
+            headers: {
+                'Authorization': alistToken,
+                'File-Path': filePath,
+                'Content-Type': contentType,
+                ...(contentLength ? { 'Content-Length': contentLength } : {}),
+            },
             // @ts-ignore
-            duplex: 'half',
-        });
+            body: request.body,
+            duplex: 'half'
+        } as any);
 
         const data = await uploadRes.json();
-        return jsonRes(data);
+        return NextResponse.json(data);
     } catch (e: any) {
-        console.error('[alist-upload-edge] error:', e);
-        return jsonRes({ code: 500, message: e?.message || '上传代理异常' }, 500);
+        console.error('[alist-upload] 代理上传异常:', e);
+        return NextResponse.json(
+            { code: 500, message: e?.message || '服务器代理上传请求发生异常' },
+            { status: 500 },
+        );
     }
 }
