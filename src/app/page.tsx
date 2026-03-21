@@ -553,43 +553,91 @@ export default function Home() {
       const uploadPath = alistPath.replace(/\/+$/, '') + '/' + alistUploadFile.name;
       const encodedFilePath = uploadPath.split('/').map(encodeURIComponent).join('/');
 
-      setAlistMsg('🚀 正在通过阿里云极速线路上传...');
-
-      const headers: Record<string, string> = {
-        'Authorization': `Bearer ${userToken}`,
-        'File-Path': encodedFilePath,
-        'Content-Type': alistUploadFile.type || 'application/octet-stream',
-      };
-
-      const cc = getCustomConfig();
-      if (cc) {
-        if (cc.url) headers['x-alist-url'] = cc.url;
-        if (cc.user) headers['x-alist-username'] = cc.user;
-        if (cc.pass) headers['x-alist-password'] = cc.pass;
+      // 1. 尝试直连上传（现在你有 HTTPS 了，这不仅解决了 413，还解决了混合内容问题！）
+      let directSuccess = false;
+      try {
+        const tokenRes = await fetch('/api/alist-token', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${userToken}` },
+        });
+        const tokenData = await tokenRes.json();
+        
+        if (tokenData.token && tokenData.url && tokenData.url.startsWith('https')) {
+          setAlistMsg('🚀 正在通过直连极速线路上传 (绕过 Vercel)...');
+          const uploadData: any = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', `${tokenData.url}/api/fs/put`);
+            xhr.setRequestHeader('Authorization', tokenData.token);
+            xhr.setRequestHeader('File-Path', encodedFilePath);
+            xhr.setRequestHeader('Content-Type', alistUploadFile!.type || 'application/octet-stream');
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try { resolve(JSON.parse(xhr.responseText)); } 
+                catch { reject(new Error('响应格式错误')); }
+              } else {
+                reject(new Error(`HTTP ${xhr.status}`));
+              }
+            };
+            xhr.onerror = () => reject(new Error('直连异常(SSL/CORS)'));
+            xhr.send(alistUploadFile);
+          });
+          
+          if (uploadData.code === 200) {
+            directSuccess = true;
+            setAlistMsg('✅ 极速直连上传成功！');
+            logUserAction('上传(极速)', uploadPath);
+            setAlistUploadFile(null);
+            alistListDir(alistPath);
+          }
+        }
+      } catch (directErr) {
+        console.warn('[upload] 直连失败或不支持:', directErr);
       }
 
-      const uploadData: any = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('PUT', '/api/alist-upload');
-        Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+      // 2. 如果直连由于某种原因失败，再尝试代理中转
+      if (!directSuccess) {
+        setAlistMsg('⏳ 直连不可用，降级为 Vercel 代理中转...');
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${userToken}`,
+          'File-Path': encodedFilePath,
+          'Content-Type': alistUploadFile.type || 'application/octet-stream',
         };
-        xhr.onload = () => {
-          try { resolve(JSON.parse(xhr.responseText)); }
-          catch { reject(new Error(`上传响应异常 (HTTP ${xhr.status})`)); }
-        };
-        xhr.onerror = () => reject(new Error('网络连接异常'));
-        xhr.send(alistUploadFile);
-      });
+        const cc = getCustomConfig();
+        if (cc) {
+          if (cc.url) headers['x-alist-url'] = cc.url;
+          if (cc.user) headers['x-alist-username'] = cc.user;
+          if (cc.pass) headers['x-alist-password'] = cc.pass;
+        }
 
-      if (uploadData.code === 200) {
-        setAlistMsg('✅ 上传成功');
-        logUserAction('上传', uploadPath);
-        setAlistUploadFile(null);
-        alistListDir(alistPath);
-      } else {
-        setAlistMsg(`❌ ${uploadData.message || '上传失败'}`);
+        const uploadData: any = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', '/api/alist-upload');
+          Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+          };
+          xhr.onload = () => {
+            if (xhr.status === 413) reject(new Error('中转模式不支持 4.5MB 以上文件'));
+            else {
+              try { resolve(JSON.parse(xhr.responseText)); }
+              catch { reject(new Error(`中转响应异常 (HTTP ${xhr.status})`)); }
+            }
+          };
+          xhr.onerror = () => reject(new Error('中转连接中断'));
+          xhr.send(alistUploadFile);
+        });
+
+        if (uploadData.code === 200) {
+          setAlistMsg('✅ 上传成功 (中转模式)');
+          logUserAction('上传(中转)', uploadPath);
+          setAlistUploadFile(null);
+          alistListDir(alistPath);
+        } else {
+          setAlistMsg(`❌ ${uploadData.message || '上传中转失败'}`);
+        }
       }
     } catch (e: any) { setAlistMsg(`❌ 上传失败: ${e.message}`); }
     finally { setAlistUploading(false); setUploadProgress(null); }
