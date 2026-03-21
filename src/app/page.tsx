@@ -16,6 +16,23 @@ export interface UserPermissions {
   delete: boolean;
   rename: boolean;
   preview: boolean;
+  setting?: boolean;
+}
+
+export type DownloadModeState = 'enabled' | 'disabled' | 'hidden';
+
+export interface GlobalSettings {
+  enableGuestMode: boolean;
+  permissions?: Record<string, UserPermissions>;
+  disableThirdDownload?: boolean;
+  downloadChannel?: 'ecs' | 'frp';
+  downloadModes?: {
+    ecs: DownloadModeState;
+    cf: DownloadModeState;
+    raw: DownloadModeState;
+    vercel: DownloadModeState;
+    direct302: DownloadModeState;
+  };
 }
 
 export default function Home() {
@@ -65,8 +82,14 @@ export default function Home() {
   // 管理面板
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
-  const [adminSettings, setAdminSettings] = useState<{ enableGuestMode: boolean; disableThirdDownload?: boolean; downloadChannel?: 'ecs' | 'frp'; permissions?: Record<string, UserPermissions> }>({ enableGuestMode: true, permissions: {}, downloadChannel: 'ecs' });
-  const [globalDisableThird, setGlobalDisableThird] = useState(false);
+  const [adminSettings, setAdminSettings] = useState<GlobalSettings>({ 
+    enableGuestMode: true, 
+    permissions: {}, 
+    downloadChannel: 'ecs',
+  });
+  const [globalDownloadModes, setGlobalDownloadModes] = useState<GlobalSettings['downloadModes']>({
+    ecs: 'enabled', cf: 'enabled', raw: 'enabled', vercel: 'disabled', direct302: 'enabled'
+  });
   const [downloadChannel, setDownloadChannel] = useState<'ecs' | 'frp'>('ecs');
   const [newUserName, setNewUserName] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
@@ -295,8 +318,8 @@ export default function Home() {
     fetch('/api/global-settings')
       .then(res => res.json())
       .then(data => {
-        if (data && typeof data.disableThirdDownload === 'boolean') {
-          setGlobalDisableThird(data.disableThirdDownload);
+        if (data && data.downloadModes) {
+          setGlobalDownloadModes(data.downloadModes);
         }
         if (data && (data.downloadChannel === 'ecs' || data.downloadChannel === 'frp')) {
           setDownloadChannel(data.downloadChannel);
@@ -644,8 +667,8 @@ export default function Home() {
       if (data.users) setAdminUsers(data.users);
       if (data.settings) {
         setAdminSettings(data.settings);
-        if (typeof data.settings.disableThirdDownload === 'boolean') {
-          setGlobalDisableThird(data.settings.disableThirdDownload);
+        if (data.settings.downloadModes) {
+          setGlobalDownloadModes(data.settings.downloadModes);
         }
         if (data.settings.downloadChannel === 'ecs' || data.settings.downloadChannel === 'frp') {
           setDownloadChannel(data.settings.downloadChannel);
@@ -668,8 +691,8 @@ export default function Home() {
       if (data.users) setAdminUsers(data.users);
       if (data.settings) {
         setAdminSettings(data.settings);
-        if (typeof data.settings.disableThirdDownload === 'boolean') {
-          setGlobalDisableThird(data.settings.disableThirdDownload);
+        if (data.settings.downloadModes) {
+          setGlobalDownloadModes(data.settings.downloadModes);
         }
       }
       setAdminMsg('✅ 操作成功');
@@ -817,7 +840,7 @@ export default function Home() {
               👑 管理
             </button>
           )}
-          {isAdmin && (
+          {(isAdmin || userPerms?.setting) && (
             <button
               onClick={() => {
                 const cc = getCustomConfig();
@@ -900,14 +923,36 @@ export default function Home() {
                   <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${adminSettings.enableGuestMode ? 'left-5' : 'left-0.5'}`} />
                 </button>
               </div>
-              <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>禁用边缘加速下载 (方式3) · {adminSettings.disableThirdDownload ? '已禁用' : '已启用'}</span>
-                <button
-                  onClick={() => adminAction('updateSettings', { settings: { disableThirdDownload: !adminSettings.disableThirdDownload } })}
-                  className={`w-10 h-5 rounded-full transition-colors relative ${adminSettings.disableThirdDownload ? 'bg-red-500' : 'bg-zinc-700'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${adminSettings.disableThirdDownload ? 'left-5' : 'left-0.5'}`} />
-                </button>
+              <div className="pt-3 mt-3 border-t space-y-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                <span className="text-[10px] block mb-2" style={{ color: 'var(--text-muted)' }}>大文件下载通道控制</span>
+                {[
+                  { key: 'ecs', label: '🚀 阿里云服务器极速下载' },
+                  { key: 'cf', label: '🌟 Cloudflare 边缘加速' },
+                  { key: 'raw', label: '🚀 复制直链 (迅雷/IDM)' },
+                  { key: 'vercel', label: '🔥 服务器中转下载 (备用)' },
+                  { key: 'direct302', label: '⚡ 302 直链跳转' }
+                ].map((mode) => {
+                  const currentMode = adminSettings.downloadModes?.[mode.key as keyof typeof adminSettings.downloadModes] || 'enabled';
+                  return (
+                    <div key={mode.key} className="flex items-center justify-between">
+                      <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>{mode.label}</span>
+                      <select 
+                        value={currentMode}
+                        onChange={(e) => {
+                          const newModes = { ...(adminSettings.downloadModes || {}), [mode.key]: e.target.value };
+                          adminAction('updateSettings', { settings: { downloadModes: newModes } });
+                          // Optimistic update locally
+                          setAdminSettings(prev => ({...prev, downloadModes: newModes as any}));
+                        }}
+                        className="rounded px-1.5 py-1 text-[10px] outline-none shrink-0 w-[60px]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                      >
+                        <option value="enabled">可用</option>
+                        <option value="disabled">禁用</option>
+                        <option value="hidden">隐藏</option>
+                      </select>
+                    </div>
+                  );
+                })}
               </div>
               <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div>
@@ -972,7 +1017,8 @@ export default function Home() {
                           { key: 'download', label: '⬇️ 下载' },
                           { key: 'upload', label: '⬆️ 上传' },
                           { key: 'delete', label: '🗑️ 删除' },
-                          { key: 'rename', label: '📝 重命名' }
+                          { key: 'rename', label: '📝 重命名' },
+                          { key: 'setting', label: '⚙️ 本地配置' }
                         ].map(perm => {
                           const uPerms = (u.permissions || {}) as any as Record<string, boolean>;
                           const isOn = uPerms[perm.key] === true;
@@ -987,7 +1033,7 @@ export default function Home() {
                                   let newPerms = { ...uPerms, [perm.key]: e.target.checked };
                                   // 关闭浏览时，其他权限也全部关闭
                                   if (perm.key === 'view' && !e.target.checked) {
-                                    newPerms = { view: false, preview: false, download: false, upload: false, delete: false, rename: false };
+                                    newPerms = { view: false, preview: false, download: false, upload: false, delete: false, rename: false, setting: false };
                                   }
                                   adminAction('updatePermissions', { username: u.username, permissions: newPerms });
                                 }}
@@ -1413,152 +1459,155 @@ export default function Home() {
             </div>
             <div className="space-y-2">
               {/* 云端节点极速下载 (200M - 服务器代理加UA) */}
-              <button
-                onClick={() => {
-                  setAlistMsg('⏳ 正在连接阿里云服务器...');
-                  logUserAction('下载 - 阿里云服务器极速下载', alistDownloadModal!.filePath);
-                  // 仿照 Method 3 策略：走 /api/alist-download 代理，服务器端自动加 UA: pan.baidu.com
-                  let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal!.filePath)}`;
-                  if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
-                  const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-                  if (ccConfigStr) {
-                    downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
-                  }
-                  window.open(downloadUrl, '_blank');
-                  setAlistMsg('🚀 已启动阿里云服务器通道 (自动处理 UA)');
-                  setAlistDownloadModal(null);
-                }}
-                className="w-full flex items-center justify-between border rounded-xl px-4 py-3 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-sm group"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.1) 0%, rgba(219, 39, 119, 0.05) 100%)',
-                  borderColor: 'rgba(236, 72, 153, 0.3)'
-                }}
-              >
-                <div>
-                  <div className="text-[12px] font-bold pb-0.5 text-pink-400 group-hover:text-pink-300 transition-colors">
-                    🚀 阿里云服务器极速下载 (最推荐)
+              {globalDownloadModes?.ecs !== 'hidden' && (
+                <button
+                  onClick={() => {
+                    if (globalDownloadModes?.ecs === 'disabled') return;
+                    setAlistMsg('⏳ 正在连接阿里云服务器...');
+                    logUserAction('下载 - 阿里云服务器极速下载', alistDownloadModal!.filePath);
+                    let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal!.filePath)}`;
+                    if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
+                    const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
+                    if (ccConfigStr) {
+                      downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
+                    }
+                    window.open(downloadUrl, '_blank');
+                    setAlistMsg('🚀 已启动阿里云服务器通道 (自动处理 UA)');
+                    setAlistDownloadModal(null);
+                  }}
+                  disabled={globalDownloadModes?.ecs === 'disabled'}
+                  className={`w-full flex items-center justify-between border rounded-xl px-4 py-3 text-left transition-all duration-300 ${globalDownloadModes?.ecs === 'disabled' ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:scale-[1.02] active:scale-[0.98] shadow-sm group'}`}
+                  style={{ background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.1) 0%, rgba(219, 39, 119, 0.05) 100%)', borderColor: 'rgba(236, 72, 153, 0.3)' }}
+                >
+                  <div>
+                    <div className="text-[12px] font-bold pb-0.5 text-pink-400 group-hover:text-pink-300 transition-colors">
+                      🚀 阿里云服务器极速下载 (最推荐) {globalDownloadModes?.ecs === 'disabled' && '(已禁用)'}
+                    </div>
+                    <div className="text-[10px] text-zinc-400">阿里云服务器代理中转，自动携带百度 UA，无文件大小限制</div>
                   </div>
-                  <div className="text-[10px] text-zinc-400">阿里云服务器代理中转，自动携带百度 UA，无文件大小限制</div>
-                </div>
-                <div className="text-pink-500/30 group-hover:text-pink-400 transition-colors">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-              </button>
+                  <div className="text-pink-500/30 group-hover:text-pink-400 transition-colors">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  </div>
+                </button>
+              )}
 
               {/* Cloudflare Workers 边缘代理 (方法1) */}
-              <button
-                onClick={() => {
-                  setAlistMsg('⏳ 正在连接 cf.ryantan.fun 代理节点...');
-                  logUserAction('下载 - Cloudflare 边缘加速', alistDownloadModal.filePath);
-                  fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
-                    .then(r => r.json())
-                    .then(data => {
-                      if (data.code === 200 && data.data?.raw_url) {
-                        const cfUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(data.data.raw_url)}`;
-                        window.location.href = cfUrl;
-                      } else {
-                        setAlistMsg('❌ 获取直链失败');
-                      }
-                    }).catch(() => setAlistMsg('❌ 接口异常'));
-                  setAlistDownloadModal(null);
-                }}
-                className="w-full flex items-center justify-between border rounded-xl px-4 py-3 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-sm group"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%)',
-                  borderColor: 'rgba(59, 130, 246, 0.3)'
-                }}
-              >
-                <div>
-                  <div className="text-[12px] font-bold pb-1 text-blue-400 group-hover:text-blue-300 transition-colors">
-                    🌟 Cloudflare 边缘加速
+              {globalDownloadModes?.cf !== 'hidden' && (
+                <button
+                  onClick={() => {
+                    if (globalDownloadModes?.cf === 'disabled') return;
+                    setAlistMsg('⏳ 正在连接 cf.ryantan.fun 代理节点...');
+                    logUserAction('下载 - Cloudflare 边缘加速', alistDownloadModal!.filePath);
+                    fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
+                      .then(r => r.json())
+                      .then(data => {
+                        if (data.code === 200 && data.data?.raw_url) {
+                          const cfUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(data.data.raw_url)}`;
+                          window.location.href = cfUrl;
+                        } else setAlistMsg('❌ 获取直链失败');
+                      }).catch(() => setAlistMsg('❌ 接口异常'));
+                    setAlistDownloadModal(null);
+                  }}
+                  disabled={globalDownloadModes?.cf === 'disabled'}
+                  className={`w-full flex items-center justify-between border rounded-xl px-4 py-3 text-left transition-all duration-300 ${globalDownloadModes?.cf === 'disabled' ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:scale-[1.02] active:scale-[0.98] shadow-sm group'}`}
+                  style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%)', borderColor: 'rgba(59, 130, 246, 0.3)' }}
+                >
+                  <div>
+                    <div className="text-[12px] font-bold pb-1 text-blue-400 group-hover:text-blue-300 transition-colors">
+                      🌟 Cloudflare 边缘加速 {globalDownloadModes?.cf === 'disabled' && '(已禁用)'}
+                    </div>
+                    <div className="text-[10px] text-zinc-500">通过海外节点无痕中转，全球加速，不耗服务器流量</div>
                   </div>
-                  <div className="text-[10px] text-zinc-500">通过海外节点无痕中转，全球加速，不耗服务器流量</div>
-                </div>
-                <div className="text-blue-500/30 group-hover:text-blue-400 transition-colors">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-                  </svg>
-                </div>
-              </button>
+                  <div className="text-blue-500/30 group-hover:text-blue-400 transition-colors">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>
+                  </div>
+                </button>
+              )}
 
               {/* 复制直链 (方法2) */}
-              <button
-                onClick={() => {
-                  logUserAction('下载 - 复制直链', alistDownloadModal.filePath);
-                  fetchAlist({ action: 'get', path: alistDownloadModal.filePath })
-                    .then(r => r.json())
-                    .then(data => {
-                      if (data.code === 200 && data.data?.raw_url) {
-                        navigator.clipboard.writeText(data.data.raw_url);
-                        setAlistMsg('✅ 百度CDN真实直链已复制！粘贴到迅雷/IDM即可满速下载');
-                      } else {
-                        const sign = data.code === 200 ? (data.data?.sign || '') : '';
-                        const url = sign ? `${getAlistBase()}/d${alistDownloadModal!.filePath}?sign=${sign}` : `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
+              {globalDownloadModes?.raw !== 'hidden' && (
+                <button
+                  onClick={() => {
+                    if (globalDownloadModes?.raw === 'disabled') return;
+                    logUserAction('下载 - 复制直链', alistDownloadModal!.filePath);
+                    fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
+                      .then(r => r.json())
+                      .then(data => {
+                        if (data.code === 200 && data.data?.raw_url) {
+                          navigator.clipboard.writeText(data.data.raw_url);
+                          setAlistMsg('✅ 百度CDN真实直链已复制！粘贴到迅雷/IDM即可满速下载');
+                        } else {
+                          const sign = data.code === 200 ? (data.data?.sign || '') : '';
+                          const url = sign ? `${getAlistBase()}/d${alistDownloadModal!.filePath}?sign=${sign}` : `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
+                          navigator.clipboard.writeText(url);
+                          setAlistMsg('✅ 链接已复制（备用）');
+                        }
+                      }).catch(() => {
+                        const url = `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
                         navigator.clipboard.writeText(url);
-                        setAlistMsg('✅ 链接已复制（备用）');
-                      }
-                    }).catch(() => {
-                      const url = `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
-                      navigator.clipboard.writeText(url);
-                      setAlistMsg('✅ 链接已复制');
-                    });
-                  setAlistDownloadModal(null);
-                }}
-                className="w-full flex items-center justify-between rounded-xl px-4 py-3 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] border shadow-sm group"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)',
-                  borderColor: 'rgba(16, 185, 129, 0.3)'
-                }}
-              >
-                <div>
-                  <div className="text-[12px] font-bold text-emerald-200 group-hover:text-emerald-100 transition-colors">🚀 复制直链 (迅雷/IDM/NDM)</div>
-                  <div className="text-[10px] text-zinc-300 group-hover:text-zinc-200 transition-colors">搭配 IDM/NDM 并设置 UA 为 pan.baidu.com 可满速</div>
-                </div>
-                <div className="text-emerald-500/30 group-hover:text-emerald-400 transition-colors">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                  </svg>
-                </div>
-              </button>
+                        setAlistMsg('✅ 链接已复制');
+                      });
+                    setAlistDownloadModal(null);
+                  }}
+                  disabled={globalDownloadModes?.raw === 'disabled'}
+                  className={`w-full flex items-center justify-between rounded-xl px-4 py-3 text-left transition-all duration-300 border shadow-sm ${globalDownloadModes?.raw === 'disabled' ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:scale-[1.02] active:scale-[0.98] group'}`}
+                  style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)', borderColor: 'rgba(16, 185, 129, 0.3)' }}
+                >
+                  <div>
+                    <div className="text-[12px] font-bold text-emerald-200 group-hover:text-emerald-100 transition-colors">🚀 复制直链 (迅雷/IDM/NDM) {globalDownloadModes?.raw === 'disabled' && '(已禁用)'}</div>
+                    <div className="text-[10px] text-zinc-300 group-hover:text-zinc-200 transition-colors">搭配 IDM/NDM 并设置 UA 为 pan.baidu.com 可满速</div>
+                  </div>
+                  <div className="text-emerald-500/30 group-hover:text-emerald-400 transition-colors">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                  </div>
+                </button>
+              )}
   
               {/* 自动加UA直接下载 (方法3 - 可禁用) */}
-              <button
-                onClick={() => {
-                  if (globalDisableThird) return;
-                  logUserAction('下载 - vercel服务器中转下载', alistDownloadModal.filePath);
-                  let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal.filePath)}`;
-                  if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
-                  const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-                  if (ccConfigStr) {
-                    downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
-                  }
-                  window.open(downloadUrl, '_blank');
-                  setAlistDownloadModal(null);
-                }}
-                disabled={globalDisableThird}
-                className={`w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left transition-all ${globalDisableThird ? 'bg-[#1a1a1a] border-zinc-800 opacity-60 cursor-not-allowed' : 'border-zinc-700 bg-black/40 hover:border-pink-500/50'}`}
-                style={!globalDisableThird ? { border: '1px solid var(--border-color)', color: 'var(--text-primary)' } : {}}
-              >
-                <div>
-                  <div className={`text-[11px] font-bold ${globalDisableThird ? 'text-zinc-500' : 'text-pink-400'}`}>
-                    🔥 服务器中转下载 {globalDisableThird ? '(已被系统禁用)' : '(备用)'}
+              {globalDownloadModes?.vercel !== 'hidden' && (
+                <button
+                  onClick={() => {
+                    if (globalDownloadModes?.vercel === 'disabled') return;
+                    logUserAction('下载 - vercel服务器中转下载', alistDownloadModal!.filePath);
+                    let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal!.filePath)}`;
+                    if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
+                    const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
+                    if (ccConfigStr) {
+                      downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
+                    }
+                    window.open(downloadUrl, '_blank');
+                    setAlistDownloadModal(null);
+                  }}
+                  disabled={globalDownloadModes?.vercel === 'disabled'}
+                  className={`w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left transition-all ${globalDownloadModes?.vercel === 'disabled' ? 'bg-[#1a1a1a] border-zinc-800 opacity-60 cursor-not-allowed' : 'border-zinc-700 bg-black/40 hover:border-pink-500/50'}`}
+                  style={globalDownloadModes?.vercel !== 'disabled' ? { border: '1px solid var(--border-color)', color: 'var(--text-primary)' } : {}}
+                >
+                  <div>
+                    <div className={`text-[11px] font-bold ${globalDownloadModes?.vercel === 'disabled' ? 'text-zinc-500' : 'text-pink-400'}`}>
+                      🔥 服务器中转下载 {globalDownloadModes?.vercel === 'disabled' ? '(已被系统禁用)' : '(备用)'}
+                    </div>
+                    <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>消耗服务器流量，仅在方案一失效时使用</div>
                   </div>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>消耗服务器流量，仅在方案一失效时使用</div>
-                </div>
-              </button>
+                </button>
+              )}
 
               {/* ⚡ 302 直链 (方法4) */}
-              <button
-                onClick={() => { alistDirectDownload(alistDownloadModal.filePath, alistDownloadModal.sign, '下载 - 302 直链跳转 (不加 UA)'); setAlistDownloadModal(null); }}
-                className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left border border-zinc-700 bg-black/40 hover:border-zinc-500 transition-colors"
-              >
-                <div>
-                  <div className="text-[11px] font-bold text-zinc-300">⚡ 302 直链跳转（不加 UA）</div>
-                  <div className="text-[10px] text-zinc-500">直接跳转百度 CDN，大文件可能被拦截阻断</div>
-                </div>
-              </button>
+              {globalDownloadModes?.direct302 !== 'hidden' && (
+                <button
+                  onClick={() => { 
+                    if (globalDownloadModes?.direct302 === 'disabled') return;
+                    alistDirectDownload(alistDownloadModal!.filePath, alistDownloadModal!.sign, '下载 - 302 直链跳转 (不加 UA)'); 
+                    setAlistDownloadModal(null); 
+                  }}
+                  disabled={globalDownloadModes?.direct302 === 'disabled'}
+                  className={`w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left border transition-colors ${globalDownloadModes?.direct302 === 'disabled' ? 'opacity-50 cursor-not-allowed bg-black/20 border-zinc-800' : 'border-zinc-700 bg-black/40 hover:border-zinc-500'}`}
+                >
+                  <div>
+                    <div className="text-[11px] font-bold text-zinc-300">⚡ 302 直链跳转（不加 UA）{globalDownloadModes?.direct302 === 'disabled' && '(已禁用)'}</div>
+                    <div className="text-[10px] text-zinc-500">直接跳转百度 CDN，大文件可能被拦截阻断</div>
+                  </div>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -17,13 +17,23 @@ export interface UserPermissions {
     delete: boolean;
     rename: boolean;
     preview: boolean;
+    setting: boolean;
 }
+
+export type DownloadModeState = 'enabled' | 'disabled' | 'hidden';
 
 export interface GlobalSettings {
     enableGuestMode: boolean;
     permissions?: Record<string, UserPermissions>;
-    disableThirdDownload?: boolean;
-    downloadChannel?: 'ecs' | 'frp';  // 'ecs' = 成都云服务器优先, 'frp' = 原 NAS(frp) 优先
+    disableThirdDownload?: boolean; // legacy
+    downloadChannel?: 'ecs' | 'frp';
+    downloadModes?: {
+        ecs: DownloadModeState;
+        cf: DownloadModeState;
+        raw: DownloadModeState;
+        vercel: DownloadModeState;
+        direct302: DownloadModeState;
+    };
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -37,13 +47,13 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
 
 // === 获取权限 ===
 export async function getUserPermissions(username: string, role: Role): Promise<UserPermissions> {
-    const defaultManager: UserPermissions = { view: true, download: true, upload: true, delete: true, rename: true, preview: true };
+    const defaultManager: UserPermissions = { view: true, download: true, upload: true, delete: true, rename: true, preview: true, setting: false };
     
     const settings = await getSettings();
-    const defaultGuest: UserPermissions = { view: true, download: true, upload: false, delete: false, rename: false, preview: true };
+    const defaultGuest: UserPermissions = { view: true, download: true, upload: false, delete: false, rename: false, preview: true, setting: false };
 
     if (role === 'admin') {
-        return { view: true, download: true, upload: true, delete: true, rename: true, preview: true };
+        return { view: true, download: true, upload: true, delete: true, rename: true, preview: true, setting: true };
     }
 
     const defaultPerms = role === 'manager' ? defaultManager : defaultGuest;
@@ -163,7 +173,18 @@ export async function updateAdminPassword(newPassword: string): Promise<{ ok: bo
 // === 全局设置 ===
 
 export async function getSettings(): Promise<GlobalSettings> {
-    const defaults: GlobalSettings = { enableGuestMode: true, permissions: {}, disableThirdDownload: false };
+    const defaults: GlobalSettings = { 
+        enableGuestMode: true, 
+        permissions: {}, 
+        disableThirdDownload: false,
+        downloadModes: {
+            ecs: 'enabled',
+            cf: 'enabled',
+            raw: 'enabled',
+            vercel: 'disabled', // Default to disabled based on legacy setup or can map to `disableThirdDownload` later
+            direct302: 'enabled'
+        }
+    };
     if (!supabase) return defaults;
 
     const { data, error } = await supabase
@@ -173,11 +194,23 @@ export async function getSettings(): Promise<GlobalSettings> {
         .single();
     if (error || !data) return defaults;
     const val = data.value as Record<string, unknown>;
+    
+    // Fallbacks
+    const legacyDisableThird = typeof val.disableThirdDownload === 'boolean' ? val.disableThirdDownload : false;
+    const dlModes = (val.downloadModes || {}) as any;
+
     return {
         enableGuestMode: typeof val.enableGuestMode === 'boolean' ? val.enableGuestMode : (typeof val.allowGuestDownload === 'boolean' ? val.allowGuestDownload : true),
         permissions: (val.permissions || {}) as Record<string, UserPermissions>,
-        disableThirdDownload: typeof val.disableThirdDownload === 'boolean' ? val.disableThirdDownload : false,
+        disableThirdDownload: legacyDisableThird,
         downloadChannel: (val.downloadChannel === 'ecs' || val.downloadChannel === 'frp') ? val.downloadChannel : 'ecs',
+        downloadModes: {
+            ecs: dlModes?.ecs || 'enabled',
+            cf: dlModes?.cf || 'enabled',
+            raw: dlModes?.raw || 'enabled',
+            vercel: dlModes?.vercel || (legacyDisableThird ? 'hidden' : 'enabled'), // migrate from legacy
+            direct302: dlModes?.direct302 || 'enabled',
+        }
     };
 }
 
