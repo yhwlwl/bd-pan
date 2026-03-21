@@ -18,6 +18,7 @@ export interface UserPermissions {
     rename: boolean;
     preview: boolean;
     setting: boolean;
+    basePath?: string;
 }
 
 export type DownloadModeState = 'enabled' | 'disabled' | 'hidden';
@@ -47,13 +48,13 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
 
 // === 获取权限 ===
 export async function getUserPermissions(username: string, role: Role): Promise<UserPermissions> {
-    const defaultManager: UserPermissions = { view: true, download: true, upload: true, delete: true, rename: true, preview: true, setting: false };
+    const defaultManager: UserPermissions = { view: true, download: true, upload: true, delete: true, rename: true, preview: true, setting: false, basePath: '/' };
     
     const settings = await getSettings();
-    const defaultGuest: UserPermissions = { view: true, download: true, upload: false, delete: false, rename: false, preview: true, setting: false };
+    const defaultGuest: UserPermissions = { view: true, download: true, upload: false, delete: false, rename: false, preview: true, setting: false, basePath: '/' };
 
     if (role === 'admin') {
-        return { view: true, download: true, upload: true, delete: true, rename: true, preview: true, setting: true };
+        return { view: true, download: true, upload: true, delete: true, rename: true, preview: true, setting: true, basePath: '/' };
     }
 
     const defaultPerms = role === 'manager' ? defaultManager : defaultGuest;

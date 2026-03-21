@@ -53,10 +53,13 @@ export async function PUT(request: Request) {
         const alistToken = tokenData.data.token;
 
         // 2. 拿到要上传的路径信息
-        const filePath = request.headers.get('File-Path');
-        if (!filePath) {
+        const originalFilePath = request.headers.get('File-Path');
+        if (!originalFilePath) {
             return NextResponse.json({ code: 400, message: '缺少 File-Path 请求头' }, { status: 400 });
         }
+        
+        const bp = (perms.basePath || '/').replace(/\/+$/, '');
+        const filePath = bp ? `${bp}${originalFilePath.startsWith('/') ? '' : '/'}${originalFilePath}` : originalFilePath;
 
         const contentLength = request.headers.get('Content-Length');
         const contentType = request.headers.get('Content-Type') || 'application/octet-stream';

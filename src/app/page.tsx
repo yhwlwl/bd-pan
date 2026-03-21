@@ -17,6 +17,7 @@ export interface UserPermissions {
   rename: boolean;
   preview: boolean;
   setting?: boolean;
+  basePath?: string;
 }
 
 export type DownloadModeState = 'enabled' | 'disabled' | 'hidden';
@@ -66,7 +67,7 @@ export default function Home() {
   const [alistRenaming, setAlistRenaming] = useState<string | null>(null);
   const [alistNewName, setAlistNewName] = useState('');
   const [alistDownloadModal, setAlistDownloadModal] = useState<{ name: string; filePath: string; sign?: string } | null>(null);
-
+  const [nodeLatencies, setNodeLatencies] = useState<Record<string, number | null>>({});
   // 文件预览
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive'; filePath: string; sign?: string; size?: number } | null>(null);
   const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' } | null>(null);
@@ -82,6 +83,7 @@ export default function Home() {
   // 管理面板
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
+  const [adminStats, setAdminStats] = useState<any>(null);
   const [adminSettings, setAdminSettings] = useState<GlobalSettings>({ 
     enableGuestMode: true, 
     permissions: {}, 
@@ -344,6 +346,33 @@ export default function Home() {
       return () => clearTimeout(t);
     }
   }, [alistMsg]);
+
+  // 节点智能优选 Ping 检测
+  const pingNode = async (url: string, key: string) => {
+    const start = Date.now();
+    try {
+      await fetch(url, { mode: 'no-cors', cache: 'no-store' });
+      setNodeLatencies(prev => ({ ...prev, [key]: Date.now() - start }));
+    } catch {
+      setNodeLatencies(prev => ({ ...prev, [key]: -1 }));
+    }
+  };
+
+  useEffect(() => {
+    if (alistDownloadModal) {
+      setNodeLatencies({});
+      if (globalDownloadModes?.cf !== 'disabled' && globalDownloadModes?.cf !== 'hidden') {
+        pingNode('https://cf.ryantan.fun/favicon.ico?t=' + Date.now(), 'cf');
+      }
+      if (globalDownloadModes?.ecs !== 'disabled' && globalDownloadModes?.ecs !== 'hidden') {
+        pingNode(getAlistBase() + '/favicon.ico?t=' + Date.now(), 'ecs');
+      }
+      if (globalDownloadModes?.raw !== 'disabled' && globalDownloadModes?.raw !== 'hidden') {
+        // Ping baidu CDN directly to see speed of raw resolving
+        pingNode('https://pan.baidu.com/favicon.ico?t=' + Date.now(), 'raw');
+      }
+    }
+  }, [alistDownloadModal, globalDownloadModes]);
 
   // === 登录 ===
   const handleLogin = async () => {
@@ -660,10 +689,13 @@ export default function Home() {
   const fetchAdminData = async () => {
     if (!userToken || userRole !== 'admin') return;
     try {
-      const res = await fetch('/api/users', {
-        headers: { 'Authorization': `Bearer ${userToken}` },
-      });
-      const data = await res.json();
+      const [usrRes, statsRes] = await Promise.all([
+        fetch('/api/users', { headers: { 'Authorization': `Bearer ${userToken}` } }),
+        fetch('/api/admin-stats', { headers: { 'Authorization': `Bearer ${userToken}` } })
+      ]);
+      const data = await usrRes.json();
+      const sData = await statsRes.json();
+
       if (data.users) setAdminUsers(data.users);
       if (data.settings) {
         setAdminSettings(data.settings);
@@ -673,6 +705,9 @@ export default function Home() {
         if (data.settings.downloadChannel === 'ecs' || data.settings.downloadChannel === 'frp') {
           setDownloadChannel(data.settings.downloadChannel);
         }
+      }
+      if (sData.code === 200 && sData.data) {
+        setAdminStats(sData.data);
       }
     } catch { }
   };
@@ -885,6 +920,40 @@ export default function Home() {
               </div>
             )}
 
+            {/* 数据大盘 */}
+            {adminStats && (
+              <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>实时数据审计 (过去七日)</div>
+                <div className="flex items-center justify-between mx-2 mb-2">
+                  <div className="flex flex-col items-center">
+                    <span className="text-[24px] font-black text-pink-500">{adminStats.todayDownloads}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>今日下载量</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-[24px] font-black text-blue-500">{adminStats.totalDownloads}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>近七日下载</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 text-[10px]">
+                  <div className="flex justify-between px-2 py-1 rounded bg-black/20 border border-zinc-800/50">
+                    <span className="text-pink-400">阿里云 ECS</span><span className="font-bold text-zinc-300">{adminStats.channelStats?.ecs || 0}</span>
+                  </div>
+                  <div className="flex justify-between px-2 py-1 rounded bg-black/20 border border-zinc-800/50">
+                    <span className="text-blue-400">Cloudflare</span><span className="font-bold text-zinc-300">{adminStats.channelStats?.cf || 0}</span>
+                  </div>
+                  <div className="flex justify-between px-2 py-1 rounded bg-black/20 border border-zinc-800/50">
+                    <span className="text-emerald-400">真实直链</span><span className="font-bold text-zinc-300">{adminStats.channelStats?.raw || 0}</span>
+                  </div>
+                  <div className="flex justify-between px-2 py-1 rounded bg-black/20 border border-zinc-800/50">
+                    <span className="text-orange-400">Vercel 中转</span><span className="font-bold text-zinc-300">{adminStats.channelStats?.vercel || 0}</span>
+                  </div>
+                  <div className="flex justify-between px-2 py-1 rounded bg-black/20 border border-zinc-800/50">
+                    <span className="text-zinc-400">302 跳转</span><span className="font-bold text-zinc-300">{adminStats.channelStats?.direct302 || 0}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 安全设置：超管密码 */}
             <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>安全设置</div>
@@ -1010,39 +1079,58 @@ export default function Home() {
                     </div>
                     {/* 权限设置 (仅非admin) */}
                     {u.username !== 'admin' && (
-                      <div className="pt-2 mt-1 border-t grid grid-cols-2 md:grid-cols-6 gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                        {[
-                          { key: 'view', label: '👀 浏览' },
-                          { key: 'preview', label: '👁️ 预览' },
-                          { key: 'download', label: '⬇️ 下载' },
-                          { key: 'upload', label: '⬆️ 上传' },
-                          { key: 'delete', label: '🗑️ 删除' },
-                          { key: 'rename', label: '📝 重命名' },
-                          { key: 'setting', label: '⚙️ 本地配置' }
-                        ].map(perm => {
-                          const uPerms = (u.permissions || {}) as any as Record<string, boolean>;
-                          const isOn = uPerms[perm.key] === true;
-                          const viewOff = perm.key !== 'view' && !uPerms.view;
-                          return (
-                            <label key={perm.key} className={`flex items-center gap-1.5 cursor-pointer ${viewOff ? 'opacity-30 pointer-events-none' : 'hover:opacity-80'}`}>
-                              <input
-                                type="checkbox"
-                                checked={isOn}
-                                disabled={viewOff}
-                                onChange={(e) => {
-                                  let newPerms = { ...uPerms, [perm.key]: e.target.checked };
-                                  // 关闭浏览时，其他权限也全部关闭
-                                  if (perm.key === 'view' && !e.target.checked) {
-                                    newPerms = { view: false, preview: false, download: false, upload: false, delete: false, rename: false, setting: false };
-                                  }
-                                  adminAction('updatePermissions', { username: u.username, permissions: newPerms });
-                                }}
-                                className="w-2.5 h-2.5 accent-pink-500"
-                              />
-                              <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>{perm.label}</span>
-                            </label>
-                          );
-                        })}
+                      <div className="pt-2 mt-1 border-t flex flex-col gap-3" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+                          {[
+                            { key: 'view', label: '👀 浏览' },
+                            { key: 'preview', label: '👁️ 预览' },
+                            { key: 'download', label: '⬇️ 下载' },
+                            { key: 'upload', label: '⬆️ 上传' },
+                            { key: 'delete', label: '🗑️ 删除' },
+                            { key: 'rename', label: '📝 重命名' },
+                            { key: 'setting', label: '⚙️ 本地配置' }
+                          ].map(perm => {
+                            const uPerms = (u.permissions || {}) as any as Record<string, boolean>;
+                            const isOn = uPerms[perm.key] === true;
+                            const viewOff = perm.key !== 'view' && !uPerms.view;
+                            return (
+                              <label key={perm.key} className={`flex items-center gap-1.5 cursor-pointer ${viewOff ? 'opacity-30 pointer-events-none' : 'hover:opacity-80'}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={isOn}
+                                  disabled={viewOff}
+                                  onChange={(e) => {
+                                    let newPerms = { ...uPerms, [perm.key]: e.target.checked };
+                                    if (perm.key === 'view' && !e.target.checked) {
+                                      newPerms = { ...newPerms, view: false, preview: false, download: false, upload: false, delete: false, rename: false, setting: false };
+                                    }
+                                    adminAction('updatePermissions', { username: u.username, permissions: newPerms });
+                                  }}
+                                  className="w-2.5 h-2.5 accent-pink-500"
+                                />
+                                <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>{perm.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        
+                        {/* 目录隔离设置 */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] shrink-0" style={{ color: 'var(--text-muted)' }}>🔒 根目录映射：</span>
+                          <input 
+                            type="text" 
+                            defaultValue={u.permissions?.basePath || '/'}
+                            onBlur={(e) => {
+                              const newPath = e.target.value.trim() || '/';
+                              if (newPath !== (u.permissions?.basePath || '/')) {
+                                adminAction('updatePermissions', { username: u.username, permissions: { ...u.permissions, basePath: newPath.startsWith('/') ? newPath : `/${newPath}` } });
+                              }
+                            }}
+                            placeholder="如: /Movies (默认 /)" 
+                            className="flex-1 rounded px-2 py-1 text-[10px] outline-none" 
+                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} 
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1480,8 +1568,13 @@ export default function Home() {
                   style={{ background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.1) 0%, rgba(219, 39, 119, 0.05) 100%)', borderColor: 'rgba(236, 72, 153, 0.3)' }}
                 >
                   <div>
-                    <div className="text-[12px] font-bold pb-0.5 text-pink-400 group-hover:text-pink-300 transition-colors">
-                      🚀 阿里云服务器极速下载 (最推荐) {globalDownloadModes?.ecs === 'disabled' && '(已禁用)'}
+                    <div className="text-[12px] font-bold pb-0.5 text-pink-400 group-hover:text-pink-300 transition-colors flex items-center gap-2">
+                      <span>🚀 阿里云服务器极速下载 (最推荐) {globalDownloadModes?.ecs === 'disabled' && '(已禁用)'}</span>
+                      {nodeLatencies['ecs'] !== undefined && (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded border ${nodeLatencies['ecs'] === -1 ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-pink-500/10 border-pink-500/20 text-pink-400'}`}>
+                          {nodeLatencies['ecs'] === -1 ? '超时丢包' : `${nodeLatencies['ecs']}ms`}
+                        </span>
+                      )}
                     </div>
                     <div className="text-[10px] text-zinc-400">阿里云服务器代理中转，自动携带百度 UA，无文件大小限制</div>
                   </div>
@@ -1513,8 +1606,13 @@ export default function Home() {
                   style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%)', borderColor: 'rgba(59, 130, 246, 0.3)' }}
                 >
                   <div>
-                    <div className="text-[12px] font-bold pb-1 text-blue-400 group-hover:text-blue-300 transition-colors">
-                      🌟 Cloudflare 边缘加速 {globalDownloadModes?.cf === 'disabled' && '(已禁用)'}
+                    <div className="text-[12px] font-bold pb-1 text-blue-400 group-hover:text-blue-300 transition-colors flex items-center gap-2">
+                      <span>🌟 Cloudflare 边缘加速 {globalDownloadModes?.cf === 'disabled' && '(已禁用)'}</span>
+                      {nodeLatencies['cf'] !== undefined && (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded border ${nodeLatencies['cf'] === -1 ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'}`}>
+                          {nodeLatencies['cf'] === -1 ? '超时丢包' : `${nodeLatencies['cf']}ms`}
+                        </span>
+                      )}
                     </div>
                     <div className="text-[10px] text-zinc-500">通过海外节点无痕中转，全球加速，不耗服务器流量</div>
                   </div>
@@ -1554,7 +1652,14 @@ export default function Home() {
                   style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)', borderColor: 'rgba(16, 185, 129, 0.3)' }}
                 >
                   <div>
-                    <div className="text-[12px] font-bold text-emerald-200 group-hover:text-emerald-100 transition-colors">🚀 复制直链 (迅雷/IDM/NDM) {globalDownloadModes?.raw === 'disabled' && '(已禁用)'}</div>
+                    <div className="text-[12px] font-bold text-emerald-200 group-hover:text-emerald-100 transition-colors flex items-center gap-2">
+                      <span>🚀 复制直链 (迅雷/IDM/NDM) {globalDownloadModes?.raw === 'disabled' && '(已禁用)'}</span>
+                      {nodeLatencies['raw'] !== undefined && (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded border ${nodeLatencies['raw'] === -1 ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'}`}>
+                          {nodeLatencies['raw'] === -1 ? '超时丢包' : `${nodeLatencies['raw']}ms`}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-[10px] text-zinc-300 group-hover:text-zinc-200 transition-colors">搭配 IDM/NDM 并设置 UA 为 pan.baidu.com 可满速</div>
                   </div>
                   <div className="text-emerald-500/30 group-hover:text-emerald-400 transition-colors">

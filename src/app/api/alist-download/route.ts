@@ -81,7 +81,10 @@ export async function GET(request: Request) {
         }
 
         const token = await getAlistToken(url, aUser, aPass);
-        const filename = path.split('/').pop() || 'download';
+        
+        const bp = (perms.basePath || '/').replace(/\/+$/, '');
+        const scopedPath = bp ? `${bp}${path.startsWith('/') ? '' : '/'}${path}` : path;
+        const filename = scopedPath.split('/').pop() || 'download';
         const rangeHeader = request.headers.get('range');
 
         // 获取文件信息
@@ -91,7 +94,7 @@ export async function GET(request: Request) {
                 'Content-Type': 'application/json',
                 'Authorization': token,
             },
-            body: JSON.stringify({ path }),
+            body: JSON.stringify({ path: scopedPath }),
         });
         const getData = await getRes.json();
 

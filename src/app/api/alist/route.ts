@@ -94,61 +94,43 @@ export async function POST(request: Request) {
 
         // 获取用户颗粒度权限
         const perms = await getUserPermissions(user.username, user.role);
+        
+        // --- 根目录权限隔离 ---
+        const applyBasePath = (p: string | undefined) => {
+            const original = p || '/';
+            const bp = (perms.basePath || '/').replace(/\/+$/, '');
+            if (!bp) return original;
+            if (original === '/') return bp || '/';
+            return `${bp}${original.startsWith('/') ? '' : '/'}${original}`;
+        };
+        const scopedPath = applyBasePath(path);
 
         // 写操作与读取操作精细权限校验
-        const writeActions = ['mkdir', 'remove', 'rename', 'upload'];
-
         if (action === 'list' || action === 'get') {
-            // 根目录始终允许浏览，子目录需要 view 权限
             const isRoot = !path || path === '/';
             if (!isRoot && !perms.view) return NextResponse.json({ code: 403, message: '无权浏览子目录' }, { status: 403 });
         }
-        if (action === 'mkdir') {
-            if (!perms.upload) return NextResponse.json({ code: 403, message: '无权创建文件夹（需要上传权限）' }, { status: 403 });
-        }
-        if (action === 'remove') {
-            if (!perms.delete) return NextResponse.json({ code: 403, message: '无权删除文件' }, { status: 403 });
-        }
-        if (action === 'rename') {
-            if (!perms.rename) return NextResponse.json({ code: 403, message: '无权修改文件/文件夹名' }, { status: 403 });
-        }
+        if (action === 'mkdir' && !perms.upload) return NextResponse.json({ code: 403, message: '无权创建文件夹（需要上传权限）' }, { status: 403 });
+        if (action === 'remove' && !perms.delete) return NextResponse.json({ code: 403, message: '无权删除文件' }, { status: 403 });
+        if (action === 'rename' && !perms.rename) return NextResponse.json({ code: 403, message: '无权修改文件/文件夹名' }, { status: 403 });
 
         let result: any;
 
         switch (action) {
             case 'list':
-                result = await alistFetch('/api/fs/list', {
-                    path: path || '/',
-                    page: 1,
-                    per_page: 0,
-                    refresh: false,
-                }, config);
+                result = await alistFetch('/api/fs/list', { path: scopedPath, page: 1, per_page: 0, refresh: false }, config);
                 break;
-
             case 'get':
-                result = await alistFetch('/api/fs/get', {
-                    path: path || '/',
-                }, config);
+                result = await alistFetch('/api/fs/get', { path: scopedPath }, config);
                 break;
-
             case 'mkdir':
-                result = await alistFetch('/api/fs/mkdir', {
-                    path: `${(path || '/').replace(/\/+$/, '')}/${dir_name}`,
-                }, config);
+                result = await alistFetch('/api/fs/mkdir', { path: `${scopedPath.replace(/\/+$/, '')}/${dir_name}` }, config);
                 break;
-
             case 'remove':
-                result = await alistFetch('/api/fs/remove', {
-                    dir: path || '/',
-                    names: names || (name ? [name] : []),
-                }, config);
+                result = await alistFetch('/api/fs/remove', { dir: scopedPath, names: names || (name ? [name] : []) }, config);
                 break;
-
             case 'rename':
-                result = await alistFetch('/api/fs/rename', {
-                    path: path || '/',
-                    name: (newName || '').trim(),
-                }, config);
+                result = await alistFetch('/api/fs/rename', { path: scopedPath, name: (newName || '').trim() }, config);
                 break;
 
             default:
