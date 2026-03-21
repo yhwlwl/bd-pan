@@ -561,7 +561,10 @@ export default function Home() {
           headers: { 'Authorization': `Bearer ${userToken}` },
         });
         const tokenData = await tokenRes.json();
-        if (tokenData.token && tokenData.url) {
+        const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+        const isAlistHttps = tokenData.url && tokenData.url.startsWith('https');
+        // 只有当协议匹配时才直连（避免 HTTPS 页面发 HTTP 请求导致"不安全"标记）
+        if (tokenData.token && tokenData.url && (!isPageHttps || isAlistHttps)) {
           setAlistMsg('🚀 直连云端节点上传中...');
           const uploadData: any = await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
