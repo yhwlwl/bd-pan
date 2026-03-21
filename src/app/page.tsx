@@ -170,7 +170,7 @@ export default function Home() {
     try {
       if (type === 'archive') {
         const ext = name.split('.').pop()?.toLowerCase();
-        setPreviewText(`⚠️ 不支持前端解析格式: ${ext?.toUpperCase() || '未知'}\n为保证浏览稳定性，系统已将提取引擎卸载。\n请点击底部下载按钮直接下载，如有特殊需求请联系系统维护者。`);
+        setPreviewText(`精简版前端暂不支持在内存中直接流式解压 ${ext?.toUpperCase() || '未知'} 文件。\n你可以直接前往 AList 底层网页端，调用原生提取器实现在线解包预览，\n或者点击下方下载按钮直接把压缩包存到本地。`);
         setPreviewFile({ name, url: '', type, filePath, sign, size });
         setPreviewLoading(false);
         return true;
@@ -1670,8 +1670,17 @@ export default function Home() {
                 </pre>
               ) : previewFile?.type === 'archive' ? (
                 <div className="w-full h-full flex flex-col items-center justify-center items-center overflow-auto text-xs text-zinc-300 p-6 rounded-xl" style={{ background: '#111', maxHeight: '78vh' }}>
-                  <div className="font-bold text-lg mb-4 text-emerald-400">📦 压缩包内容预览</div>
-                  <div className="text-zinc-400 whitespace-pre-wrap text-center">{previewText}</div>
+                  <div className="font-bold text-lg mb-4 text-emerald-400">📦 压缩包原生拆解预览</div>
+                  <div className="text-zinc-400 whitespace-pre-wrap text-center mb-8 leading-relaxed max-w-md">{previewText}</div>
+                  <button 
+                    onClick={() => {
+                      const base = getAlistBase();
+                      const path = previewFile.filePath.split('/').map(segment => encodeURIComponent(segment)).join('/');
+                      window.open(`${base}${path}`, '_blank');
+                    }}
+                    className="px-6 py-2.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white text-emerald-500 font-bold rounded-lg shadow-lg border border-emerald-500/30 transition-all font-mono">
+                    🪐 前往原生 AList 在线解压
+                  </button>
                 </div>
               ) : null}
             </div>
