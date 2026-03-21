@@ -35,6 +35,7 @@ export interface GlobalSettings {
     direct302: DownloadModeState;
   };
   bannedIps?: Record<string, number>;
+  hideAlistButton?: boolean;
 }
 
 export default function Home() {
@@ -75,6 +76,7 @@ export default function Home() {
   const [previewText, setPreviewText] = useState<string>('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewStarted, setPreviewStarted] = useState(false);
+  const [archiveItems, setArchiveItems] = useState<any[]>([]);
 
   // 更新日志弹窗
   const [showChangelog, setShowChangelog] = useState(false);
@@ -89,6 +91,7 @@ export default function Home() {
     enableGuestMode: true, 
     permissions: {}, 
     downloadChannel: 'ecs',
+    hideAlistButton: false,
   });
   const [globalDownloadModes, setGlobalDownloadModes] = useState<GlobalSettings['downloadModes']>({
     ecs: 'enabled', cf: 'enabled', raw: 'enabled', vercel: 'disabled', direct302: 'enabled'
@@ -150,6 +153,7 @@ export default function Home() {
     setPreviewStarted(false);
     setPreviewFile(null);
     setPreviewText('');
+    setArchiveItems([]);
     return true;
   };
 
@@ -170,8 +174,22 @@ export default function Home() {
     try {
       if (type === 'archive') {
         const ext = name.split('.').pop()?.toLowerCase();
-        setPreviewText(`精简版前端暂不支持在内存中直接流式解压 ${ext?.toUpperCase() || '未知'} 文件。\n你可以直接前往 AList 底层网页端，调用原生提取器实现在线解包预览，\n或者点击下方下载按钮直接把压缩包存到本地。`);
+        setPreviewText(`正在提取 ${ext?.toUpperCase() || '未知'} 压缩包目录...`);
         setPreviewFile({ name, url: '', type, filePath, sign, size });
+        
+        try {
+          const archiveRes = await fetchAlist({ action: 'list_archive', path: filePath });
+          const archiveData = await archiveRes.json();
+          if (archiveData.code === 200 && Array.isArray(archiveData.data)) {
+            setArchiveItems(archiveData.data);
+            setPreviewText('');
+          } else {
+            setPreviewText(`❌ 目录提取失败: ${archiveData.message || '格式不支持或文件已损坏'}`);
+          }
+        } catch (err: any) {
+          setPreviewText(`❌ 目录提取出错: ${err.message}`);
+        }
+        
         setPreviewLoading(false);
         return true;
       }
@@ -1121,6 +1139,15 @@ export default function Home() {
                   <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${adminSettings.enableGuestMode ? 'left-5' : 'left-0.5'}`} />
                 </button>
               </div>
+              <div className="flex items-center justify-between mb-3 border-t pt-3" style={{ borderColor: 'var(--border-subtle)' }}>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>隐藏 AList 原始入口 · {adminSettings.hideAlistButton ? '已开启' : '已关闭'}</span>
+                <button
+                  onClick={() => adminAction('updateSettings', { settings: { hideAlistButton: !adminSettings.hideAlistButton } })}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${adminSettings.hideAlistButton ? 'bg-orange-500' : 'bg-zinc-700'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${adminSettings.hideAlistButton ? 'left-5' : 'left-0.5'}`} />
+                </button>
+              </div>
               <div className="pt-3 mt-3 border-t space-y-2" style={{ borderColor: 'var(--border-subtle)' }}>
                 <span className="text-[10px] block mb-2" style={{ color: 'var(--text-muted)' }}>大文件下载通道控制</span>
                 {[
@@ -1604,7 +1631,7 @@ export default function Home() {
 
       {/* 文件预览弹窗 */}
       {previewItemMeta && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-xl" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); }}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-xl" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]); }}>
           <div className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-3xl overflow-hidden animate-in shadow-2xl border border-white/10" style={{ background: 'var(--bg-app)' }} onClick={e => e.stopPropagation()}>
             {/* 顶部栏 */}
             <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
@@ -1634,14 +1661,14 @@ export default function Home() {
                       } else {
                         alistDirectDownload(previewItemMeta.filePath, previewItemMeta.sign);
                       }
-                      setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null);
+                      setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]);
                     }}
                     className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-accent text-white hover:opacity-80 transition-opacity"
                   >
                     ⬇️ 下载
                   </button>
                 )}
-                <button onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setPreviewStarted(false); }} className="hover:opacity-100 opacity-60 transition-opacity p-2 text-lg">✕</button>
+                <button onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setPreviewStarted(false); setArchiveItems([]); }} className="hover:opacity-100 opacity-60 transition-opacity p-2 text-lg">✕</button>
               </div>
             </div>
 
@@ -1669,18 +1696,42 @@ export default function Home() {
                   {previewText || '加载中...'}
                 </pre>
               ) : previewFile?.type === 'archive' ? (
-                <div className="w-full h-full flex flex-col items-center justify-center items-center overflow-auto text-xs text-zinc-300 p-6 rounded-xl" style={{ background: '#111', maxHeight: '78vh' }}>
-                  <div className="font-bold text-lg mb-4 text-emerald-400">📦 压缩包原生拆解预览</div>
-                  <div className="text-zinc-400 whitespace-pre-wrap text-center mb-8 leading-relaxed max-w-md">{previewText}</div>
-                  <button 
-                    onClick={() => {
-                      const base = getAlistBase();
-                      const path = previewFile.filePath.split('/').map(segment => encodeURIComponent(segment)).join('/');
-                      window.open(`${base}${path}`, '_blank');
-                    }}
-                    className="px-6 py-2.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white text-emerald-500 font-bold rounded-lg shadow-lg border border-emerald-500/30 transition-all font-mono">
-                    🪐 前往原生 AList 在线解压
-                  </button>
+                <div className="w-full h-full flex flex-col p-2 overflow-hidden" style={{ background: '#0a0a0a', maxHeight: '78vh' }}>
+                  {archiveItems.length > 0 ? (
+                    <div className="flex flex-col h-full">
+                      <div className="flex items-center gap-2 mb-4 px-2">
+                        <span className="text-emerald-400 text-lg">📦</span>
+                        <div className="text-xs font-bold text-zinc-300">压缩包内部文件清单 ({archiveItems.length} 个对象)</div>
+                      </div>
+                      <div className="flex-1 overflow-auto custom-scrollbar border border-zinc-800/50 rounded-xl">
+                        <table className="w-full text-left text-[11px] border-collapse">
+                          <thead className="sticky top-0 bg-[#0a0a0a] z-10">
+                            <tr className="border-b border-zinc-800">
+                              <th className="py-2.5 px-3 text-zinc-500 font-normal">文件名</th>
+                              <th className="py-2.5 px-3 text-zinc-500 font-normal text-right w-[80px]">大小</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {archiveItems.map((f: any, i: number) => (
+                              <tr key={i} className="border-b border-zinc-900/50 hover:bg-zinc-800/30 transition-colors">
+                                <td className="py-2 px-3 text-zinc-300 font-mono truncate max-w-[400px]" title={f.name}>
+                                  {f.is_dir ? '📁' : '📄'} {f.name}
+                                </td>
+                                <td className="py-2 px-3 text-zinc-500 font-mono text-right w-[80px]">
+                                  {f.is_dir ? '-' : (f.size / 1024 / 1024).toFixed(2) + ' MB'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-4">
+                      <div className="text-zinc-500 text-sm">{previewText || '正在读取压缩包目录...'}</div>
+                      {!previewText.startsWith('❌') && <div className="w-8 h-8 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>}
+                    </div>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -2110,9 +2161,11 @@ export default function Home() {
                   </button>
                 )}
               </div>
-              <button onClick={() => window.open(getAlistBase(), '_blank')} className="hover:opacity-100 opacity-80 transition-opacity">
-                在 AList 中打开 ↗
-              </button>
+              {!adminSettings.hideAlistButton && (
+                <button onClick={() => window.open(getAlistBase(), '_blank')} className="hover:opacity-100 opacity-80 transition-opacity">
+                  在 AList 中打开 ↗
+                </button>
+              )}
             </div>
 
           </div>

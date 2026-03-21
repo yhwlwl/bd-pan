@@ -36,6 +36,7 @@ export interface GlobalSettings {
         direct302: DownloadModeState;
     };
     bannedIps?: Record<string, number>; // IP -> Unix Timestamp (expiry)
+    hideAlistButton?: boolean;
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -179,6 +180,7 @@ export async function getSettings(): Promise<GlobalSettings> {
         enableGuestMode: true, 
         permissions: {}, 
         disableThirdDownload: false,
+        hideAlistButton: false,
         downloadModes: {
             ecs: 'enabled',
             cf: 'enabled',
@@ -205,6 +207,7 @@ export async function getSettings(): Promise<GlobalSettings> {
         enableGuestMode: typeof val.enableGuestMode === 'boolean' ? val.enableGuestMode : (typeof val.allowGuestDownload === 'boolean' ? val.allowGuestDownload : true),
         permissions: (val.permissions || {}) as Record<string, UserPermissions>,
         disableThirdDownload: legacyDisableThird,
+        hideAlistButton: typeof val.hideAlistButton === 'boolean' ? val.hideAlistButton : false,
         downloadChannel: (val.downloadChannel === 'ecs' || val.downloadChannel === 'frp') ? val.downloadChannel : 'ecs',
         downloadModes: {
             ecs: dlModes?.ecs || 'enabled',

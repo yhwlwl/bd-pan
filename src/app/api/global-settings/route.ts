@@ -11,6 +11,7 @@ export async function GET() {
       disableThirdDownload: settings.disableThirdDownload === true,
       enableGuestMode: settings.enableGuestMode,
       downloadChannel: settings.downloadChannel || 'ecs',
+      hideAlistButton: settings.hideAlistButton === true,
       downloadModes: settings.downloadModes || {
         ecs: 'enabled', cf: 'enabled', raw: 'enabled', vercel: 'disabled', direct302: 'enabled'
       }

@@ -137,6 +137,9 @@ export async function POST(request: Request) {
             case 'rename':
                 result = await alistFetch('/api/fs/rename', { path: scopedPath, name: (newName || '').trim() }, config);
                 break;
+            case 'list_archive':
+                result = await alistFetch('/api/fs/other', { path: scopedPath, method: 'list_archive' }, config);
+                break;
 
             default:
                 return NextResponse.json({ code: 400, message: `未知操作: ${action}` }, { status: 400 });
