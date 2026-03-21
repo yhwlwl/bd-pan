@@ -553,7 +553,7 @@ export default function Home() {
       const uploadPath = alistPath.replace(/\/+$/, '') + '/' + alistUploadFile.name;
       const encodedFilePath = uploadPath.split('/').map(encodeURIComponent).join('/');
 
-      // 1. 尝试直连上传（现在你有 HTTPS 了，这不仅解决了 413，还解决了混合内容问题！）
+      // 1. 尝试直连上传
       let directSuccess = false;
       try {
         const tokenRes = await fetch('/api/alist-token', {
@@ -561,6 +561,8 @@ export default function Home() {
           headers: { 'Authorization': `Bearer ${userToken}` },
         });
         const tokenData = await tokenRes.json();
+        
+        console.log('[upload] AList后端地址采集:', tokenData.url);
         
         if (tokenData.token && tokenData.url && tokenData.url.startsWith('https')) {
           setAlistMsg('🚀 正在通过直连极速线路上传 (绕过 Vercel)...');
@@ -581,7 +583,7 @@ export default function Home() {
                 reject(new Error(`HTTP ${xhr.status}`));
               }
             };
-            xhr.onerror = () => reject(new Error('直连异常(SSL/CORS)'));
+            xhr.onerror = () => reject(new Error('直连异常(SSL/CORS) - 请检查5244/15244端口和Nginx证书'));
             xhr.send(alistUploadFile);
           });
           
@@ -592,9 +594,11 @@ export default function Home() {
             setAlistUploadFile(null);
             alistListDir(alistPath);
           }
+        } else {
+          console.warn('[upload] 直连未开启: URL未设为https或Token丢失', tokenData);
         }
-      } catch (directErr) {
-        console.warn('[upload] 直连失败或不支持:', directErr);
+      } catch (directErr: any) {
+        console.error('[upload] 直连尝试发生错误:', directErr);
       }
 
       // 2. 如果直连由于某种原因失败，再尝试代理中转
