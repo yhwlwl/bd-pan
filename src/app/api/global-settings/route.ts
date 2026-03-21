@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSettings } from '../../../lib/users';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const settings = await getSettings();
@@ -9,6 +11,9 @@ export async function GET() {
       disableThirdDownload: settings.disableThirdDownload === true,
       enableGuestMode: settings.enableGuestMode,
       downloadChannel: settings.downloadChannel || 'ecs',
+      downloadModes: settings.downloadModes || {
+        ecs: 'enabled', cf: 'enabled', raw: 'enabled', vercel: 'disabled', direct302: 'enabled'
+      }
     });
   } catch (error: any) {
     return NextResponse.json({ disableThirdDownload: false }, { status: 500 });
