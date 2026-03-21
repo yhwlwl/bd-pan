@@ -34,6 +34,7 @@ export interface GlobalSettings {
     vercel: DownloadModeState;
     direct302: DownloadModeState;
   };
+  bannedIps?: Record<string, number>;
 }
 
 export default function Home() {
@@ -947,9 +948,91 @@ export default function Home() {
                   <div className="flex justify-between px-2 py-1 rounded bg-black/20 border border-zinc-800/50">
                     <span className="text-orange-400">Vercel 中转</span><span className="font-bold text-zinc-300">{adminStats.channelStats?.vercel || 0}</span>
                   </div>
-                  <div className="flex justify-between px-2 py-1 rounded bg-black/20 border border-zinc-800/50">
-                    <span className="text-zinc-400">302 跳转</span><span className="font-bold text-zinc-300">{adminStats.channelStats?.direct302 || 0}</span>
-                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 访问统计与封禁 */}
+            {adminStats && adminStats.topIps && adminStats.topIps.length > 0 && (
+              <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                <div className="text-[10px] uppercase font-bold tracking-widest text-red-500">IP 访问统计与封禁</div>
+                <div className="max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="sticky top-0 backdrop-blur" style={{ background: 'var(--bg-input)' }}>
+                      <tr>
+                        <th className="py-2 text-zinc-400 font-normal w-[90px]">访问 IP</th>
+                        <th className="py-2 text-zinc-400 font-normal text-center">请求数</th>
+                        <th className="py-2 text-zinc-400 font-normal w-[60px] truncate">账号</th>
+                        <th className="py-2 text-right text-zinc-400 font-normal w-[40px]">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminStats.topIps.map((ipHit: any) => {
+                        const isBanned = adminSettings?.bannedIps?.[ipHit.ip] && adminSettings.bannedIps[ipHit.ip] > Date.now();
+                        const banExpiry = isBanned ? new Date(adminSettings.bannedIps![ipHit.ip]).toLocaleString() : '';
+                        return (
+                          <tr key={ipHit.ip} className="border-t border-zinc-800/30">
+                            <td className="py-1.5 font-mono text-zinc-300 w-[90px] truncate" title={ipHit.ip}>{ipHit.ip}</td>
+                            <td className="py-1.5 text-zinc-400 text-center">{ipHit.count}</td>
+                            <td className="py-1.5 text-zinc-400 w-[60px] truncate" title={ipHit.lastUser}>{ipHit.lastUser}</td>
+                            <td className="py-1.5 text-right w-[40px]">
+                              {isBanned ? (
+                                <button 
+                                  onClick={() => {
+                                    const newBans = { ...adminSettings.bannedIps };
+                                    delete newBans[ipHit.ip];
+                                    adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                  }}
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20" title={`过期时间: ${banExpiry}`}>解封</button>
+                              ) : (
+                                <button 
+                                  onClick={() => {
+                                    const hoursStr = window.prompt(`需要封禁 IP ${ipHit.ip} 多少小时？\n输入 0 或取消可终止操作。`, '24');
+                                    if (!hoursStr) return;
+                                    const hours = parseInt(hoursStr, 10);
+                                    if (isNaN(hours) || hours <= 0) return;
+                                    const newBans = { ...(adminSettings.bannedIps || {}), [ipHit.ip]: Date.now() + hours * 3600 * 1000 };
+                                    adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                  }}
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20">封禁</button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 高危操作审计 */}
+            {adminStats && adminStats.highRiskLogs && adminStats.highRiskLogs.length > 0 && (
+              <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                <div className="text-[10px] uppercase font-bold tracking-widest text-orange-400">高危操作审计 (最近)</div>
+                <div className="max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="sticky top-0 backdrop-blur" style={{ background: 'var(--bg-input)' }}>
+                      <tr>
+                        <th className="py-2 text-zinc-400 font-normal w-[45px]">时间</th>
+                        <th className="py-2 text-zinc-400 font-normal w-[45px]">用户</th>
+                        <th className="py-2 text-zinc-400 font-normal w-[50px]">动作</th>
+                        <th className="py-2 text-zinc-400 font-normal">对象</th>
+                        <th className="py-2 text-zinc-400 font-normal w-[70px]">源 IP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminStats.highRiskLogs.map((log: any, idx: number) => (
+                        <tr key={idx} className="border-t border-zinc-800/30">
+                          <td className="py-1.5 text-zinc-500 w-[45px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                          <td className="py-1.5 text-zinc-300 font-bold w-[45px] truncate" title={log.username}>{log.username}</td>
+                          <td className="py-1.5 text-orange-300 w-[50px] truncate" title={log.action}>{log.action}</td>
+                          <td className="py-1.5 text-zinc-400 truncate max-w-[100px]" title={log.item}>{log.item}</td>
+                          <td className="py-1.5 font-mono text-zinc-500 w-[70px] truncate" title={log.ip}>{log.ip}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

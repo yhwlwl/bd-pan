@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { signToken } from '../_auth';
-import { findUser, getSettings, getUserPermissions } from '../../../lib/users';
+import { findUser, getSettings, getUserPermissions, checkIpBanned } from '../../../lib/users';
 
 export async function POST(request: Request) {
     try {
+        const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+        if (await checkIpBanned(clientIp)) {
+            return NextResponse.json({ error: '您的 IP 环境异常，已被防火墙阻断访问' }, { status: 403 });
+        }
+
         const body = await request.json();
 
         // 游客模式

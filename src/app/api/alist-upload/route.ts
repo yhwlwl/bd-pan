@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
-import { getUserPermissions, getSettings } from '../../../lib/users';
+import { getUserPermissions, getSettings, checkIpBanned } from '../../../lib/users';
 
 // ECS 成都节点 (主)
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'http://8.137.91.213:5244').replace(/\/+$/, '');
@@ -13,6 +13,11 @@ const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 
 export async function PUT(request: Request) {
     // 获取当前用户及权限
+    const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    if (await checkIpBanned(clientIp)) {
+        return NextResponse.json({ code: 403, message: '您的 IP 环境异常，已被防火墙阻断访问' }, { status: 403 });
+    }
+
     const authHeader = request.headers.get('authorization') || undefined;
     const user = verifyToken(authHeader);
     if (!user) {

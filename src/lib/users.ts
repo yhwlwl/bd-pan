@@ -35,6 +35,7 @@ export interface GlobalSettings {
         vercel: DownloadModeState;
         direct302: DownloadModeState;
     };
+    bannedIps?: Record<string, number>; // IP -> Unix Timestamp (expiry)
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -211,7 +212,8 @@ export async function getSettings(): Promise<GlobalSettings> {
             raw: dlModes?.raw || 'enabled',
             vercel: dlModes?.vercel || (legacyDisableThird ? 'hidden' : 'enabled'), // migrate from legacy
             direct302: dlModes?.direct302 || 'enabled',
-        }
+        },
+        bannedIps: (val.bannedIps || {}) as Record<string, number>
     };
 }
 
@@ -224,4 +226,21 @@ export async function updateSettings(patch: Partial<GlobalSettings>): Promise<vo
     await supabase
         .from('bdpan_settings')
         .upsert({ key: 'global', value: merged });
+}
+
+export async function checkIpBanned(ip: string | null): Promise<boolean> {
+    if (!ip) return false;
+    const settings = await getSettings();
+    if (!settings.bannedIps || !settings.bannedIps[ip]) return false;
+    
+    // Check expiry
+    const expiry = settings.bannedIps[ip];
+    if (Date.now() > expiry) {
+        // Expired, auto clean up lazily
+        delete settings.bannedIps[ip];
+        await updateSettings({ bannedIps: settings.bannedIps });
+        return false;
+    }
+    
+    return true;
 }

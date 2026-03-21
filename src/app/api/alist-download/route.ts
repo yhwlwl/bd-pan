@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
-import { getUserPermissions, getSettings } from '../../../lib/users';
+import { getUserPermissions, getSettings, checkIpBanned } from '../../../lib/users';
 
 // ECS 成都节点 (主)
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'http://8.137.91.213:5244').replace(/\/+$/, '');
@@ -33,6 +33,11 @@ async function getAlistToken(url: string, user: string, pass: string): Promise<s
 
 export async function GET(request: Request) {
     try {
+        const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+        if (await checkIpBanned(clientIp)) {
+            return new Response('您的 IP 环境异常，已被防火墙阻断访问', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+        }
+
         const { searchParams } = new URL(request.url);
         const path = searchParams.get('path');
         const configB64 = searchParams.get('c');
