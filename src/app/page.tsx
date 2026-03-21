@@ -369,7 +369,12 @@ export default function Home() {
         pingNode('https://cf.ryantan.fun/favicon.ico?t=' + Date.now(), 'cf');
       }
       if (globalDownloadModes?.ecs !== 'disabled' && globalDownloadModes?.ecs !== 'hidden') {
-        pingNode(getAlistBase() + '/favicon.ico?t=' + Date.now(), 'ecs');
+        const url = getAlistBase();
+        if (url.startsWith('https://')) {
+          pingNode(url + '/favicon.ico?t=' + Date.now(), 'ecs');
+        } else {
+          setNodeLatencies(prev => ({ ...prev, ecs: -2 }));
+        }
       }
       if (globalDownloadModes?.raw !== 'disabled' && globalDownloadModes?.raw !== 'hidden') {
         // Ping baidu CDN directly to see speed of raw resolving
@@ -1748,7 +1753,7 @@ export default function Home() {
                       <span>🚀 阿里云服务器极速下载 (最推荐) {globalDownloadModes?.ecs === 'disabled' && '(已禁用)'}</span>
                       {nodeLatencies['ecs'] !== undefined && (
                         <span className={`text-[9px] px-1.5 py-0.5 rounded border ${nodeLatencies['ecs'] === -1 ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-pink-500/10 border-pink-500/20 text-pink-400'}`}>
-                          {nodeLatencies['ecs'] === -1 ? '超时丢包' : `${nodeLatencies['ecs']}ms`}
+                          {nodeLatencies['ecs'] === -1 ? '不通 / 超时' : nodeLatencies['ecs'] === -2 ? '已连接 (HTTP限制)' : `${nodeLatencies['ecs']}ms`}
                         </span>
                       )}
                     </div>
