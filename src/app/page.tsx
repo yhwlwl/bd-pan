@@ -553,78 +553,43 @@ export default function Home() {
       const uploadPath = alistPath.replace(/\/+$/, '') + '/' + alistUploadFile.name;
       const encodedFilePath = uploadPath.split('/').map(encodeURIComponent).join('/');
 
-      // 1. 尝试直连 ECS 上传（绕过 Vercel，极速）
-      let directSuccess = false;
-      try {
-        const tokenRes = await fetch('/api/alist-token', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${userToken}` },
-        });
-        const tokenData = await tokenRes.json();
-        if (tokenData.token && tokenData.url) {
-          setAlistMsg('🚀 正在通过阿里云极速线路直传...');
-          const uploadData: any = await new Promise((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('PUT', `${tokenData.url}/api/fs/put`);
-            xhr.setRequestHeader('Authorization', tokenData.token);
-            xhr.setRequestHeader('File-Path', encodedFilePath);
-            xhr.setRequestHeader('Content-Type', alistUploadFile!.type || 'application/octet-stream');
-            xhr.upload.onprogress = (e) => {
-              if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
-            };
-            xhr.onload = () => {
-              try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
-            };
-            xhr.onerror = () => reject(new Error('CORS_OR_NETWORK'));
-            xhr.send(alistUploadFile);
-          });
-          if (uploadData.code === 200) {
-            directSuccess = true;
-            setAlistMsg('✅ 极速上传成功 (直连 ECS)');
-            logUserAction('上传(直连)', uploadPath);
-            setAlistUploadFile(null);
-            alistListDir(alistPath);
-          } else {
-            setAlistMsg(`❌ ${uploadData.message}`);
-            directSuccess = true; // 虽然失败但不需要 fallback
-          }
-        }
-      } catch (directErr: any) {
-        // 直连失败（CORS 或网络问题），降级到 Vercel 代理
-        console.warn('[upload] 直连失败，降级到 Vercel 代理:', directErr.message);
+      setAlistMsg('🚀 正在通过阿里云极速线路上传...');
+
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${userToken}`,
+        'File-Path': encodedFilePath,
+        'Content-Type': alistUploadFile.type || 'application/octet-stream',
+      };
+
+      const cc = getCustomConfig();
+      if (cc) {
+        if (cc.url) headers['x-alist-url'] = cc.url;
+        if (cc.user) headers['x-alist-username'] = cc.user;
+        if (cc.pass) headers['x-alist-password'] = cc.pass;
       }
 
-      // 2. Fallback: 通过 Vercel Dashboard 代理上传
-      if (!directSuccess) {
-        setAlistMsg('⏳ 通过 Dashboard 中转上传中...');
-        setUploadProgress(0);
-        const headers: Record<string, string> = {
-          'Authorization': `Bearer ${userToken}`,
-          'File-Path': encodedFilePath,
-          'Content-Type': alistUploadFile.type || 'application/octet-stream',
-          'Content-Length': String(alistUploadFile.size),
+      const uploadData: any = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', '/api/alist-upload');
+        Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
         };
-        const cc = getCustomConfig();
-        if (cc) {
-          if (cc.url) headers['x-alist-url'] = cc.url;
-          if (cc.user) headers['x-alist-username'] = cc.user;
-          if (cc.pass) headers['x-alist-password'] = cc.pass;
-        }
-        const uploadData: any = await new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', '/api/alist-upload');
-          Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
-          };
-          xhr.onload = () => {
-            try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
-          };
-          xhr.onerror = () => reject(new Error('网络异常'));
-          xhr.send(alistUploadFile);
-        });
-        if (uploadData.code === 200) { setAlistMsg('✅ 上传成功 (中转)'); logUserAction('上传(中转)', uploadPath); setAlistUploadFile(null); alistListDir(alistPath); }
-        else setAlistMsg(`❌ ${uploadData.message}`);
+        xhr.onload = () => {
+          try { resolve(JSON.parse(xhr.responseText)); }
+          catch { reject(new Error(`上传响应异常 (HTTP ${xhr.status})`)); }
+        };
+        xhr.onerror = () => reject(new Error('网络连接异常'));
+        xhr.send(alistUploadFile);
+      });
+
+      if (uploadData.code === 200) {
+        setAlistMsg('✅ 上传成功');
+        logUserAction('上传', uploadPath);
+        setAlistUploadFile(null);
+        alistListDir(alistPath);
+      } else {
+        setAlistMsg(`❌ ${uploadData.message || '上传失败'}`);
       }
     } catch (e: any) { setAlistMsg(`❌ 上传失败: ${e.message}`); }
     finally { setAlistUploading(false); setUploadProgress(null); }
@@ -1519,7 +1484,7 @@ export default function Home() {
                   </svg>
                 </div>
               </button>
-
+  
               {/* 自动加UA直接下载 (方法3 - 可禁用) */}
               <button
                 onClick={() => {
