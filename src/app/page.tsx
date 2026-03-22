@@ -91,7 +91,7 @@ export default function Home() {
     enableGuestMode: true, 
     permissions: {}, 
     downloadChannel: 'ecs',
-    hideAlistButton: false,
+    hideAlistButton: true,
   });
   const [globalDownloadModes, setGlobalDownloadModes] = useState<GlobalSettings['downloadModes']>({
     ecs: 'enabled', cf: 'enabled', raw: 'enabled', vercel: 'disabled', direct302: 'enabled'

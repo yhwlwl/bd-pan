@@ -180,7 +180,7 @@ export async function getSettings(): Promise<GlobalSettings> {
         enableGuestMode: true, 
         permissions: {}, 
         disableThirdDownload: false,
-        hideAlistButton: false,
+        hideAlistButton: true,
         downloadModes: {
             ecs: 'enabled',
             cf: 'enabled',
@@ -207,7 +207,7 @@ export async function getSettings(): Promise<GlobalSettings> {
         enableGuestMode: typeof val.enableGuestMode === 'boolean' ? val.enableGuestMode : (typeof val.allowGuestDownload === 'boolean' ? val.allowGuestDownload : true),
         permissions: (val.permissions || {}) as Record<string, UserPermissions>,
         disableThirdDownload: legacyDisableThird,
-        hideAlistButton: typeof val.hideAlistButton === 'boolean' ? val.hideAlistButton : false,
+        hideAlistButton: typeof val.hideAlistButton === 'boolean' ? val.hideAlistButton : true,
         downloadChannel: (val.downloadChannel === 'ecs' || val.downloadChannel === 'frp') ? val.downloadChannel : 'ecs',
         downloadModes: {
             ecs: dlModes?.ecs || 'enabled',
