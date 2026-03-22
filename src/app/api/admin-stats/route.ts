@@ -18,34 +18,29 @@ export async function GET(request: Request) {
             return NextResponse.json({ code: 500, message: '系统未配置数据库' }, { status: 500 });
         }
 
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const cutoffString = sevenDaysAgo.toISOString();
-
         const { data: logs, error } = await supabase
             .from('bdpan_action_logs')
             .select('action_type, created_at, username, ip, action_item, location')
-            .gte('created_at', cutoffString)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        let todayDownloads = 0;
+        let past24hDownloads = 0;
         let totalDownloads = 0;
         
-        const channelStats: Record<string, { today: number, total: number, logs: any[] }> = { 
-            ecs: { today: 0, total: 0, logs: [] }, 
-            cf: { today: 0, total: 0, logs: [] }, 
-            raw: { today: 0, total: 0, logs: [] }, 
-            vercel: { today: 0, total: 0, logs: [] }, 
-            direct302: { today: 0, total: 0, logs: [] }, 
-            other: { today: 0, total: 0, logs: [] } 
+        const channelStats: Record<string, { past24h: number, total: number, logs: any[] }> = { 
+            ecs: { past24h: 0, total: 0, logs: [] }, 
+            cf: { past24h: 0, total: 0, logs: [] }, 
+            raw: { past24h: 0, total: 0, logs: [] }, 
+            vercel: { past24h: 0, total: 0, logs: [] }, 
+            direct302: { past24h: 0, total: 0, logs: [] }, 
+            other: { past24h: 0, total: 0, logs: [] } 
         };
         const ipStats: Record<string, { count: number, lastActive: string, lastUser: string, location: string }> = {};
         const highRiskLogs: any[] = [];
+        const allDownloadLogs: any[] = [];
 
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         
         const riskTypes = ['上传', '删除', '重命名', '建立文件夹'];
 
@@ -57,11 +52,11 @@ export async function GET(request: Request) {
             }
 
             const isDownload = log.action_type.startsWith('下载 -');
-            const isToday = new Date(log.created_at) >= todayStart;
+            const isPast24h = new Date(log.created_at) >= twentyFourHoursAgo;
 
             if (isDownload) {
                 totalDownloads++;
-                if (isToday) todayDownloads++;
+                if (isPast24h) past24hDownloads++;
                 
                 let key = 'other';
                 if (log.action_type.includes('阿里云服务器极速下载')) key = 'ecs';
@@ -71,15 +66,17 @@ export async function GET(request: Request) {
                 else if (log.action_type.includes('302 直链跳转')) key = 'direct302';
                 
                 channelStats[key].total++;
-                if (isToday) channelStats[key].today++;
+                if (isPast24h) channelStats[key].past24h++;
                 
-                channelStats[key].logs.push({
+                const logObj = {
                     username: log.username,
                     ip: log.ip,
                     location: log.location || '未知定位',
                     time: log.created_at,
                     item: log.action_item
-                });
+                };
+                channelStats[key].logs.push(logObj);
+                allDownloadLogs.push({ ...logObj, channel: key });
             }
 
             // High risk events
@@ -104,11 +101,12 @@ export async function GET(request: Request) {
         return NextResponse.json({
             code: 200,
             data: {
-                todayDownloads,
+                past24hDownloads,
                 totalDownloads,
                 channelStats,
                 highRiskLogs,
-                topIps
+                topIps,
+                allDownloadLogs
             }
         });
 

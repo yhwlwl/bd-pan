@@ -104,8 +104,10 @@ export default function Home() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   
   const [ipLimit, setIpLimit] = useState<number>(5);
+  const [ipSort, setIpSort] = useState<'count' | 'time'>('count');
   const [riskLimit, setRiskLimit] = useState<number>(5);
   const [selectedChannelDetailedStats, setSelectedChannelDetailedStats] = useState<string | null>(null);
+  const [allDownloadStatsModal, setAllDownloadStatsModal] = useState<{ title: string; logs: any[] } | null>(null);
   // === 远端 AList 设置（仅本地生效） ===
   const [showSettings, setShowSettings] = useState(false);
   const [customUrl, setCustomUrl] = useState('');
@@ -946,15 +948,23 @@ export default function Home() {
             {/* 数据大盘 */}
             {adminStats && (
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
-                <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>实时数据审计 (过去七日)</div>
+                <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>实时数据审计 (全量历史)</div>
                 <div className="flex items-center justify-between mx-2 mb-2">
-                  <div className="flex flex-col items-center">
-                    <span className="text-[24px] font-black text-pink-500">{adminStats.todayDownloads}</span>
-                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>今日下载量</span>
+                  <div 
+                    className="flex flex-col items-center cursor-pointer hover:bg-zinc-800/30 px-4 py-2 rounded-xl transition-colors tooltip-trigger" 
+                    title="点击查看详情" 
+                    onClick={() => setAllDownloadStatsModal({ title: '过去24小时下载记录', logs: adminStats.allDownloadLogs?.filter((l: any) => new Date(l.time).getTime() >= Date.now() - 24*3600*1000) || [] })}
+                  >
+                    <span className="text-[24px] font-black text-pink-500">{adminStats.past24hDownloads || 0}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>过去24小时</span>
                   </div>
-                  <div className="flex flex-col items-center">
-                    <span className="text-[24px] font-black text-blue-500">{adminStats.totalDownloads}</span>
-                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>近七日下载</span>
+                  <div 
+                    className="flex flex-col items-center cursor-pointer hover:bg-zinc-800/30 px-4 py-2 rounded-xl transition-colors tooltip-trigger" 
+                    title="点击查看详情" 
+                    onClick={() => setAllDownloadStatsModal({ title: '全部历史下载记录', logs: adminStats.allDownloadLogs || [] })}
+                  >
+                    <span className="text-[24px] font-black text-blue-500">{adminStats.totalDownloads || 0}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>总历史下载数</span>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 text-[10px]">
@@ -973,7 +983,7 @@ export default function Home() {
                     >
                       <span className={`text-${ch.color}-400`}>{ch.name}</span>
                       <span className="font-bold text-zinc-300 text-right">
-                        <span className="text-zinc-500 font-normal pr-1" title="过去24小时">{(adminStats.channelStats?.[ch.key]?.today) || 0} /</span> 
+                        <span className="text-zinc-500 font-normal pr-1" title="过去24小时">{(adminStats.channelStats?.[ch.key]?.past24h) || 0} /</span> 
                         <span title="历史总计">{(adminStats.channelStats?.[ch.key]?.total) || 0}</span>
                       </span>
                     </div>
@@ -987,29 +997,39 @@ export default function Home() {
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="flex items-center justify-between">
                   <div className="text-[10px] uppercase font-bold tracking-widest text-red-500">IP 访问统计与封禁</div>
-                  <select
-                    value={ipLimit}
-                    onChange={(e) => setIpLimit(Number(e.target.value))}
-                    className="text-[10px] bg-black/30 border border-zinc-800 rounded px-1 py-0.5 outline-none text-zinc-400"
-                  >
-                    <option value={5}>显示 5 条</option>
-                    <option value={10}>显示 10 条</option>
-                    <option value={50}>显示 50 条</option>
-                    <option value={99999}>显示全部</option>
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      value={ipSort}
+                      onChange={(e) => setIpSort(e.target.value as any)}
+                      className="text-[10px] bg-black/30 border border-zinc-800 rounded px-1 py-0.5 outline-none text-zinc-400"
+                    >
+                      <option value="count">按请求数</option>
+                      <option value="time">按最新活跃</option>
+                    </select>
+                    <select
+                      value={ipLimit}
+                      onChange={(e) => setIpLimit(Number(e.target.value))}
+                      className="text-[10px] bg-black/30 border border-zinc-800 rounded px-1 py-0.5 outline-none text-zinc-400"
+                    >
+                      <option value={5}>显示 5 条</option>
+                      <option value={10}>显示 10 条</option>
+                      <option value={50}>显示 50 条</option>
+                      <option value={99999}>显示全部</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                   <table className="w-full text-left text-[11px]">
                     <thead className="sticky top-0 backdrop-blur" style={{ background: 'var(--bg-input)' }}>
                       <tr>
                         <th className="py-2 text-zinc-400 font-normal w-[120px]">访问源 (IP/定位)</th>
-                        <th className="py-2 text-zinc-400 font-normal text-center">请求数</th>
+                        <th className="py-2 text-zinc-400 font-normal text-center">流水 / 最新活跃时间</th>
                         <th className="py-2 text-zinc-400 font-normal w-[60px] truncate">账号</th>
                         <th className="py-2 text-right text-zinc-400 font-normal w-[40px]">操作</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {adminStats.topIps.slice(0, ipLimit).map((ipHit: any) => {
+                      {[...adminStats.topIps].sort((a: any, b: any) => ipSort === 'count' ? b.count - a.count : new Date(b.lastActive).getTime() - new Date(a.lastActive).getTime()).slice(0, ipLimit).map((ipHit: any) => {
                         const isBanned = adminSettings?.bannedIps?.[ipHit.ip] && adminSettings.bannedIps[ipHit.ip] > Date.now();
                         const banExpiry = isBanned ? new Date(adminSettings.bannedIps![ipHit.ip]).toLocaleString() : '';
                         return (
@@ -1018,7 +1038,10 @@ export default function Home() {
                               <div className="font-mono text-zinc-300">{ipHit.ip}</div>
                               <div className="text-[9px] text-zinc-500">{ipHit.location || '未知定位'}</div>
                             </td>
-                            <td className="py-1.5 text-zinc-400 text-center">{ipHit.count}</td>
+                            <td className="py-1.5 text-center">
+                              <div className="text-zinc-400 font-bold">{ipHit.count}</div>
+                              <div className="text-[9px] text-zinc-500">{new Date(ipHit.lastActive).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</div>
+                            </td>
                             <td className="py-1.5 text-zinc-400 w-[60px] truncate" title={ipHit.lastUser}>{ipHit.lastUser}</td>
                             <td className="py-1.5 text-right w-[40px]">
                               {isBanned ? (
@@ -1071,7 +1094,7 @@ export default function Home() {
                   <table className="w-full text-left text-[11px]">
                     <thead className="sticky top-0 backdrop-blur" style={{ background: 'var(--bg-input)' }}>
                       <tr>
-                        <th className="py-2 text-zinc-400 font-normal w-[45px]">时间</th>
+                        <th className="py-2 text-zinc-400 font-normal w-[65px]">时间</th>
                         <th className="py-2 text-zinc-400 font-normal w-[45px]">用户</th>
                         <th className="py-2 text-zinc-400 font-normal w-[50px]">动作</th>
                         <th className="py-2 text-zinc-400 font-normal">对象</th>
@@ -1081,7 +1104,7 @@ export default function Home() {
                     <tbody>
                       {adminStats.highRiskLogs.slice(0, riskLimit).map((log: any, idx: number) => (
                         <tr key={idx} className="border-t border-zinc-800/30">
-                          <td className="py-1.5 text-zinc-500 w-[45px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                          <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
                           <td className="py-1.5 text-zinc-300 font-bold w-[45px] truncate" title={log.username}>{log.username}</td>
                           <td className="py-1.5 text-orange-300 w-[50px] truncate" title={log.action}>{log.action}</td>
                           <td className="py-1.5 text-zinc-400 truncate max-w-[100px]" title={log.item}>{log.item}</td>
@@ -1351,7 +1374,7 @@ export default function Home() {
               <table className="w-full text-left text-[11px]">
                 <thead className="sticky top-0 backdrop-blur pb-1 mb-1 border-b border-zinc-800/50" style={{ background: 'var(--bg-input)' }}>
                   <tr>
-                    <th className="py-2 text-zinc-400 font-normal w-[45px]">时间</th>
+                    <th className="py-2 text-zinc-400 font-normal w-[65px]">时间</th>
                     <th className="py-2 text-zinc-400 font-normal w-[45px]">用户</th>
                     <th className="py-2 text-zinc-400 font-normal w-[120px]">请求 IP/定位</th>
                     <th className="py-2 text-zinc-400 font-normal">文件内容</th>
@@ -1360,7 +1383,7 @@ export default function Home() {
                 <tbody>
                   {adminStats.channelStats[selectedChannelDetailedStats].logs?.map((log: any, idx: number) => (
                     <tr key={idx} className="border-b border-zinc-800/30 hover:bg-zinc-800/20 transition-colors">
-                      <td className="py-1.5 text-zinc-500 w-[45px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                      <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
                       <td className="py-1.5 text-zinc-300 font-bold w-[45px] truncate" title={log.username}>{log.username}</td>
                       <td className="py-1.5 w-[120px] truncate" title={`${log.ip} - ${log.location}`}>
                         <div className="font-mono text-zinc-500 truncate">{log.ip}</div>
@@ -1372,6 +1395,61 @@ export default function Home() {
                   {!adminStats.channelStats[selectedChannelDetailedStats].logs?.length && (
                     <tr>
                       <td colSpan={4} className="py-6 text-center text-zinc-500 text-[11px]">本通道暂无下载访问记录</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 全量下载统计弹窗 */}
+      {allDownloadStatsModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setAllDownloadStatsModal(null)}>
+          <div className="w-full max-w-lg glass-strong rounded-2xl p-5 mx-4 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📊</span>
+                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                  {allDownloadStatsModal.title}
+                </h3>
+              </div>
+              <button onClick={() => setAllDownloadStatsModal(null)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
+            </div>
+            
+            <div className="mb-2 flex items-center justify-between text-[10px] text-zinc-400 font-mono bg-black/20 rounded p-2">
+              <span>共计产生流水: {allDownloadStatsModal.logs.length} 条</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              <table className="w-full text-left text-[11px]">
+                <thead className="sticky top-0 backdrop-blur pb-1 mb-1 border-b border-zinc-800/50" style={{ background: 'var(--bg-input)' }}>
+                  <tr>
+                    <th className="py-2 text-zinc-400 font-normal w-[65px]">时间</th>
+                    <th className="py-2 text-zinc-400 font-normal w-[45px]">用户</th>
+                    <th className="py-2 text-zinc-400 font-normal w-[120px]">请求 IP/定位</th>
+                    <th className="py-2 text-zinc-400 font-normal">文件与渠道</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allDownloadStatsModal.logs.sort((a,b)=>new Date(b.time).getTime() - new Date(a.time).getTime()).map((log: any, idx: number) => (
+                    <tr key={idx} className="border-b border-zinc-800/30 hover:bg-zinc-800/20 transition-colors">
+                      <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+                      <td className="py-1.5 text-zinc-300 font-bold w-[45px] truncate" title={log.username}>{log.username}</td>
+                      <td className="py-1.5 w-[120px] truncate" title={`${log.ip} - ${log.location}`}>
+                        <div className="font-mono text-zinc-500 truncate">{log.ip}</div>
+                        <div className="text-[9px] text-zinc-600 truncate">{log.location}</div>
+                      </td>
+                      <td className="py-1.5 text-orange-300 truncate max-w-[150px]" title={log.item}>
+                        <div className="truncate">{log.item}</div>
+                        <div className="text-[9px] text-emerald-500/80 uppercase">{log.channel}</div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!allDownloadStatsModal.logs.length && (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-zinc-500 text-[11px]">所选时间范围内暂无下载记录</td>
                     </tr>
                   )}
                 </tbody>
