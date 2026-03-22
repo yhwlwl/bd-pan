@@ -560,7 +560,8 @@ export default function Home() {
     }
     if (!item.is_dir && !canDownload) { setAlistMsg('❌ 无下载权限'); return; }
 
-    const itemPath = item.path || `${alistPath.replace(/\/+$/, '')}/${item.name}`;
+    const rawItemPath = item.path || `${alistPath.replace(/\/+$/, '')}/${item.name}`;
+    const itemPath = '/' + rawItemPath.replace(/\/+/g, '/').replace(/^\/+/, '');
     if (item.is_dir) {
       setAlistSelected(new Set());
       alistListDir(itemPath);
@@ -2227,7 +2228,8 @@ export default function Home() {
 
                         {visibleFiles.map((file: any, idx: number) => {
                           // 优先使用 file.path (搜索结果带完整路径)，否则拼接当前 alistPath
-                          const filePath = file.path || `${alistPath.replace(/\/+$/, '')}/${file.name}`;
+                          const rawFilePath = file.path || `${alistPath.replace(/\/+$/, '')}/${file.name}`;
+                          const filePath = '/' + rawFilePath.replace(/\/+/g, '/').replace(/^\/+/, '');
                           return (
                             <div key={idx} className="flex items-center gap-2 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors group">
                               {/* 复选框 */}
