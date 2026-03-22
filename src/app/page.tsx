@@ -1001,7 +1001,8 @@ export default function Home() {
                     <select
                       value={ipSort}
                       onChange={(e) => setIpSort(e.target.value as any)}
-                      className="text-[10px] bg-black/30 border border-zinc-800 rounded px-1 py-0.5 outline-none text-zinc-400"
+                      className="rounded px-1.5 py-0.5 text-[10px] outline-none transition-all"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                     >
                       <option value="count">按请求数</option>
                       <option value="time">按最新活跃</option>
@@ -1009,7 +1010,8 @@ export default function Home() {
                     <select
                       value={ipLimit}
                       onChange={(e) => setIpLimit(Number(e.target.value))}
-                      className="text-[10px] bg-black/30 border border-zinc-800 rounded px-1 py-0.5 outline-none text-zinc-400"
+                      className="rounded px-1.5 py-0.5 text-[10px] outline-none transition-all"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                     >
                       <option value={5}>显示 5 条</option>
                       <option value={10}>显示 10 条</option>
@@ -1082,7 +1084,8 @@ export default function Home() {
                   <select
                     value={riskLimit}
                     onChange={(e) => setRiskLimit(Number(e.target.value))}
-                    className="text-[10px] bg-black/30 border border-zinc-800 rounded px-1 py-0.5 outline-none text-zinc-400"
+                    className="rounded px-1.5 py-0.5 text-[10px] outline-none transition-all"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   >
                     <option value={5}>显示 5 条</option>
                     <option value={10}>显示 10 条</option>
