@@ -60,17 +60,13 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(() => ({}));
-        const { action, path, name, names, newName, dir_name, keywords, scope, page, per_page } = body as {
+        const { action, path, name, names, newName, dir_name } = body as {
             action: string;
             path?: string;
             name?: string;
             names?: string[];
             newName?: string;
             dir_name?: string;
-            keywords?: string;
-            scope?: number;
-            page?: number;
-            per_page?: number;
         };
 
         const authHeader = request.headers.get('authorization') || undefined;
@@ -112,18 +108,6 @@ export async function POST(request: Request) {
             if (original === '/') return bp || '/';
             return `${bp}${original.startsWith('/') ? '' : '/'}${original}`;
         };
-        const removeBasePath = (fullPath: string) => {
-            if (!fullPath) return '/';
-            const bp = (perms.basePath || '/').replace(/\/+$/, '');
-            if (!bp) return fullPath;
-            if (fullPath.startsWith(bp)) {
-                let stripped = fullPath.substring(bp.length);
-                if (!stripped) return '/';
-                return stripped.startsWith('/') ? stripped : `/${stripped}`;
-            }
-            return fullPath;
-        };
-
         const scopedPath = applyBasePath(path);
 
         // 写操作与读取操作精细权限校验
@@ -155,16 +139,6 @@ export async function POST(request: Request) {
                 break;
             case 'list_archive':
                 result = await alistFetch('/api/fs/other', { path: scopedPath, method: 'list_archive' }, config);
-                break;
-            case 'search':
-                result = await alistFetch('/api/fs/search', { parent: scopedPath || '/', keywords: keywords, scope: scope || 1, page: page || 1, per_page: per_page || 100 }, config);
-                // 搜索结果返回的是 AList 原始绝对路径，需要剥离 basePath 供前端使用，防止下次进入请求导致路径重复叠加
-                if (result.code === 200 && result.data?.content) {
-                    result.data.content = result.data.content.map((item: any) => ({
-                        ...item,
-                        path: removeBasePath(item.path)
-                    }));
-                }
                 break;
 
             default:
