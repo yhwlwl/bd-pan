@@ -1,6 +1,6 @@
 
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import CHANGELOG_DATA from '../data/changelog.json';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://frp-gap.com:37492').replace(/\/+$/, '');
@@ -11,6 +11,7 @@ type Theme = 'light' | 'dark';
 
 export interface UserPermissions {
   view: boolean;
+  search: boolean;
   download: boolean;
   upload: boolean;
   delete: boolean;
@@ -21,6 +22,17 @@ export interface UserPermissions {
 }
 
 export type DownloadModeState = 'enabled' | 'disabled' | 'hidden';
+
+type AlistItem = {
+  name: string;
+  is_dir?: boolean;
+  size?: number;
+  modified?: string;
+  sign?: string;
+  path?: string;
+  parent?: string;
+  provider?: string;
+};
 
 export interface GlobalSettings {
   enableGuestMode: boolean;
@@ -60,6 +72,13 @@ export default function Home() {
   const [alistMsg, setAlistMsg] = useState<string | null>(null);
   const [alistSelected, setAlistSelected] = useState<Set<string>>(new Set());
   const [alistProvider, setAlistProvider] = useState<string>('');
+  const [alistSearchKeyword, setAlistSearchKeyword] = useState('');
+  const [alistSearchScope, setAlistSearchScope] = useState<0 | 1>(1);
+  const [alistSearchLoading, setAlistSearchLoading] = useState(false);
+  const [alistSearchError, setAlistSearchError] = useState<string | null>(null);
+  const [alistSearchResults, setAlistSearchResults] = useState<AlistItem[]>([]);
+  const [alistSearchActive, setAlistSearchActive] = useState(false);
+  const alistSearchRunRef = useRef(0);
 
   // 文件操作
   const [alistShowMkdir, setAlistShowMkdir] = useState(false);
@@ -120,6 +139,7 @@ export default function Home() {
   const canDelete = userPerms ? userPerms.delete : false;
   const canRename = userPerms ? userPerms.rename : false;
   const canView = userPerms ? userPerms.view : false;
+  const canSearch = userRole === 'admin' ? true : (userPerms ? userPerms.search : false);
 
   const getCustomConfig = () => {
     if (typeof window !== 'undefined') {
@@ -140,6 +160,36 @@ export default function Home() {
     if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'archive';
     if (['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].includes(ext)) return 'office';
     return null;
+  };
+
+  const getChildPath = (parentPath: string, name: string) => `${parentPath.replace(/\/+$/, '')}/${name}`;
+  const getParentPath = (path: string) => path.replace(/\/[^/]+\/?$/, '') || '/';
+  const getPathProviderHints = (path: string, provider?: string) => {
+    const providerText = (provider || '').toLowerCase();
+    const pathText = path.toLowerCase();
+    return {
+      isBaidu: providerText.includes('baidu') || pathText.includes('baidu') || path.includes('百度网盘'),
+      isAliyun: providerText.includes('aliyun') || pathText.includes('aliyun') || path.includes('阿里云盘'),
+    };
+  };
+  const matchesSearchKeyword = (name: string, keyword: string) => {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (!normalizedKeyword) return true;
+    const normalizedName = name.toLowerCase();
+    return normalizedName.includes(normalizedKeyword)
+      || (normalizedKeyword.startsWith('.') && normalizedName.endsWith(normalizedKeyword));
+  };
+  const normalizeSearchResults = (payload: any): AlistItem[] => {
+    const items = Array.isArray(payload?.data?.content) ? payload.data.content : [];
+    return items.map((item: any) => ({
+      ...item,
+      path: item?.path || item?.obj_path || item?.full_path,
+      parent: item?.parent,
+      is_dir: Boolean(item?.is_dir),
+    }));
+  };
+  const filterSearchResults = (items: AlistItem[], keyword: string) => {
+    return items.filter((item) => matchesSearchKeyword(item.name, keyword));
   };
 
   const openPreview = async (item: any, filePath: string) => {
@@ -490,12 +540,324 @@ export default function Home() {
         setAlistPath(path);
         setAlistProvider(data.data?.provider || '');
         setAlistSelected(new Set());
+        setAlistSearchActive(false);
+        setAlistSearchError(null);
+        setAlistSearchResults([]);
       } else {
         setAlistError(data.message || '加载失败');
         if (data.code === 401 || data.code === 403) setAlistFiles([]);
       }
     } catch { setAlistError('网盘接口异常'); }
     finally { setAlistLoading(false); }
+  };
+
+  const alistSearchLegacy = async () => {
+    const keyword = alistSearchKeyword.trim();
+    if (!keyword) {
+      setAlistSearchActive(false);
+      setAlistSearchError('请输入搜索关键词');
+      setAlistSearchResults([]);
+      return;
+    }
+
+    setAlistSearchLoading(true);
+    setAlistSearchActive(true);
+    setAlistSearchError(null);
+    try {
+      const fallbackKeyword = keyword.includes('.') ? keyword.replace(/\.[^/.]+$/, '') : '';
+      const keywordsToTry = Array.from(new Set([
+        keyword,
+        keyword.startsWith('.') ? keyword.slice(1) : '',
+        fallbackKeyword,
+      ].filter(Boolean)));
+      const merged = new Map<string, AlistItem>();
+      let lastError = '搜索失败';
+
+      for (const currentKeyword of keywordsToTry) {
+        const res = await fetchAlist({ action: 'search', parent: alistPath, keywords: currentKeyword, scope: alistSearchScope });
+        const data = await res.json();
+        if (data.code !== 200) {
+          lastError = data.message || lastError;
+          continue;
+        }
+        normalizeSearchResults(data).forEach((item) => {
+          const key = item.path || `${item.parent || ''}/${item.name}`;
+          merged.set(key, item);
+        });
+      }
+
+      const matchedResults = filterSearchResults([...merged.values()], keyword);
+      if (matchedResults.length > 0 || merged.size > 0) {
+        setAlistSearchResults(matchedResults);
+      } else if (merged.size === 0) {
+        setAlistSearchResults([]);
+        setAlistSearchError(lastError);
+      } else {
+        setAlistSearchResults([]);
+      }
+    } catch {
+      setAlistSearchResults([]);
+      setAlistSearchError('搜索接口异常');
+    } finally {
+      setAlistSearchLoading(false);
+    }
+  };
+
+  const clearAlistSearch = () => {
+    setAlistSearchKeyword('');
+    setAlistSearchError(null);
+    setAlistSearchResults([]);
+    setAlistSearchActive(false);
+  };
+
+  const alistSearchBlocking = async () => {
+    const keyword = alistSearchKeyword.trim();
+    if (!keyword) {
+      setAlistSearchActive(false);
+      setAlistSearchError('请输入搜索关键词');
+      setAlistSearchResults([]);
+      return;
+    }
+
+    setAlistSearchLoading(true);
+    setAlistSearchActive(true);
+    setAlistSearchError(null);
+
+    try {
+      const queue = [alistPath];
+      const visited = new Set<string>();
+      const matchedFiles: AlistItem[] = [];
+
+      while (queue.length > 0) {
+        const currentPath = queue.shift();
+        if (!currentPath || visited.has(currentPath)) continue;
+        visited.add(currentPath);
+
+        const res = await fetchAlist({ action: 'list', path: currentPath });
+        const data = await res.json();
+        if (data.code !== 200) throw new Error(data.message || '搜索失败');
+
+        const provider = data.data?.provider || '';
+        const content = Array.isArray(data.data?.content) ? data.data.content : [];
+        content.forEach((item: AlistItem) => {
+          const itemPath = getChildPath(currentPath, item.name);
+          if (item.is_dir) {
+            queue.push(itemPath);
+            return;
+          }
+          if (!matchesSearchKeyword(item.name, keyword)) return;
+          matchedFiles.push({
+            ...item,
+            path: itemPath,
+            parent: currentPath,
+            provider,
+          });
+        });
+      }
+
+      setAlistSearchResults(matchedFiles);
+    } catch (error: any) {
+      setAlistSearchResults([]);
+      setAlistSearchError(error?.message || '搜索接口异常');
+    } finally {
+      setAlistSearchLoading(false);
+    }
+  };
+
+  const alistSearchFast = async () => {
+    const keyword = alistSearchKeyword.trim();
+    if (!keyword) {
+      setAlistSearchActive(false);
+      setAlistSearchError('请输入搜索关键词');
+      setAlistSearchResults([]);
+      return;
+    }
+
+    const searchRunId = ++alistSearchRunRef.current;
+    setAlistSearchLoading(true);
+    setAlistSearchActive(true);
+    setAlistSearchError(null);
+    setAlistSearchResults([]);
+
+    try {
+      const fallbackKeyword = keyword.includes('.') ? keyword.replace(/\.[^/.]+$/, '') : '';
+      const keywordsToTry = Array.from(new Set([
+        keyword,
+        keyword.startsWith('.') ? keyword.slice(1) : '',
+        fallbackKeyword,
+      ].filter(Boolean)));
+
+      const merged = new Map<string, AlistItem>();
+      let lastError = '搜索失败';
+
+      for (const currentKeyword of keywordsToTry) {
+        if (searchRunId !== alistSearchRunRef.current) return;
+
+        const res = await fetchAlist({ action: 'search', parent: alistPath, keywords: currentKeyword, scope: 0 });
+        const data = await res.json();
+
+        if (data.code !== 200) {
+          lastError = data.message || lastError;
+          continue;
+        }
+
+        normalizeSearchResults(data).forEach((raw: any) => {
+          const name = raw?.name || (typeof raw?.path === 'string' ? raw.path.split('/').filter(Boolean).pop() : '');
+          if (!name) return;
+
+          const fullPath = raw?.path || (raw?.parent ? getChildPath(raw.parent, name) : undefined);
+          const parentPath = raw?.parent || (fullPath ? getParentPath(fullPath) : undefined);
+
+          const item: AlistItem = {
+            ...raw,
+            name,
+            path: fullPath,
+            parent: parentPath,
+            is_dir: Boolean(raw?.is_dir),
+          };
+
+          const key = item.path || `${item.parent || ''}/${item.name}`;
+          merged.set(key, item);
+        });
+      }
+
+      if (searchRunId !== alistSearchRunRef.current) return;
+
+      const base = (alistPath || '/').replace(/\/+$/, '') || '/';
+      const basePrefix = base === '/' ? '/' : `${base}/`;
+
+      const results = [...merged.values()]
+        .filter((item) => {
+          if (!item.name) return false;
+          if (!matchesSearchKeyword(item.name, keyword)) return false;
+          if (!item.path) return false;
+          return base === '/' ? item.path.startsWith('/') : item.path.startsWith(basePrefix);
+        })
+        .sort((a, b) => {
+          const ad = Boolean(a.is_dir);
+          const bd = Boolean(b.is_dir);
+          if (ad !== bd) return ad ? -1 : 1;
+          return a.name.localeCompare(b.name, 'zh-Hans-CN');
+        });
+
+      setAlistSearchResults(results);
+      if (results.length === 0 && merged.size === 0) setAlistSearchError(lastError);
+    } catch (error: any) {
+      if (searchRunId === alistSearchRunRef.current) {
+        setAlistSearchResults([]);
+        setAlistSearchError(error?.message || '搜索接口异常');
+      }
+    } finally {
+      if (searchRunId === alistSearchRunRef.current) {
+        setAlistSearchLoading(false);
+      }
+    }
+  };
+
+  const alistSearch = async () => {
+    const keyword = alistSearchKeyword.trim();
+    if (!keyword) {
+      setAlistSearchActive(false);
+      setAlistSearchError('请输入搜索关键词');
+      setAlistSearchResults([]);
+      return;
+    }
+
+    const searchRunId = ++alistSearchRunRef.current;
+    setAlistSearchLoading(true);
+    setAlistSearchActive(true);
+    setAlistSearchError(null);
+    setAlistSearchResults([]);
+
+    try {
+      const queue = [alistPath];
+      const visited = new Set<string>();
+      const matchedFiles: AlistItem[] = [];
+
+      while (queue.length > 0) {
+        const currentPath = queue.shift();
+        if (!currentPath || visited.has(currentPath)) continue;
+        visited.add(currentPath);
+
+        if (searchRunId !== alistSearchRunRef.current) return;
+
+        const res = await fetchAlist({ action: 'list', path: currentPath });
+        const data = await res.json();
+        if (data.code !== 200) throw new Error(data.message || '搜索失败');
+
+        const provider = data.data?.provider || '';
+        const content = Array.isArray(data.data?.content) ? data.data.content : [];
+        let foundInCurrentDir = false;
+
+        content.forEach((item: AlistItem) => {
+          const itemPath = getChildPath(currentPath, item.name);
+          if (item.is_dir) {
+            queue.push(itemPath);
+            return;
+          }
+          if (!matchesSearchKeyword(item.name, keyword)) return;
+          foundInCurrentDir = true;
+          matchedFiles.push({
+            ...item,
+            path: itemPath,
+            parent: currentPath,
+            provider,
+          });
+        });
+
+        if (foundInCurrentDir && searchRunId === alistSearchRunRef.current) {
+          setAlistSearchResults([...matchedFiles]);
+        }
+      }
+
+      if (searchRunId === alistSearchRunRef.current) {
+        setAlistSearchResults([...matchedFiles]);
+      }
+    } catch (error: any) {
+      if (searchRunId === alistSearchRunRef.current) {
+        setAlistSearchResults([]);
+        setAlistSearchError(error?.message || '搜索接口异常');
+      }
+    } finally {
+      if (searchRunId === alistSearchRunRef.current) {
+        setAlistSearchLoading(false);
+      }
+    }
+  };
+
+  const openAlistItem = (item: AlistItem, currentPath: string, provider?: string) => {
+    if (item.is_dir) {
+      if (!canView) { setAlistMsg('❌ 无浏览子目录权限'); return; }
+      const nextPath = item.path || getChildPath(currentPath, item.name);
+      setAlistSelected(new Set());
+      alistListDir(nextPath);
+      return;
+    }
+
+    if (!canDownload) { setAlistMsg('❌ 无下载权限'); return; }
+
+    const filePath = item.path || getChildPath(currentPath, item.name);
+    const { isBaidu, isAliyun } = getPathProviderHints(filePath, provider);
+    const previewType = getPreviewType(item.name);
+
+    if (previewType) {
+      if (!userPerms?.preview) {
+        setAlistMsg('❌ 您没有在线预览的权限');
+        return;
+      }
+      openPreview(item, filePath);
+      return;
+    }
+
+    if (isBaidu && (item.size || 0) >= SIZE_THRESHOLD) {
+      setAlistDownloadModal({ name: item.name, filePath, sign: item.sign });
+    } else if (isBaidu) {
+      alistProxyDownload(filePath, item.name, '下载 - 小文件直链下载');
+    } else if (isAliyun) {
+      alistProxyDownload(filePath, item.name, '下载 - 阿里云盘直链下载');
+    } else {
+      alistDirectDownload(filePath, item.sign, '下载 - 普通直链下载');
+    }
   };
 
   // === 下载逻辑 ===
@@ -1268,6 +1630,7 @@ export default function Home() {
                       <div className="pt-2 mt-1 border-t flex flex-col gap-3" style={{ borderColor: 'var(--border-subtle)' }}>
                         <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
                           {[
+                            { key: 'search', label: '馃敐 鎼滅储' },
                             { key: 'view', label: '👀 浏览' },
                             { key: 'preview', label: '👁️ 预览' },
                             { key: 'download', label: '⬇️ 下载' },
@@ -1288,7 +1651,7 @@ export default function Home() {
                                   onChange={(e) => {
                                     let newPerms = { ...uPerms, [perm.key]: e.target.checked };
                                     if (perm.key === 'view' && !e.target.checked) {
-                                      newPerms = { ...newPerms, view: false, preview: false, download: false, upload: false, delete: false, rename: false, setting: false };
+                                      newPerms = { ...newPerms, view: false, search: false, preview: false, download: false, upload: false, delete: false, rename: false, setting: false };
                                     }
                                     adminAction('updatePermissions', { username: u.username, permissions: newPerms });
                                   }}
@@ -2029,6 +2392,38 @@ export default function Home() {
                 <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>· AList</span>
               </div>
               <div className="flex items-center gap-2">
+                {canSearch && (
+                  <>
+                    <span className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>搜索</span>
+                    <input
+                      value={alistSearchKeyword}
+                      onChange={e => setAlistSearchKeyword(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && alistSearchFast()}
+                      placeholder="文件名 / 后缀"
+                      className="w-36 md:w-48 rounded px-2 py-1 text-[10px] outline-none"
+                      style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                    />
+                    <button
+                      onClick={alistSearchFast}
+                      disabled={alistSearchLoading}
+                      className="text-[10px] px-2 py-1 rounded font-bold text-white disabled:opacity-50"
+                      style={{ background: 'var(--accent)' }}
+                      title="搜索文件"
+                    >
+                      {alistSearchLoading ? '搜索中' : '搜索'}
+                    </button>
+                    {alistSearchActive && (
+                      <button
+                        onClick={clearAlistSearch}
+                        className="text-[10px] px-2 py-1 rounded transition-opacity hover:opacity-80"
+                        style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+                        title="清除搜索"
+                      >
+                        清除
+                      </button>
+                    )}
+                  </>
+                )}
                 {canUpload && (
                   <>
                     <button onClick={() => setAlistShowMkdir(!alistShowMkdir)}
@@ -2104,6 +2499,48 @@ export default function Home() {
             )}
 
             {/* 消息提示 */}
+            <div className="hidden px-4 py-3 space-y-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
+              <div className="flex flex-col md:flex-row gap-2">
+                <input
+                  value={alistSearchKeyword}
+                  onChange={e => setAlistSearchKeyword(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && alistSearchFast()}
+                  placeholder="搜索当前目录中的文件，可输入文件名或后缀，如 text、text.txt、.txt"
+                  className="flex-1 rounded-lg px-3 py-2 text-[11px] outline-none"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                />
+                <select
+                  value={alistSearchScope}
+                  onChange={e => setAlistSearchScope(Number(e.target.value) as 0 | 1)}
+                  className="rounded-lg px-3 py-2 text-[11px] outline-none"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                >
+                  <option value={0}>仅当前目录</option>
+                  <option value={1}>包含子目录</option>
+                </select>
+                <button
+                  onClick={alistSearchFast}
+                  disabled={alistSearchLoading}
+                  className="px-3 py-2 rounded-lg text-[11px] font-bold text-white disabled:opacity-50"
+                  style={{ background: 'var(--accent)' }}
+                >
+                  {alistSearchLoading ? '搜索中...' : '搜索'}
+                </button>
+                {alistSearchActive && (
+                  <button
+                    onClick={clearAlistSearch}
+                    className="px-3 py-2 rounded-lg text-[11px] font-bold"
+                    style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
+              <div className="text-[10px]" style={{ color: 'var(--text-faint)' }}>
+                “包含子目录”表示会连当前目录下面的所有子文件夹一起递归搜索。
+              </div>
+            </div>
+
             {alistMsg && (
               <div className={`px-4 py-1.5 text-[11px] font-bold ${alistMsg.startsWith('✅') ? 'bg-green-500/10 text-green-500' : alistMsg.startsWith('🚀') ? 'bg-blue-500/10 text-blue-500' : 'bg-yellow-500/10 text-yellow-500'}`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                 {alistMsg}
@@ -2122,6 +2559,61 @@ export default function Home() {
                   <span className="text-red-400 text-[11px]">{alistError}</span>
                   <button onClick={() => alistListDir(alistPath)} className="text-[10px] text-zinc-500 hover:text-pink-400 border border-zinc-700 px-2 py-1 rounded">重试</button>
                 </div>
+              ) : alistSearchActive ? (
+                alistSearchResults.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    <div>没有找到匹配的文件/文件夹</div>
+                    <div style={{ color: 'var(--text-faint)' }}>
+                      已搜索当前目录下的全部项目
+                    </div>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-zinc-800/50">
+                    {alistSearchResults.map((item, idx) => {
+                      const targetPath = item.path || (item.parent ? getChildPath(item.parent, item.name) : item.name);
+                      const parentPath = item.parent || getParentPath(targetPath);
+                      return (
+                        <div
+                          key={`${targetPath}-${idx}`}
+                          className="w-full flex items-center gap-2 px-4 py-3 hover:bg-[var(--bg-card-hover)] transition-colors"
+                        >
+                          <button
+                            onClick={() => openAlistItem(item, parentPath, item.provider || alistProvider)}
+                            className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                          >
+                          <span className="text-base shrink-0">{getFileIcon(item)}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[11px] font-mono truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
+                            <div className="text-[10px] truncate mt-1" style={{ color: 'var(--text-muted)' }}>{targetPath}</div>
+                          </div>
+                          {!item.is_dir && (
+                            <span className="text-[10px] shrink-0 font-bold" style={{ color: 'var(--text-secondary)' }}>
+                              {formatSize(item.size || 0)}
+                            </span>
+                          )}
+                          <span className="text-[10px] shrink-0" style={{ color: 'var(--text-faint)' }}>
+                            {item.is_dir ? '目录' : '文件'}
+                          </span>
+                          </button>
+                          {!item.is_dir && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearAlistSearch();
+                                alistListDir(parentPath);
+                              }}
+                              className="shrink-0 px-2 py-1 rounded text-[10px] font-bold transition-opacity hover:opacity-80"
+                              style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+                              title="转到目录"
+                            >
+                              转到目录
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
               ) : alistFiles.length === 0 ? (
                 <div className="flex items-center justify-center py-16 text-zinc-600 text-xs">📭 空目录</div>
               ) : (
