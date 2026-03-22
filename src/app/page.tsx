@@ -71,8 +71,8 @@ export default function Home() {
   const [alistDownloadModal, setAlistDownloadModal] = useState<{ name: string; filePath: string; sign?: string } | null>(null);
   const [nodeLatencies, setNodeLatencies] = useState<Record<string, number | null>>({});
   // 文件预览
-  const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive'; filePath: string; sign?: string; size?: number } | null>(null);
-  const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' } | null>(null);
+  const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office'; filePath: string; sign?: string; size?: number } | null>(null);
+  const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' } | null>(null);
   const [previewText, setPreviewText] = useState<string>('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewStarted, setPreviewStarted] = useState(false);
@@ -129,13 +129,14 @@ export default function Home() {
     return null;
   };
 
-  const getPreviewType = (name: string): 'image' | 'video' | 'text' | 'pdf' | 'archive' | null => {
+  const getPreviewType = (name: string): 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' | null => {
     const ext = name.split('.').pop()?.toLowerCase() || '';
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) return 'image';
     if (['mp4', 'webm', 'ogg', 'mov'].includes(ext)) return 'video';
     if (['txt', 'md', 'log', 'json', 'csv', 'xml', 'html', 'css', 'js', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'yaml', 'yml', 'ini', 'cfg', 'conf', 'sh', 'bat', 'sql', 'go', 'rs', 'rb', 'php', 'swift', 'kt'].includes(ext)) return 'text';
     if (ext === 'pdf') return 'pdf';
     if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'archive';
+    if (['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].includes(ext)) return 'office';
     return null;
   };
 
@@ -196,12 +197,21 @@ export default function Home() {
       if (isActuallyBaidu && (size || 0) >= SIZE_THRESHOLD) {
         // CF 边缘节点加速代理 (仅限百度大文件预览)
         previewUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(previewUrl)}`;
-      } else if ((size || 0) < SIZE_THRESHOLD || isActuallyBaidu) {
-        // 本地服务端代理 (支持极小文件或百度网盘所有文件预览)
+      } else if ((size || 0) < SIZE_THRESHOLD || isActuallyBaidu || type === 'office') {
+        // 本地服务端代理 (支持极小文件或百度网盘所有文件预览，或Office必需服务端提供无UA拦截的文件流)
         previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}&preview=1`;
         if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
         const ccObj = getCustomConfig();
         if (ccObj) previewUrl += `&c=${btoa(JSON.stringify(ccObj))}`;
+      }
+
+      // 接入微软 Office 在线预览服务
+      if (type === 'office') {
+        let absoluteUrl = previewUrl;
+        if (absoluteUrl.startsWith('/')) {
+            absoluteUrl = window.location.origin + absoluteUrl;
+        }
+        previewUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
       }
 
       // 文本文件需要 fetch 内容
@@ -1676,6 +1686,8 @@ export default function Home() {
               ) : previewFile?.type === 'video' ? (
                 <video src={previewFile.url} controls autoPlay className="max-w-full max-h-[78vh] rounded-lg shadow-2xl" style={{ outline: 'none' }} />
               ) : previewFile?.type === 'pdf' ? (
+                <iframe src={previewFile.url} className="w-full h-[78vh] rounded-lg border-0 bg-white" title={previewFile.name} />
+              ) : previewFile?.type === 'office' ? (
                 <iframe src={previewFile.url} className="w-full h-[78vh] rounded-lg border-0 bg-white" title={previewFile.name} />
               ) : previewFile?.type === 'text' ? (
                 <pre className="w-full h-full overflow-auto text-xs leading-relaxed text-zinc-300 font-mono p-6 rounded-xl whitespace-pre-wrap break-words" style={{ background: '#111', maxHeight: '78vh' }}>
