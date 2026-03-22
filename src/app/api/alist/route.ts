@@ -60,13 +60,16 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(() => ({}));
-        const { action, path, name, names, newName, dir_name } = body as {
+        const { action, path, name, names, newName, dir_name, parent, keywords, scope } = body as {
             action: string;
             path?: string;
             name?: string;
             names?: string[];
             newName?: string;
             dir_name?: string;
+            parent?: string;
+            keywords?: string;
+            scope?: number;
         };
 
         const authHeader = request.headers.get('authorization') || undefined;
@@ -109,12 +112,22 @@ export async function POST(request: Request) {
             return `${bp}${original.startsWith('/') ? '' : '/'}${original}`;
         };
         const scopedPath = applyBasePath(path);
+        const scopedParent = applyBasePath(parent);
+        const basePath = (perms.basePath || '/').replace(/\/+$/, '');
+        const stripBasePath = (p?: string) => {
+            if (!p) return p;
+            if (!basePath) return p;
+            if (p === basePath) return '/';
+            if (p.startsWith(`${basePath}/`)) return p.slice(basePath.length) || '/';
+            return p;
+        };
 
         // 写操作与读取操作精细权限校验
         if (action === 'list' || action === 'get') {
             const isRoot = !path || path === '/';
             if (!isRoot && !perms.view) return NextResponse.json({ code: 403, message: '无权浏览子目录' }, { status: 403 });
         }
+        if (action === 'search' && !perms.search) return NextResponse.json({ code: 403, message: '无权搜索文件' }, { status: 403 });
         if (action === 'mkdir' && !perms.upload) return NextResponse.json({ code: 403, message: '无权创建文件夹（需要上传权限）' }, { status: 403 });
         if (action === 'remove' && !perms.delete) return NextResponse.json({ code: 403, message: '无权删除文件' }, { status: 403 });
         if (action === 'rename' && !perms.rename) return NextResponse.json({ code: 403, message: '无权修改文件/文件夹名' }, { status: 403 });
@@ -139,6 +152,23 @@ export async function POST(request: Request) {
                 break;
             case 'list_archive':
                 result = await alistFetch('/api/fs/other', { path: scopedPath, method: 'list_archive' }, config);
+                break;
+            case 'search':
+                result = await alistFetch('/api/fs/search', {
+                    parent: scopedParent,
+                    keywords: (keywords || '').trim(),
+                    scope: typeof scope === 'number' ? scope : 0,
+                    page: 1,
+                    // Bigger page size for faster UX; client still filters results.
+                    per_page: 5000,
+                }, config);
+                if (Array.isArray(result?.data?.content)) {
+                    result.data.content = result.data.content.map((item: any) => ({
+                        ...item,
+                        parent: stripBasePath(item?.parent),
+                        path: stripBasePath(item?.path),
+                    }));
+                }
                 break;
 
             default:
