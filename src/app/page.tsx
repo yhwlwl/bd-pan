@@ -106,9 +106,9 @@ export default function Home() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
   const [adminStats, setAdminStats] = useState<any>(null);
-  const [adminSettings, setAdminSettings] = useState<GlobalSettings>({ 
-    enableGuestMode: true, 
-    permissions: {}, 
+  const [adminSettings, setAdminSettings] = useState<GlobalSettings>({
+    enableGuestMode: true,
+    permissions: {},
     downloadChannel: 'ecs',
     hideAlistButton: true,
   });
@@ -121,7 +121,7 @@ export default function Home() {
   const [newUserRole, setNewUserRole] = useState<'manager' | 'guest'>('manager');
   const [adminMsg, setAdminMsg] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  
+
   const [ipLimit, setIpLimit] = useState<number>(5);
   const [ipSort, setIpSort] = useState<'count' | 'time'>('count');
   const [riskLimit, setRiskLimit] = useState<number>(5);
@@ -261,7 +261,7 @@ export default function Home() {
       if (type === 'office') {
         let absoluteUrl = previewUrl;
         if (absoluteUrl.startsWith('/')) {
-            absoluteUrl = window.location.origin + absoluteUrl;
+          absoluteUrl = window.location.origin + absoluteUrl;
         }
         previewUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
       }
@@ -1320,17 +1320,17 @@ export default function Home() {
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>实时数据审计 (全量历史)</div>
                 <div className="flex items-center justify-between mx-2 mb-2">
-                  <div 
-                    className="flex flex-col items-center cursor-pointer hover:bg-zinc-800/30 px-4 py-2 rounded-xl transition-colors tooltip-trigger" 
-                    title="点击查看详情" 
-                    onClick={() => setAllDownloadStatsModal({ title: '过去24小时下载记录', logs: adminStats.allDownloadLogs?.filter((l: any) => new Date(l.time).getTime() >= Date.now() - 24*3600*1000) || [] })}
+                  <div
+                    className="flex flex-col items-center cursor-pointer hover:bg-zinc-800/30 px-4 py-2 rounded-xl transition-colors tooltip-trigger"
+                    title="点击查看详情"
+                    onClick={() => setAllDownloadStatsModal({ title: '过去24小时下载记录', logs: adminStats.allDownloadLogs?.filter((l: any) => new Date(l.time).getTime() >= Date.now() - 24 * 3600 * 1000) || [] })}
                   >
                     <span className="text-[24px] font-black text-pink-500">{adminStats.past24hDownloads || 0}</span>
                     <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>过去24小时</span>
                   </div>
-                  <div 
-                    className="flex flex-col items-center cursor-pointer hover:bg-zinc-800/30 px-4 py-2 rounded-xl transition-colors tooltip-trigger" 
-                    title="点击查看详情" 
+                  <div
+                    className="flex flex-col items-center cursor-pointer hover:bg-zinc-800/30 px-4 py-2 rounded-xl transition-colors tooltip-trigger"
+                    title="点击查看详情"
                     onClick={() => setAllDownloadStatsModal({ title: '全部历史下载记录', logs: adminStats.allDownloadLogs || [] })}
                   >
                     <span className="text-[24px] font-black text-blue-500">{adminStats.totalDownloads || 0}</span>
@@ -1345,7 +1345,7 @@ export default function Home() {
                     { key: 'vercel', name: 'Vercel 中转', color: 'orange' },
                     { key: 'direct302', name: '302 跳转', color: 'zinc' },
                   ].map(ch => (
-                    <div 
+                    <div
                       key={ch.key}
                       onClick={() => setSelectedChannelDetailedStats(ch.key)}
                       className="flex justify-between px-2 py-1.5 rounded bg-black/20 border border-zinc-800/50 cursor-pointer hover:bg-zinc-800/50 transition-colors tooltip-trigger"
@@ -1353,7 +1353,7 @@ export default function Home() {
                     >
                       <span className={`text-${ch.color}-400`}>{ch.name}</span>
                       <span className="font-bold text-zinc-300 text-right">
-                        <span className="text-zinc-500 font-normal pr-1" title="过去24小时">{(adminStats.channelStats?.[ch.key]?.past24h) || 0} /</span> 
+                        <span className="text-zinc-500 font-normal pr-1" title="过去24小时">{(adminStats.channelStats?.[ch.key]?.past24h) || 0} /</span>
                         <span title="历史总计">{(adminStats.channelStats?.[ch.key]?.total) || 0}</span>
                       </span>
                     </div>
@@ -1412,12 +1412,12 @@ export default function Home() {
                             </td>
                             <td className="py-1.5 text-center">
                               <div className="text-zinc-400 font-bold">{ipHit.count}</div>
-                              <div className="text-[9px] text-zinc-500">{new Date(ipHit.lastActive).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</div>
+                              <div className="text-[9px] text-zinc-500">{new Date(ipHit.lastActive).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                             </td>
                             <td className="py-1.5 text-zinc-400 w-[60px] truncate" title={ipHit.lastUser}>{ipHit.lastUser}</td>
                             <td className="py-1.5 text-right w-[40px]">
                               {isBanned ? (
-                                <button 
+                                <button
                                   onClick={() => {
                                     const newBans = { ...adminSettings.bannedIps };
                                     delete newBans[ipHit.ip];
@@ -1425,7 +1425,7 @@ export default function Home() {
                                   }}
                                   className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20" title={`过期时间: ${banExpiry}`}>解封</button>
                               ) : (
-                                <button 
+                                <button
                                   onClick={() => {
                                     const hoursStr = window.prompt(`需要封禁 IP ${ipHit.ip} 多少小时？\n输入 0 或取消可终止操作。`, '24');
                                     if (!hoursStr) return;
@@ -1477,7 +1477,7 @@ export default function Home() {
                     <tbody>
                       {adminStats.highRiskLogs.slice(0, riskLimit).map((log: any, idx: number) => (
                         <tr key={idx} className="border-t border-zinc-800/30">
-                          <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+                          <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                           <td className="py-1.5 text-zinc-300 font-bold w-[45px] truncate" title={log.username}>{log.username}</td>
                           <td className="py-1.5 text-orange-300 w-[50px] truncate" title={log.action}>{log.action}</td>
                           <td className="py-1.5 text-zinc-400 truncate max-w-[100px]" title={log.item}>{log.item}</td>
@@ -1553,13 +1553,13 @@ export default function Home() {
                   return (
                     <div key={mode.key} className="flex items-center justify-between">
                       <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>{mode.label}</span>
-                      <select 
+                      <select
                         value={currentMode}
                         onChange={(e) => {
                           const newModes = { ...(adminSettings.downloadModes || {}), [mode.key]: e.target.value };
                           adminAction('updateSettings', { settings: { downloadModes: newModes } });
                           // Optimistic update locally
-                          setAdminSettings(prev => ({...prev, downloadModes: newModes as any}));
+                          setAdminSettings(prev => ({ ...prev, downloadModes: newModes as any }));
                         }}
                         className="rounded px-1.5 py-1 text-[10px] outline-none shrink-0 w-[60px]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                       >
@@ -1630,7 +1630,7 @@ export default function Home() {
                       <div className="pt-2 mt-1 border-t flex flex-col gap-3" style={{ borderColor: 'var(--border-subtle)' }}>
                         <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
                           {[
-                            { key: 'search', label: '馃敐 鎼滅储' },
+                            { key: 'search', label: '🔍 搜索' },
                             { key: 'view', label: '👀 浏览' },
                             { key: 'preview', label: '👁️ 预览' },
                             { key: 'download', label: '⬇️ 下载' },
@@ -1662,12 +1662,12 @@ export default function Home() {
                             );
                           })}
                         </div>
-                        
+
                         {/* 目录隔离设置 */}
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] shrink-0" style={{ color: 'var(--text-muted)' }}>🔒 根目录映射：</span>
-                          <input 
-                            type="text" 
+                          <input
+                            type="text"
                             defaultValue={u.permissions?.basePath || '/'}
                             onBlur={(e) => {
                               const newPath = e.target.value.trim() || '/';
@@ -1675,9 +1675,9 @@ export default function Home() {
                                 adminAction('updatePermissions', { username: u.username, permissions: { ...u.permissions, basePath: newPath.startsWith('/') ? newPath : `/${newPath}` } });
                               }
                             }}
-                            placeholder="如: /Movies (默认 /)" 
-                            className="flex-1 rounded px-2 py-1 text-[10px] outline-none" 
-                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} 
+                            placeholder="如: /Movies (默认 /)"
+                            className="flex-1 rounded px-2 py-1 text-[10px] outline-none"
+                            style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                           />
                         </div>
                       </div>
@@ -1739,7 +1739,7 @@ export default function Home() {
               </div>
               <button onClick={() => setSelectedChannelDetailedStats(null)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
             </div>
-            
+
             <div className="mb-3 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
               <span className="text-[10px] text-emerald-500/80 font-bold uppercase tracking-wider">数据汇总</span>
               <span className="text-[12px] font-mono font-bold text-emerald-400">共计 {adminStats.channelStats[selectedChannelDetailedStats].logs?.length || 0} 条流水</span>
@@ -1758,7 +1758,7 @@ export default function Home() {
                 <tbody>
                   {adminStats.channelStats[selectedChannelDetailedStats].logs?.map((log: any, idx: number) => (
                     <tr key={idx} className="border-b border-zinc-800/30 hover:bg-zinc-800/20 transition-colors">
-                      <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+                      <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                       <td className="py-1.5 text-zinc-300 font-bold w-[45px] truncate" title={log.username}>{log.username}</td>
                       <td className="py-1.5 w-[120px] truncate" title={`${log.ip} - ${log.location}`}>
                         <div className="font-mono text-zinc-500 truncate">{log.ip}</div>
@@ -1792,7 +1792,7 @@ export default function Home() {
               </div>
               <button onClick={() => setAllDownloadStatsModal(null)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
             </div>
-            
+
             <div className="mb-3 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-between">
               <span className="text-[10px] text-blue-500/80 font-bold uppercase tracking-wider">全量审计</span>
               <span className="text-[12px] font-mono font-bold text-blue-400">共计 {allDownloadStatsModal.logs.length} 条流水</span>
@@ -1809,9 +1809,9 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {allDownloadStatsModal.logs.sort((a,b)=>new Date(b.time).getTime() - new Date(a.time).getTime()).map((log: any, idx: number) => (
+                  {allDownloadStatsModal.logs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).map((log: any, idx: number) => (
                     <tr key={idx} className="border-b border-zinc-800/30 hover:bg-zinc-800/20 transition-colors">
-                      <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+                      <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                       <td className="py-1.5 text-zinc-300 font-bold w-[45px] truncate" title={log.username}>{log.username}</td>
                       <td className="py-1.5 w-[120px] truncate" title={`${log.ip} - ${log.location}`}>
                         <div className="font-mono text-zinc-500 truncate">{log.ip}</div>
@@ -2327,7 +2327,7 @@ export default function Home() {
                   </div>
                 </button>
               )}
-  
+
               {/* 自动加UA直接下载 (方法3 - 可禁用) */}
               {globalDownloadModes?.vercel !== 'hidden' && (
                 <button
@@ -2359,10 +2359,10 @@ export default function Home() {
               {/* ⚡ 302 直链 (方法4) */}
               {globalDownloadModes?.direct302 !== 'hidden' && (
                 <button
-                  onClick={() => { 
+                  onClick={() => {
                     if (globalDownloadModes?.direct302 === 'disabled') return;
-                    alistDirectDownload(alistDownloadModal!.filePath, alistDownloadModal!.sign, '下载 - 302 直链跳转 (不加 UA)'); 
-                    setAlistDownloadModal(null); 
+                    alistDirectDownload(alistDownloadModal!.filePath, alistDownloadModal!.sign, '下载 - 302 直链跳转 (不加 UA)');
+                    setAlistDownloadModal(null);
                   }}
                   disabled={globalDownloadModes?.direct302 === 'disabled'}
                   className={`w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left border transition-colors ${globalDownloadModes?.direct302 === 'disabled' ? 'opacity-50 cursor-not-allowed bg-black/20 border-zinc-800' : 'border-zinc-700 bg-black/40 hover:border-zinc-500'}`}
@@ -2581,19 +2581,19 @@ export default function Home() {
                             onClick={() => openAlistItem(item, parentPath, item.provider || alistProvider)}
                             className="flex-1 min-w-0 flex items-center gap-3 text-left"
                           >
-                          <span className="text-base shrink-0">{getFileIcon(item)}</span>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[11px] font-mono truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
-                            <div className="text-[10px] truncate mt-1" style={{ color: 'var(--text-muted)' }}>{targetPath}</div>
-                          </div>
-                          {!item.is_dir && (
-                            <span className="text-[10px] shrink-0 font-bold" style={{ color: 'var(--text-secondary)' }}>
-                              {formatSize(item.size || 0)}
+                            <span className="text-base shrink-0">{getFileIcon(item)}</span>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[11px] font-mono truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
+                              <div className="text-[10px] truncate mt-1" style={{ color: 'var(--text-muted)' }}>{targetPath}</div>
+                            </div>
+                            {!item.is_dir && (
+                              <span className="text-[10px] shrink-0 font-bold" style={{ color: 'var(--text-secondary)' }}>
+                                {formatSize(item.size || 0)}
+                              </span>
+                            )}
+                            <span className="text-[10px] shrink-0" style={{ color: 'var(--text-faint)' }}>
+                              {item.is_dir ? '目录' : '文件'}
                             </span>
-                          )}
-                          <span className="text-[10px] shrink-0" style={{ color: 'var(--text-faint)' }}>
-                            {item.is_dir ? '目录' : '文件'}
-                          </span>
                           </button>
                           {!item.is_dir && (
                             <button
