@@ -1366,8 +1366,9 @@ export default function Home() {
               <button onClick={() => setSelectedChannelDetailedStats(null)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
             </div>
             
-            <div className="mb-2 flex items-center justify-between text-[10px] text-zinc-400 font-mono bg-black/20 rounded p-2">
-              <span>共计记录条数: {adminStats.channelStats[selectedChannelDetailedStats].logs?.length || 0}</span>
+            <div className="mb-3 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
+              <span className="text-[10px] text-emerald-500/80 font-bold uppercase tracking-wider">数据汇总</span>
+              <span className="text-[12px] font-mono font-bold text-emerald-400">共计 {adminStats.channelStats[selectedChannelDetailedStats].logs?.length || 0} 条流水</span>
             </div>
 
             <div className="max-h-96 overflow-y-auto pr-2 custom-scrollbar">
@@ -1418,8 +1419,9 @@ export default function Home() {
               <button onClick={() => setAllDownloadStatsModal(null)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
             </div>
             
-            <div className="mb-2 flex items-center justify-between text-[10px] text-zinc-400 font-mono bg-black/20 rounded p-2">
-              <span>共计产生流水: {allDownloadStatsModal.logs.length} 条</span>
+            <div className="mb-3 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-between">
+              <span className="text-[10px] text-blue-500/80 font-bold uppercase tracking-wider">全量审计</span>
+              <span className="text-[12px] font-mono font-bold text-blue-400">共计 {allDownloadStatsModal.logs.length} 条流水</span>
             </div>
 
             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
