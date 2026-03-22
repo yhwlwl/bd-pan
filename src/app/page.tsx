@@ -60,6 +60,9 @@ export default function Home() {
   const [alistMsg, setAlistMsg] = useState<string | null>(null);
   const [alistSelected, setAlistSelected] = useState<Set<string>>(new Set());
   const [alistProvider, setAlistProvider] = useState<string>('');
+  const [alistSearchKeyword, setAlistSearchKeyword] = useState('');
+  const [alistIsSearching, setAlistIsSearching] = useState(false);
+  const [alistSearchResultCount, setAlistSearchResultCount] = useState<number | null>(null);
 
   // 文件操作
   const [alistShowMkdir, setAlistShowMkdir] = useState(false);
@@ -474,6 +477,8 @@ export default function Home() {
   const alistListDir = async (path: string) => {
     setAlistLoading(true);
     setAlistError(null);
+    setAlistIsSearching(false);
+    setAlistSearchResultCount(null);
     try {
       const res = await fetchAlist({ action: 'list', path });
       const data = await res.json();
@@ -487,6 +492,32 @@ export default function Home() {
         if (data.code === 401 || data.code === 403) setAlistFiles([]);
       }
     } catch { setAlistError('网盘接口异常'); }
+    finally { setAlistLoading(false); }
+  };
+
+  const alistSearch = async () => {
+    if (!alistSearchKeyword.trim()) return;
+    setAlistLoading(true);
+    setAlistError(null);
+    setAlistIsSearching(true);
+    try {
+      const res = await fetchAlist({ 
+        action: 'search', 
+        path: alistPath,
+        keywords: alistSearchKeyword.trim(),
+        scope: 1,
+        page: 1,
+        per_page: 100
+      });
+      const data = await res.json();
+      if (data.code === 200) {
+        setAlistFiles(data.data?.content || []);
+        setAlistSearchResultCount(data.data?.total || (data.data?.content?.length || 0));
+        setAlistSelected(new Set());
+      } else {
+        setAlistError(data.message || '搜索失败');
+      }
+    } catch { setAlistError('搜索接口异常'); }
     finally { setAlistLoading(false); }
   };
 
@@ -520,12 +551,12 @@ export default function Home() {
     }
     if (!item.is_dir && !canDownload) { setAlistMsg('❌ 无下载权限'); return; }
 
+    const itemPath = item.path || `${alistPath.replace(/\/+$/, '')}/${item.name}`;
     if (item.is_dir) {
-      const newPath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
       setAlistSelected(new Set());
-      alistListDir(newPath);
+      alistListDir(itemPath);
     } else {
-      const filePath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
+      const filePath = itemPath;
       // Use directory-level provider from AList API (data.data.provider)
       const prov = alistProvider.toLowerCase();
       const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
@@ -2021,6 +2052,28 @@ export default function Home() {
                 <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>· AList</span>
               </div>
               <div className="flex items-center gap-2">
+                <div className="relative group">
+                  <input 
+                    type="text"
+                    value={alistSearchKeyword}
+                    onChange={(e) => setAlistSearchKeyword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && alistSearch()}
+                    placeholder="搜索文件..."
+                    className="w-[100px] md:w-[150px] rounded-lg px-2.5 py-1 text-[10px] outline-none transition-all placeholder:text-zinc-600 focus:w-[130px] md:focus:w-[200px]"
+                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  />
+                  {alistSearchKeyword && (
+                    <button 
+                      onClick={() => { setAlistSearchKeyword(''); alistIsSearching && alistListDir(alistPath); }} 
+                      className="absolute right-7 top-1/2 -translate-y-1/2 opacity-30 hover:opacity-100 transition-opacity"
+                    >
+                      <span className="text-[10px]">✕</span>
+                    </button>
+                  )}
+                  <button onClick={alistSearch} className="absolute right-2 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                  </button>
+                </div>
                 {canUpload && (
                   <>
                     <button onClick={() => setAlistShowMkdir(!alistShowMkdir)}
@@ -2041,24 +2094,35 @@ export default function Home() {
 
             {/* 面包屑导航 */}
             <div className="flex items-center gap-1 px-4 py-2 overflow-x-auto" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-              {alistPath.split('/').filter(Boolean).length === 0 ? (
-                <span className="text-[11px] font-mono font-bold text-accent">/ Root</span>
+              {alistIsSearching ? (
+                <div className="flex items-center gap-2 py-0.5">
+                  <span className="text-[11px] font-mono font-bold text-accent italic truncate max-w-[200px]">🔍 搜索结果: "{alistSearchKeyword}"</span>
+                  <span className="text-[10px] text-zinc-500 font-mono">({alistSearchResultCount || 0})</span>
+                  <button 
+                    onClick={() => alistListDir(alistPath)} 
+                    className="ml-2 text-[9px] px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors border border-zinc-700"
+                  >退出搜索</button>
+                </div>
               ) : (
-                ['', ...alistPath.split('/').filter(Boolean)].map((seg, idx, arr) => {
-                  const crumbPath = '/' + arr.slice(1, idx + 1).join('/');
-                  return (
-                    <span key={idx} className="flex items-center gap-1">
-                      {idx > 0 && <span style={{ color: 'var(--text-faint)' }}>/</span>}
-                      <button
-                        onClick={() => alistListDir(idx === 0 ? '/' : crumbPath)}
-                        className={`text-[11px] font-mono transition-colors whitespace-nowrap ${idx === arr.length - 1 ? 'font-bold text-accent' : ''}`}
-                        style={{ color: idx === arr.length - 1 ? 'var(--accent)' : 'var(--text-muted)' }}
-                      >
-                        {idx === 0 ? 'Root' : seg}
-                      </button>
-                    </span>
-                  );
-                })
+                alistPath.split('/').filter(Boolean).length === 0 ? (
+                  <span className="text-[11px] font-mono font-bold text-accent">/ Root</span>
+                ) : (
+                  ['', ...alistPath.split('/').filter(Boolean)].map((seg, idx, arr) => {
+                    const crumbPath = '/' + arr.slice(1, idx + 1).join('/');
+                    return (
+                      <span key={idx} className="flex items-center gap-1">
+                        {idx > 0 && <span style={{ color: 'var(--text-faint)' }}>/</span>}
+                        <button
+                          onClick={() => alistListDir(idx === 0 ? '/' : crumbPath)}
+                          className={`text-[11px] font-mono transition-colors whitespace-nowrap ${idx === arr.length - 1 ? 'font-bold text-accent' : ''}`}
+                          style={{ color: idx === arr.length - 1 ? 'var(--accent)' : 'var(--text-muted)' }}
+                        >
+                          {idx === 0 ? 'Root' : seg}
+                        </button>
+                      </span>
+                    );
+                  })
+                )
               )}
             </div>
 
@@ -2130,7 +2194,8 @@ export default function Home() {
                   )}
 
                   {alistFiles.map((file: any, idx: number) => {
-                    const filePath = `${alistPath.replace(/\/+$/, '')}/${file.name}`;
+                    // 优先使用 file.path (搜索结果带完整路径)，否则拼接当前 alistPath
+                    const filePath = file.path || `${alistPath.replace(/\/+$/, '')}/${file.name}`;
                     return (
                       <div key={idx} className="flex items-center gap-2 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors group">
                         {/* 复选框 */}
@@ -2156,7 +2221,12 @@ export default function Home() {
                             {/* 文件名 */}
                             <button onClick={() => alistNavigate(file)} style={{ color: 'var(--text-primary)' }}
                               className="flex-1 text-left text-[11px] font-mono hover:opacity-70 transition-opacity truncate">
-                              {file.name}
+                              <div className="truncate">{file.name}</div>
+                              {alistIsSearching && file.path && (
+                                <div className="text-[9px] text-zinc-600 truncate opacity-60 font-sans mt-0.5">
+                                  📂 {file.path.replace(/\/[^/]+$/, '') || '/'}
+                                </div>
+                              )}
                             </button>
 
                             {/* 文件大小 — 手机端也显示 */}
