@@ -60,13 +60,17 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(() => ({}));
-        const { action, path, name, names, newName, dir_name } = body as {
+        const { action, path, name, names, newName, dir_name, keywords, scope, page, per_page } = body as {
             action: string;
             path?: string;
             name?: string;
             names?: string[];
             newName?: string;
             dir_name?: string;
+            keywords?: string;
+            scope?: number;
+            page?: number;
+            per_page?: number;
         };
 
         const authHeader = request.headers.get('authorization') || undefined;
@@ -139,6 +143,9 @@ export async function POST(request: Request) {
                 break;
             case 'list_archive':
                 result = await alistFetch('/api/fs/other', { path: scopedPath, method: 'list_archive' }, config);
+                break;
+            case 'search':
+                result = await alistFetch('/api/fs/search', { parent: scopedPath || '/', keywords: keywords, scope: scope || 1, page: page || 1, per_page: per_page || 100 }, config);
                 break;
 
             default:
