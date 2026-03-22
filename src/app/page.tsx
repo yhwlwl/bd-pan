@@ -174,22 +174,8 @@ export default function Home() {
     try {
       if (type === 'archive') {
         const ext = name.split('.').pop()?.toLowerCase();
-        setPreviewText(`正在提取 ${ext?.toUpperCase() || '未知'} 压缩包目录...`);
+        setPreviewText(`📦 ${ext?.toUpperCase() || '未知'} 压缩包暂不支持在线预览目录。\n\n请点击右上角 ⬇️ 下载按钮将压缩包保存到本地后查看内容。`);
         setPreviewFile({ name, url: '', type, filePath, sign, size });
-        
-        try {
-          const archiveRes = await fetchAlist({ action: 'list_archive', path: filePath });
-          const archiveData = await archiveRes.json();
-          if (archiveData.code === 200 && Array.isArray(archiveData.data)) {
-            setArchiveItems(archiveData.data);
-            setPreviewText('');
-          } else {
-            setPreviewText(`❌ 目录提取失败: ${archiveData.message || '格式不支持或文件已损坏'}`);
-          }
-        } catch (err: any) {
-          setPreviewText(`❌ 目录提取出错: ${err.message}`);
-        }
-        
         setPreviewLoading(false);
         return true;
       }
@@ -1696,42 +1682,9 @@ export default function Home() {
                   {previewText || '加载中...'}
                 </pre>
               ) : previewFile?.type === 'archive' ? (
-                <div className="w-full h-full flex flex-col p-2 overflow-hidden" style={{ background: '#0a0a0a', maxHeight: '78vh' }}>
-                  {archiveItems.length > 0 ? (
-                    <div className="flex flex-col h-full">
-                      <div className="flex items-center gap-2 mb-4 px-2">
-                        <span className="text-emerald-400 text-lg">📦</span>
-                        <div className="text-xs font-bold text-zinc-300">压缩包内部文件清单 ({archiveItems.length} 个对象)</div>
-                      </div>
-                      <div className="flex-1 overflow-auto custom-scrollbar border border-zinc-800/50 rounded-xl">
-                        <table className="w-full text-left text-[11px] border-collapse">
-                          <thead className="sticky top-0 bg-[#0a0a0a] z-10">
-                            <tr className="border-b border-zinc-800">
-                              <th className="py-2.5 px-3 text-zinc-500 font-normal">文件名</th>
-                              <th className="py-2.5 px-3 text-zinc-500 font-normal text-right w-[80px]">大小</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {archiveItems.map((f: any, i: number) => (
-                              <tr key={i} className="border-b border-zinc-900/50 hover:bg-zinc-800/30 transition-colors">
-                                <td className="py-2 px-3 text-zinc-300 font-mono truncate max-w-[400px]" title={f.name}>
-                                  {f.is_dir ? '📁' : '📄'} {f.name}
-                                </td>
-                                <td className="py-2 px-3 text-zinc-500 font-mono text-right w-[80px]">
-                                  {f.is_dir ? '-' : (f.size / 1024 / 1024).toFixed(2) + ' MB'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-4">
-                      <div className="text-zinc-500 text-sm">{previewText || '正在读取压缩包目录...'}</div>
-                      {!previewText.startsWith('❌') && <div className="w-8 h-8 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>}
-                    </div>
-                  )}
+                <div className="w-full h-full flex flex-col items-center justify-center text-xs text-zinc-300 p-6 rounded-xl" style={{ background: '#111', maxHeight: '78vh' }}>
+                  <div className="font-bold text-lg mb-4 text-emerald-400">📦 压缩包预览</div>
+                  <div className="text-zinc-400 whitespace-pre-wrap text-center leading-relaxed max-w-md">{previewText}</div>
                 </div>
               ) : null}
             </div>
