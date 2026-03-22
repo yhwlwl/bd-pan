@@ -340,11 +340,19 @@ export default function Home() {
     fetch('/api/global-settings', { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
-        if (data && data.downloadModes) {
-          setGlobalDownloadModes(data.downloadModes);
-        }
-        if (data && (data.downloadChannel === 'ecs' || data.downloadChannel === 'frp')) {
-          setDownloadChannel(data.downloadChannel);
+        if (data) {
+          if (data.downloadModes) setGlobalDownloadModes(data.downloadModes);
+          if (data.downloadChannel === 'ecs' || data.downloadChannel === 'frp') {
+            setDownloadChannel(data.downloadChannel);
+          }
+          // 同步全局设置到本地状态，对所有用户生效
+          setAdminSettings(prev => ({
+            ...prev,
+            enableGuestMode: data.enableGuestMode ?? prev.enableGuestMode,
+            hideAlistButton: data.hideAlistButton ?? prev.hideAlistButton,
+            downloadChannel: (data.downloadChannel as any) || prev.downloadChannel,
+            downloadModes: data.downloadModes || prev.downloadModes,
+          }));
         }
       })
       .catch(() => { });
