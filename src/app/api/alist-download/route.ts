@@ -3,7 +3,7 @@ import { verifyToken } from '../_auth';
 import { getUserPermissions, getSettings, checkIpBanned } from '../../../lib/users';
 
 // ECS 成都节点 (主)
-const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'http://8.137.91.213:5244').replace(/\/+$/, '');
+const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
 const ECS_PASS = process.env.ALIST_PASSWORD || '';
 // FRP NAS 节点 (备)
