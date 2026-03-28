@@ -46,14 +46,24 @@ export async function PUT(request: Request) {
         }
 
         // 1. 获取 AList Token
-        const tokenRes = await fetch(`${config.url}/api/auth/login`, {
+        const loginUrl = `${config.url}/api/auth/login`;
+        console.log('[alist-upload] 正在获取 Token, URL:', loginUrl);
+        const tokenRes = await fetch(loginUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: config.user, password: config.pass }),
         });
-        const tokenData = await tokenRes.json();
+        const tokenText = await tokenRes.text();
+        console.log('[alist-upload] Token 响应状态:', tokenRes.status, '前100字符:', tokenText.substring(0, 100));
+        
+        let tokenData: any;
+        try {
+            tokenData = JSON.parse(tokenText);
+        } catch {
+            return NextResponse.json({ code: 502, message: `AList 网关返回了非 JSON 响应 (HTTP ${tokenRes.status})，请检查 Nginx 反向代理配置。响应内容: ${tokenText.substring(0, 200)}` }, { status: 502 });
+        }
         if (tokenData.code !== 200 || !tokenData.data?.token) {
-            return NextResponse.json({ code: 500, message: 'AList 目标实例 Token 获取失败' }, { status: 500 });
+            return NextResponse.json({ code: 500, message: `AList Token 获取失败: ${JSON.stringify(tokenData).substring(0, 200)}` }, { status: 500 });
         }
         const alistToken = tokenData.data.token;
 
@@ -83,7 +93,13 @@ export async function PUT(request: Request) {
             duplex: 'half'
         } as any);
 
-        const data = await uploadRes.json();
+        const uploadText = await uploadRes.text();
+        let data: any;
+        try {
+            data = JSON.parse(uploadText);
+        } catch {
+            return NextResponse.json({ code: 502, message: `AList 上传接口返回了非 JSON 响应 (HTTP ${uploadRes.status})，请检查 Nginx 反向代理配置` }, { status: 502 });
+        }
         return NextResponse.json(data);
     } catch (e: any) {
         console.error('[alist-upload] 代理上传异常:', e);
