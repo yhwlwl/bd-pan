@@ -91,7 +91,7 @@ export default function Home() {
   const [nodeLatencies, setNodeLatencies] = useState<Record<string, number | null>>({});
   // 文件预览
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office'; filePath: string; sign?: string; size?: number } | null>(null);
-  const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' } | null>(null);
+  const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' | 'unknown' } | null>(null);
   const [previewText, setPreviewText] = useState<string>('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewStarted, setPreviewStarted] = useState(false);
@@ -193,16 +193,8 @@ export default function Home() {
   };
 
   const openPreview = async (item: any, filePath: string) => {
-    const type = getPreviewType(item.name);
-    if (!type) return false;
-
-    // 检查是否有预览权限
-    if (!userPerms?.preview) {
-      setAlistMsg('❌ 您没有在线预览的权限');
-      return false;
-    }
-
-    setPreviewItemMeta({ name: item.name, filePath, sign: item.sign, size: item.size, type });
+    const type = getPreviewType(item.name) || 'unknown';
+    setPreviewItemMeta({ name: item.name, filePath, sign: item.sign, size: item.size, type: type as any });
     setPreviewStarted(false);
     setPreviewFile(null);
     setPreviewText('');
@@ -211,7 +203,11 @@ export default function Home() {
   };
 
   const loadPreviewContent = async () => {
-    if (!previewItemMeta || !previewItemMeta.type) return;
+    if (!userPerms?.preview) {
+      setAlistMsg('❌ 您没有在线预览的权限');
+      return;
+    }
+    if (!previewItemMeta || !previewItemMeta.type || previewItemMeta.type === 'unknown') return;
     const { name, filePath, sign, size, type } = previewItemMeta;
 
     setPreviewLoading(true);
@@ -887,42 +883,14 @@ export default function Home() {
     if (item.is_dir) {
       // 浏览权限：根目录始终允许，子目录需要 view 权限
       if (!canView) { setAlistMsg('❌ 无浏览子目录权限'); return; }
-    }
-    if (!item.is_dir && !canDownload) { setAlistMsg('❌ 无下载权限'); return; }
-
-    if (item.is_dir) {
       const newPath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
       setAlistSelected(new Set());
       alistListDir(newPath);
-    } else {
-      const filePath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
-      // Use directory-level provider from AList API (data.data.provider)
-      const prov = alistProvider.toLowerCase();
-      const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
-      const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
-
-      // 检测是否可预览
-      const previewType = getPreviewType(item.name);
-      if (previewType) {
-        if (!userPerms?.preview) {
-          setAlistMsg('❌ 您没有在线预览的权限');
-          return;
-        }
-        openPreview(item, filePath);
-        return;
-      }
-
-      if (isBaidu && (item.size || 0) >= SIZE_THRESHOLD) {
-        setAlistDownloadModal({ name: item.name, filePath, sign: item.sign });
-      } else if (isBaidu) {
-        // 百度网盘小文件也走代理下载（需要 UA: pan.baidu.com）
-        alistProxyDownload(filePath, item.name, '下载 - 小文件直链下载');
-      } else if (isAliyun) {
-        alistProxyDownload(filePath, item.name, '下载 - 阿里云盘直链下载');
-      } else {
-        alistDirectDownload(filePath, item.sign, '下载 - 普通直链下载');
-      }
+      return;
     }
+
+    const filePath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
+    openPreview(item, filePath);
   };
 
   const alistBatchDownload = () => {
@@ -2101,6 +2069,7 @@ export default function Home() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (!canDownload) { setAlistMsg('❌ 您没有下载权限'); return; }
                       const prov = alistProvider.toLowerCase();
                       const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
                       const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
