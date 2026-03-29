@@ -2387,9 +2387,9 @@ export default function Home() {
 
             {/* 头部工具栏 */}
             <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 whitespace-nowrap shrink-0">
                 <span className="text-[10px] font-black tracking-widest uppercase italic" style={{ color: 'var(--text-muted)' }}>Cloud_Drive</span>
-                <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>· AList</span>
+                <span className="text-[10px] hidden sm:inline" style={{ color: 'var(--text-faint)' }}>· AList</span>
               </div>
               <div className="flex items-center gap-2">
                 {canSearch && (
@@ -2673,7 +2673,7 @@ export default function Home() {
 
                             {/* 管理操作 */}
                             {(canRename || canDelete) && (
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                              <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
                                 {canRename && (
                                   <button onClick={() => { setAlistRenaming(filePath); setAlistNewName(file.name); }}
                                     className="text-zinc-600 hover:text-blue-400 transition-colors p-0.5" title="重命名">
