@@ -141,6 +141,9 @@ export default function Home() {
   const canView = userPerms ? userPerms.view : false;
   const canSearch = userRole === 'admin' ? true : (userPerms ? userPerms.search : false);
 
+  const [alistDeleteConfirm, setAlistDeleteConfirm] = useState<{ name: string; isDir: boolean } | null>(null);
+  const [alistDeleteInput, setAlistDeleteInput] = useState('');
+
   const getCustomConfig = () => {
     if (typeof window !== 'undefined') {
       try {
@@ -937,8 +940,17 @@ export default function Home() {
     } catch { setAlistMsg('❌ 接口异常'); }
   };
 
-  const alistRemove = async (name: string) => {
-    if (!confirm(`确认删除 ${name} 吗？`)) return;
+  const alistRemove = async (file: any) => {
+    if (file.is_dir) {
+      setAlistDeleteConfirm({ name: file.name, isDir: true });
+      setAlistDeleteInput('');
+      return;
+    }
+    if (!confirm(`确认删除文件 ${file.name} 吗？`)) return;
+    executeRemove(file.name);
+  };
+
+  const executeRemove = async (name: string) => {
     setAlistMsg(null);
     try {
       const res = await fetchAlist({ action: 'remove', path: alistPath, names: [name] });
@@ -946,6 +958,7 @@ export default function Home() {
       if (data.code === 200) { setAlistMsg('✅ 删除成功'); logUserAction('删除', `${alistPath.replace(/\/+$/, '')}/${name}`); alistListDir(alistPath); }
       else setAlistMsg(`❌ ${data.message}`);
     } catch { setAlistMsg('❌ 接口异常'); }
+    setAlistDeleteConfirm(null);
   };
 
   const alistRename = async (filePath: string) => {
@@ -1990,7 +2003,7 @@ export default function Home() {
                 <div className="p-5 rounded-3xl bg-white/5 border border-white/10 space-y-4">
                   <div className="flex items-start gap-4">
                     <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">1</div>
-                    <p className="text-xs text-zinc-100">下载安装官方版 <a href="https://www.internetdownloadmanager.com/" target="_blank" className="text-accent underline font-bold">IDM（NDM同理）</a> (电脑端专用)。</p>
+                    <p className="text-xs text-zinc-100">下载安装官方版 <a href="https://zhuanlan.zhihu.com/p/1977103358688002514" target="_blank" className="text-accent underline font-bold">IDM（NDM同理）</a> (电脑端专用)。</p>
                   </div>
                   <div className="flex items-start gap-4">
                     <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">2</div>
@@ -2650,7 +2663,7 @@ export default function Home() {
                                   </button>
                                 )}
                                 {canDelete && (
-                                  <button onClick={() => alistRemove(file.name)}
+                                  <button onClick={() => alistRemove(file)}
                                     className="text-zinc-600 hover:text-red-500 transition-colors p-0.5" title="删除">
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                   </button>
@@ -2688,6 +2701,55 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {/* 文件夹删除二次确认弹窗 */}
+      {alistDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-md" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setAlistDeleteConfirm(null)}>
+          <div className="w-full max-w-sm glass-strong rounded-2xl p-6 shadow-2xl animate-in border border-red-500/20" onClick={e => e.stopPropagation()}>
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center text-2xl mx-auto mb-3">⚠️</div>
+              <h3 className="text-sm font-bold text-white">确认要删除文件夹吗？</h3>
+              <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+                删除文件夹 <span className="text-red-400 font-mono font-bold">"{alistDeleteConfirm.name}"</span> 将导致其中所有内容被彻底抹除且<span className="text-white font-bold">无法找回</span>。
+              </p>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">请输入以下内容以确认：</label>
+                <div className="bg-black/40 border border-white/10 rounded-lg p-2 text-center select-none text-[11px] font-mono text-zinc-300">
+                  我确认要删除 {alistDeleteConfirm.name}
+                </div>
+                <input
+                  value={alistDeleteInput}
+                  onChange={e => setAlistDeleteInput(e.target.value)}
+                  placeholder="在此输入上述文字"
+                  className="w-full rounded-lg px-3 py-2 text-xs outline-none transition-all focus:ring-1 focus:ring-red-500/50"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  autoFocus
+                />
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setAlistDeleteConfirm(null)}
+                  className="flex-1 py-2 rounded-lg text-xs font-bold transition-opacity hover:opacity-100 opacity-60"
+                  style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+                >
+                  取消
+                </button>
+                <button
+                  disabled={alistDeleteInput !== `我确认要删除 ${alistDeleteConfirm.name}`}
+                  onClick={() => executeRemove(alistDeleteConfirm.name)}
+                  className="flex-1 py-2 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  确认删除
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 底部版权 */}
       <footer className="text-center py-4 text-[9px]" style={{ color: 'var(--text-faint)' }}>
