@@ -1,32 +1,29 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
-import { getUserPermissions, getSettings, checkIpBanned } from '../../../lib/users';
+import {
+    applyBasePathForPermissions,
+    checkIpBanned,
+    getEffectivePermissionsForPath,
+    getSettings,
+    getUserPermissions,
+} from '../../../lib/users';
 
-// ECS 成都节点 (主)
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
 const ECS_PASS = process.env.ALIST_PASSWORD || '';
-// FRP NAS 节点 (备)
 const FRP_URL = (process.env.NEXT_PUBLIC_ALIST_URL_FALLBACK || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const FRP_USER = process.env.ALIST_USERNAME_FALLBACK || '';
 const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 
 export async function PUT(request: Request) {
-    // 获取当前用户及权限
     const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
     if (await checkIpBanned(clientIp)) {
-        return NextResponse.json({ code: 403, message: '您的 IP 环境异常，已被防火墙阻断访问' }, { status: 403 });
+        return NextResponse.json({ code: 403, message: '您的 IP 已被禁止访问' }, { status: 403 });
     }
 
-    const authHeader = request.headers.get('authorization') || undefined;
-    const user = verifyToken(authHeader);
+    const user = verifyToken(request.headers.get('authorization') || undefined);
     if (!user) {
         return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
-    }
-
-    const perms = await getUserPermissions(user.username, user.role);
-    if (!perms.upload) {
-        return NextResponse.json({ code: 403, message: '权限不足，无权上传文件' }, { status: 403 });
     }
 
     try {
@@ -45,67 +42,46 @@ export async function PUT(request: Request) {
                 : { url: FRP_URL, user: FRP_USER, pass: FRP_PASS };
         }
 
-        // 1. 获取 AList Token
-        const loginUrl = `${config.url}/api/auth/login`;
-        console.log('[alist-upload] 正在获取 Token, URL:', loginUrl);
-        const tokenRes = await fetch(loginUrl, {
+        const tokenRes = await fetch(`${config.url}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: config.user, password: config.pass }),
         });
-        const tokenText = await tokenRes.text();
-        console.log('[alist-upload] Token 响应状态:', tokenRes.status, '前100字符:', tokenText.substring(0, 100));
-        
-        let tokenData: any;
-        try {
-            tokenData = JSON.parse(tokenText);
-        } catch {
-            return NextResponse.json({ code: 502, message: `AList 网关返回了非 JSON 响应 (HTTP ${tokenRes.status})，请检查 Nginx 反向代理配置。响应内容: ${tokenText.substring(0, 200)}` }, { status: 502 });
-        }
+        const tokenData = await tokenRes.json();
         if (tokenData.code !== 200 || !tokenData.data?.token) {
-            return NextResponse.json({ code: 500, message: `AList Token 获取失败: ${JSON.stringify(tokenData).substring(0, 200)}` }, { status: 500 });
+            return NextResponse.json({ code: 500, message: 'AList Token 获取失败' }, { status: 500 });
         }
-        const alistToken = tokenData.data.token;
 
-        // 2. 拿到要上传的路径信息
         const originalFilePath = request.headers.get('File-Path');
         if (!originalFilePath) {
             return NextResponse.json({ code: 400, message: '缺少 File-Path 请求头' }, { status: 400 });
         }
-        
-        const bp = (perms.basePath || '/').replace(/\/+$/, '');
-        const filePath = bp ? `${bp}${originalFilePath.startsWith('/') ? '' : '/'}${originalFilePath}` : originalFilePath;
+
+        const userPerms = await getUserPermissions(user.username, user.role);
+        const filePath = applyBasePathForPermissions(originalFilePath, userPerms.basePath);
+        const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, filePath);
+        if (!pathPerms.upload) {
+            return NextResponse.json({ code: 403, message: '该目录禁止上传' }, { status: 403 });
+        }
 
         const contentLength = request.headers.get('Content-Length');
         const contentType = request.headers.get('Content-Type') || 'application/octet-stream';
-
-        // 3. Proxy 到 AList Server
         const uploadRes = await fetch(`${config.url}/api/fs/put`, {
             method: 'PUT',
             headers: {
-                'Authorization': alistToken,
+                Authorization: tokenData.data.token,
                 'File-Path': filePath,
                 'Content-Type': contentType,
                 ...(contentLength ? { 'Content-Length': contentLength } : {}),
             },
-            // @ts-ignore
             body: request.body,
-            duplex: 'half'
+            duplex: 'half',
         } as any);
 
-        const uploadText = await uploadRes.text();
-        let data: any;
-        try {
-            data = JSON.parse(uploadText);
-        } catch {
-            return NextResponse.json({ code: 502, message: `AList 上传接口返回了非 JSON 响应 (HTTP ${uploadRes.status})，请检查 Nginx 反向代理配置` }, { status: 502 });
-        }
+        const data = await uploadRes.json();
         return NextResponse.json(data);
-    } catch (e: any) {
-        console.error('[alist-upload] 代理上传异常:', e);
-        return NextResponse.json(
-            { code: 500, message: e?.message || '服务器代理上传请求发生异常' },
-            { status: 500 },
-        );
+    } catch (error: any) {
+        console.error('[alist-upload] error:', error);
+        return NextResponse.json({ code: 500, message: error?.message || '上传代理失败' }, { status: 500 });
     }
 }

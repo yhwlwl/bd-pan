@@ -1,4 +1,4 @@
-
+﻿
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import CHANGELOG_DATA from '../data/changelog.json';
@@ -18,7 +18,21 @@ export interface UserPermissions {
   rename: boolean;
   preview: boolean;
   setting?: boolean;
+  controlFile?: boolean;
   basePath?: string;
+}
+
+type FilePermissionAction = 'view' | 'search' | 'download' | 'upload' | 'delete' | 'rename' | 'preview';
+
+interface FilePermissionRule {
+  id: string;
+  path: string;
+  pathType: 'file' | 'dir';
+  groupName?: string;
+  users: string[];
+  deny: Partial<Record<FilePermissionAction, boolean>>;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export type DownloadModeState = 'enabled' | 'disabled' | 'hidden';
@@ -37,6 +51,7 @@ type AlistItem = {
 export interface GlobalSettings {
   enableGuestMode: boolean;
   permissions?: Record<string, UserPermissions>;
+  filePermissionRules?: FilePermissionRule[];
   disableThirdDownload?: boolean;
   downloadChannel?: 'ecs' | 'frp';
   downloadModes?: {
@@ -118,9 +133,22 @@ export default function Home() {
   const [downloadChannel, setDownloadChannel] = useState<'ecs' | 'frp'>('ecs');
   const [newUserName, setNewUserName] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
-  const [newUserRole, setNewUserRole] = useState<'manager' | 'guest'>('manager');
+  const [newUserRole, setNewUserRole] = useState<Role>('manager');
   const [adminMsg, setAdminMsg] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [showFilePermPanel, setShowFilePermPanel] = useState(false);
+  const [filePermUsers, setFilePermUsers] = useState<{ username: string; role: Role }[]>([]);
+  const [filePermRules, setFilePermRules] = useState<FilePermissionRule[]>([]);
+  const [filePermMsg, setFilePermMsg] = useState<string | null>(null);
+  const [filePermTypeLocked, setFilePermTypeLocked] = useState(false);
+  const [filePermDraft, setFilePermDraft] = useState<FilePermissionRule>({
+    id: '',
+    path: '/',
+    pathType: 'file',
+    groupName: '',
+    users: ['guest'],
+    deny: { view: true, download: true, preview: true },
+  });
 
   const [ipLimit, setIpLimit] = useState<number>(5);
   const [ipSort, setIpSort] = useState<'count' | 'time'>('count');
@@ -134,6 +162,7 @@ export default function Home() {
   const [customPass, setCustomPass] = useState('');
 
   const isAdmin = userRole === 'admin';
+  const canControlFile = isAdmin || userPerms?.controlFile === true;
   const canDownload = userPerms ? userPerms.download : false;
   const canUpload = userPerms ? userPerms.upload : false;
   const canDelete = userPerms ? userPerms.delete : false;
@@ -241,20 +270,10 @@ export default function Home() {
         return false;
       }
 
-      let previewUrl = data.data.raw_url;
-      const isActuallyBaidu = isBaidu || previewUrl.includes('baidupcs.com') || previewUrl.includes('baidu.com');
-
-      // 跨域代理方案 (解决 CORS & 防盗链问题)
-      if (isActuallyBaidu && (size || 0) >= SIZE_THRESHOLD) {
-        // CF 边缘节点加速代理 (仅限百度大文件预览)
-        previewUrl = `https://cf.ryantan.fun/?url=${encodeURIComponent(previewUrl)}`;
-      } else if ((size || 0) < SIZE_THRESHOLD || isActuallyBaidu || type === 'office') {
-        // 本地服务端代理 (支持极小文件或百度网盘所有文件预览，或Office必需服务端提供无UA拦截的文件流)
-        previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}&preview=1`;
-        if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
-        const ccObj = getCustomConfig();
-        if (ccObj) previewUrl += `&c=${btoa(JSON.stringify(ccObj))}`;
-      }
+      let previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}&preview=1`;
+      if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
+      const ccObj = getCustomConfig();
+      if (ccObj) previewUrl += `&c=${btoa(JSON.stringify(ccObj))}`;
 
       // 接入微软 Office 在线预览服务
       if (type === 'office') {
@@ -861,9 +880,7 @@ export default function Home() {
 
   // === 下载逻辑 ===
   const alistDirectDownload = (filePath: string, fileSign?: string, actionType: string = '直连下载') => {
-    logUserAction(actionType, filePath);
-    const url = fileSign ? `${getAlistBase()}/d${filePath}?sign=${fileSign}` : `${getAlistBase()}/d${filePath}`;
-    window.open(url, '_blank');
+    alistProxyDownload(filePath, filePath.split('/').pop() || 'download', actionType);
   };
 
   const alistProxyDownload = (filePath: string, fileName: string, actionType: string = '代理下载') => {
@@ -1118,6 +1135,103 @@ export default function Home() {
     }
   }, [adminMsg]);
 
+  const normalizeRulePath = (value: string) => {
+    const trimmed = value.trim() || '/';
+    if (trimmed === '/') return '/';
+    return (trimmed.startsWith('/') ? trimmed : `/${trimmed}`).replace(/\/+/g, '/').replace(/\/$/, '') || '/';
+  };
+
+  const createDefaultFileRule = (path: string = '/', pathType: 'file' | 'dir' = 'file'): FilePermissionRule => ({
+    id: '',
+    path: normalizeRulePath(path),
+    pathType,
+    groupName: '',
+    users: ['guest'],
+    deny: pathType === 'file'
+      ? { view: true, download: true, preview: true }
+      : { view: true, download: true, preview: true, upload: true },
+  });
+
+  const fetchFilePermissionsData = async () => {
+    if (!userToken || !canControlFile) return;
+    try {
+      const res = await fetch('/api/file-permissions', {
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFilePermMsg(data.error || '加载文件权限规则失败');
+        return;
+      }
+      setFilePermUsers(data.users || []);
+      setFilePermRules(data.rules || []);
+    } catch {
+      setFilePermMsg('加载文件权限规则失败');
+    }
+  };
+
+  const saveFilePermissionRules = async (rules: FilePermissionRule[]) => {
+    if (!userToken) return false;
+    setFilePermMsg(null);
+    try {
+      const res = await fetch('/api/file-permissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({ rules }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFilePermMsg(data.error || '保存文件权限规则失败');
+        return false;
+      }
+      setFilePermRules(data.rules || rules);
+      setAdminSettings(prev => ({ ...prev, filePermissionRules: data.rules || rules }));
+      setFilePermMsg('文件权限规则已保存');
+      return true;
+    } catch {
+      setFilePermMsg('保存文件权限规则失败');
+      return false;
+    }
+  };
+
+  const openFilePermissionPanel = async (path?: string, pathType: 'file' | 'dir' = 'file', lockType: boolean = true) => {
+    setShowFilePermPanel(true);
+    setFilePermTypeLocked(lockType);
+    setFilePermDraft(createDefaultFileRule(path || alistPath, pathType));
+    await fetchFilePermissionsData();
+  };
+
+  const submitFilePermissionDraft = async () => {
+    const normalizedPath = normalizeRulePath(filePermDraft.path);
+    const users = filePermDraft.users.filter(Boolean);
+    if (!normalizedPath || users.length === 0) {
+      setFilePermMsg('请选择路径和至少一个用户');
+      return;
+    }
+
+    const nextRule: FilePermissionRule = {
+      ...filePermDraft,
+      deny: filePermDraft.pathType === 'file'
+        ? Object.fromEntries(Object.entries(filePermDraft.deny).filter(([key, value]) => key !== 'upload' && value)) as Partial<Record<FilePermissionAction, boolean>>
+        : filePermDraft.deny,
+      id: filePermDraft.id || `rule_${Date.now()}`,
+      path: normalizedPath,
+      groupName: filePermDraft.groupName?.trim() || '',
+      users,
+      updatedAt: Date.now(),
+      createdAt: filePermDraft.createdAt || Date.now(),
+    };
+
+    const nextRules = filePermRules.some(rule => rule.id === nextRule.id)
+      ? filePermRules.map(rule => rule.id === nextRule.id ? nextRule : rule)
+      : [nextRule, ...filePermRules];
+
+    const ok = await saveFilePermissionRules(nextRules);
+    if (ok) {
+      setFilePermDraft(createDefaultFileRule(alistPath, 'dir'));
+    }
+  };
+
   // === 工具函数 ===
   const formatSize = (size: number) => {
     if (size >= 1073741824) return `${(size / 1073741824).toFixed(1)}GB`;
@@ -1249,6 +1363,15 @@ export default function Home() {
               style={{ color: 'var(--accent)' }}
             >
               👑 管理
+            </button>
+          )}
+          {canControlFile && (
+            <button
+              onClick={() => openFilePermissionPanel(alistPath, 'dir')}
+              className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"
+              style={{ color: 'var(--accent-2)' }}
+            >
+              🔒 文件权限
             </button>
           )}
           {(isAdmin || userPerms?.setting) && (
@@ -1576,7 +1699,7 @@ export default function Home() {
             <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>用户列表</div>
               <div className="space-y-2">
-                {adminUsers.map((u) => (
+                {adminUsers.filter((u) => u.username !== 'admin').map((u) => (
                   <div key={u.username} className="flex flex-col gap-2 rounded-lg px-3 py-2" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1593,6 +1716,7 @@ export default function Home() {
                               onChange={(e) => adminAction('updateRole', { username: u.username, role: e.target.value })}
                               className="rounded px-1.5 py-0.5 text-[10px] outline-none" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                             >
+                              {isAdmin && <option value="admin">超级管理员</option>}
                               <option value="manager">管理员</option>
                               <option value="guest">游客</option>
                             </select>
@@ -1618,11 +1742,12 @@ export default function Home() {
                             { key: 'upload', label: '⬆️ 上传' },
                             { key: 'delete', label: '🗑️ 删除' },
                             { key: 'rename', label: '📝 重命名' },
-                            { key: 'setting', label: '⚙️ 本地配置' }
+                            { key: 'setting', label: '⚙️ 本地配置' },
+                            { key: 'controlFile', label: '🔒 文件管理' }
                           ].map(perm => {
                             const uPerms = (u.permissions || {}) as any as Record<string, boolean>;
                             const isOn = uPerms[perm.key] === true;
-                            const viewOff = perm.key !== 'view' && !uPerms.view;
+                            const viewOff = perm.key !== 'view' && perm.key !== 'controlFile' && !uPerms.view;
                             return (
                               <label key={perm.key} className={`flex items-center gap-1.5 cursor-pointer ${viewOff ? 'opacity-30 pointer-events-none' : 'hover:opacity-80'}`}>
                                 <input
@@ -1687,6 +1812,7 @@ export default function Home() {
                     value={newUserRole} onChange={e => setNewUserRole(e.target.value as 'manager' | 'guest')}
                     className="flex-1 rounded px-2.5 py-2 text-[11px] outline-none border-accent" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   >
+                    {isAdmin && <option value="admin">超级管理员</option>}
                     <option value="manager">核心成员（可上传/管理）</option>
                     <option value="guest">游客（仅浏览/下载）</option>
                   </select>
@@ -2654,8 +2780,17 @@ export default function Home() {
                             </span>
 
                             {/* 管理操作 */}
-                            {(canRename || canDelete) && (
+                            {(canRename || canDelete || canControlFile) && (
                               <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
+                                {canControlFile && (
+                                  <button
+                                    onClick={() => openFilePermissionPanel(filePath, file.is_dir ? 'dir' : 'file')}
+                                    className="text-zinc-600 hover:text-amber-400 transition-colors p-0.5"
+                                    title="File permissions"
+                                  >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2h-1V9a5 5 0 10-10 0v2H6a2 2 0 00-2 2v6a2 2 0 002 2zm3-10V9a3 3 0 116 0v2H9z" /></svg>
+                                  </button>
+                                )}
                                 {canRename && (
                                   <button onClick={() => { setAlistRenaming(filePath); setAlistNewName(file.name); }}
                                     className="text-zinc-600 hover:text-blue-400 transition-colors p-0.5" title="重命名">
@@ -2701,6 +2836,182 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {showFilePermPanel && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={() => setShowFilePermPanel(false)}>
+          <div className="w-full max-w-4xl glass-strong rounded-2xl p-5 max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <div className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>文件控制权限</div>
+                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>可针对单个文件或整个文件夹，为指定用户限制打开、下载、预览、上传、重命名、删除或搜索。</div>
+              </div>
+              <button onClick={() => setShowFilePermPanel(false)} className="text-lg opacity-60 hover:opacity-100">✕</button>
+            </div>
+
+            {filePermMsg && (
+              <div className="mb-4 rounded-lg px-3 py-2 text-[11px]" style={{ background: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}>
+                {filePermMsg}
+              </div>
+            )}
+
+            <div className="grid lg:grid-cols-[1.2fr_1fr] gap-4">
+              <div className="rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                <div className="text-[11px] font-bold mb-3" style={{ color: 'var(--text-primary)' }}>规则编辑</div>
+                <div className="space-y-3">
+                  <input
+                    value={filePermDraft.path}
+                    onChange={e => setFilePermDraft(prev => ({ ...prev, path: e.target.value }))}
+                    placeholder="/文件夹/文件"
+                    className="w-full rounded px-3 py-2 text-[11px] outline-none"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  />
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <select
+                      value={filePermDraft.pathType}
+                      onChange={e => setFilePermDraft(prev => {
+                        const nextType = e.target.value as 'file' | 'dir';
+                        const nextDeny = nextType === 'file'
+                          ? Object.fromEntries(Object.entries(prev.deny).filter(([key, value]) => key !== 'upload' && value)) as Partial<Record<FilePermissionAction, boolean>>
+                          : prev.deny;
+                        return { ...prev, pathType: nextType, deny: nextDeny };
+                      })}
+                      disabled={filePermTypeLocked}
+                      className="rounded px-3 py-2 text-[11px] outline-none"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                    >
+                      <option value="file">单独文件</option>
+                      <option value="dir">文件夹及子目录</option>
+                    </select>
+                    <input
+                      value={filePermDraft.groupName || ''}
+                      onChange={e => setFilePermDraft(prev => ({ ...prev, groupName: e.target.value }))}
+                      placeholder="分组名（可选）"
+                      className="rounded px-3 py-2 text-[11px] outline-none"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-[10px] mb-2" style={{ color: 'var(--text-muted)' }}>适用用户</div>
+                    <div className="flex flex-wrap gap-2">
+                      {filePermUsers.map(userItem => {
+                        const active = filePermDraft.users.includes(userItem.username);
+                        return (
+                          <button
+                            key={userItem.username}
+                            type="button"
+                            onClick={() => setFilePermDraft(prev => ({
+                              ...prev,
+                              users: active
+                                ? prev.users.filter(name => name !== userItem.username)
+                                : [...prev.users, userItem.username]
+                            }))}
+                            className="px-2.5 py-1 rounded-full text-[10px] font-bold transition-opacity hover:opacity-80"
+                            style={{
+                              background: active ? 'var(--accent)' : 'var(--bg-card)',
+                              color: active ? '#fff' : 'var(--text-muted)',
+                              border: '1px solid var(--border-color)'
+                            }}
+                          >
+                            {userItem.username} {userItem.role === 'admin' ? '(超级管理员)' : userItem.role === 'manager' ? '(管理员)' : '(guest)'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] mb-2" style={{ color: 'var(--text-muted)' }}>禁止操作</div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {[
+                        ['view', '打开'],
+                        ['download', '下载'],
+                        ['preview', '预览'],
+                        ...(filePermDraft.pathType === 'dir' ? [['upload', '上传']] as const : []),
+                        ['rename', '重命名'],
+                        ['delete', '删除'],
+                        ['search', '搜索'],
+                      ].map(([key, label]) => (
+                        <label key={key} className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(filePermDraft.deny[key as FilePermissionAction])}
+                            onChange={e => setFilePermDraft(prev => ({
+                              ...prev,
+                              deny: { ...prev.deny, [key]: e.target.checked }
+                            }))}
+                            className="w-3 h-3 accent-pink-500"
+                          />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={submitFilePermissionDraft} className="px-4 py-2 rounded-lg text-[11px] font-bold text-white" style={{ background: 'var(--accent)' }}>
+                      保存规则
+                    </button>
+                    <button onClick={() => { setFilePermTypeLocked(false); setFilePermDraft(createDefaultFileRule(alistPath, 'dir')); }} className="px-4 py-2 rounded-lg text-[11px] font-bold" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}>
+                      新建规则
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-[11px] font-bold" style={{ color: 'var(--text-primary)' }}>已有规则</div>
+                  <button onClick={fetchFilePermissionsData} className="text-[10px]" style={{ color: 'var(--accent)' }}>刷新</button>
+                </div>
+                <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+                  {filePermRules.length === 0 && (
+                    <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>当前还没有路径级规则。</div>
+                  )}
+                  {filePermRules.map(rule => (
+                    <div key={rule.id} className="rounded-lg p-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-mono break-all" style={{ color: 'var(--text-primary)' }}>{rule.path}</div>
+                          <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                            {rule.pathType === 'dir' ? '文件夹及子目录' : '单独文件'}
+                            {rule.groupName ? ` · 分组 ${rule.groupName}` : ' · 单项规则'}
+                          </div>
+                          <div className="text-[10px] mt-1" style={{ color: 'var(--text-faint)' }}>
+                            用户: {rule.users.join(', ')}
+                          </div>
+                          <div className="text-[10px] mt-1" style={{ color: 'var(--text-faint)' }}>
+                            禁止: {Object.keys(rule.deny || {}).filter(key => rule.deny[key as FilePermissionAction]).join(', ') || '无'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => { setFilePermTypeLocked(false); setFilePermDraft(rule); }}
+                            className="text-[10px] px-2 py-1 rounded"
+                            style={{ color: 'var(--accent)', border: '1px solid var(--border-color)' }}
+                          >
+                            编辑
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const ok = await saveFilePermissionRules(filePermRules.filter(item => item.id !== rule.id));
+                              if (ok && filePermDraft.id === rule.id) {
+                                setFilePermTypeLocked(false);
+                                setFilePermDraft(createDefaultFileRule(alistPath, 'dir'));
+                              }
+                            }}
+                            className="text-[10px] px-2 py-1 rounded"
+                            style={{ color: '#ef4444', border: '1px solid var(--border-color)' }}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 文件夹删除二次确认弹窗 */}
       {alistDeleteConfirm && (
