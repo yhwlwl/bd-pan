@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
-import { getUserPermissions, getSettings, checkIpBanned } from '../../../lib/users';
+import {
+    applyBasePathForPermissions,
+    checkIpBanned,
+    getEffectivePermissionsForPath,
+    getSettings,
+    getUserPermissions,
+} from '../../../lib/users';
 
-// ECS 成都节点 (主)
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
 const ECS_PASS = process.env.ALIST_PASSWORD || '';
-// FRP NAS 节点 (备)
 const FRP_URL = (process.env.NEXT_PUBLIC_ALIST_URL_FALLBACK || 'https://frp-gap.com:37492').replace(/\/+$/, '');
 const FRP_USER = process.env.ALIST_USERNAME_FALLBACK || '';
 const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
@@ -23,10 +27,7 @@ async function getAlistToken(url: string, user: string, pass: string): Promise<s
     const res = await fetch(`${url}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            username: user,
-            password: pass,
-        }),
+        body: JSON.stringify({ username: user, password: pass }),
     });
 
     const data = await res.json();
@@ -45,18 +46,24 @@ async function alistFetch(endpoint: string, body: any, config: { url: string; us
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': token,
+            Authorization: token,
         },
         body: JSON.stringify(body),
     });
     return res.json();
 }
 
+function normalizeVisiblePath(path?: string) {
+    const raw = (path || '/').trim();
+    if (!raw || raw === '/') return '/';
+    return (raw.startsWith('/') ? raw : `/${raw}`).replace(/\/+/g, '/').replace(/\/$/, '') || '/';
+}
+
 export async function POST(request: Request) {
     try {
         const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
         if (await checkIpBanned(clientIp)) {
-            return NextResponse.json({ code: 403, message: '您的 IP 环境异常，已被防火墙阻断访问' }, { status: 403 });
+            return NextResponse.json({ code: 403, message: '您的 IP 已被禁止访问' }, { status: 403 });
         }
 
         const body = await request.json().catch(() => ({}));
@@ -72,10 +79,7 @@ export async function POST(request: Request) {
             scope?: number;
         };
 
-        const authHeader = request.headers.get('authorization') || undefined;
-
-        // 所有操作都需要登录
-        const user = verifyToken(authHeader);
+        const user = verifyToken(request.headers.get('authorization') || undefined);
         if (!user) {
             return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
         }
@@ -88,7 +92,6 @@ export async function POST(request: Request) {
         if (customUrl) {
             config = { url: customUrl.replace(/\/+$/, ''), user: customUser || '', pass: customPass || '' };
         } else {
-            // 根据管理员设置的渠道选择后端
             const settings = await getSettings();
             const channel = settings.downloadChannel || 'ecs';
             config = channel === 'ecs'
@@ -100,43 +103,82 @@ export async function POST(request: Request) {
             return NextResponse.json({ code: 400, message: '缺少 action 参数' }, { status: 400 });
         }
 
-        // 获取用户颗粒度权限
         const perms = await getUserPermissions(user.username, user.role);
-        
-        // --- 根目录权限隔离 ---
-        const applyBasePath = (p: string | undefined) => {
-            const original = p || '/';
-            const bp = (perms.basePath || '/').replace(/\/+$/, '');
-            if (!bp) return original;
-            if (original === '/') return bp || '/';
-            return `${bp}${original.startsWith('/') ? '' : '/'}${original}`;
+        const applyBasePath = (input: string | undefined) => {
+            const original = normalizeVisiblePath(input);
+            const basePath = normalizeVisiblePath(perms.basePath || '/');
+            if (basePath === '/') return original;
+            if (original === '/') return basePath;
+            return `${basePath}${original}`.replace(/\/+/g, '/');
         };
         const scopedPath = applyBasePath(path);
         const scopedParent = applyBasePath(parent);
-        const basePath = (perms.basePath || '/').replace(/\/+$/, '');
-        const stripBasePath = (p?: string) => {
-            if (!p) return p;
-            if (!basePath) return p;
-            if (p === basePath) return '/';
-            if (p.startsWith(`${basePath}/`)) return p.slice(basePath.length) || '/';
-            return p;
+        const basePath = normalizeVisiblePath(perms.basePath || '/');
+        const stripBasePath = (input?: string) => {
+            if (!input) return input;
+            if (basePath === '/') return input;
+            if (input === basePath) return '/';
+            if (input.startsWith(`${basePath}/`)) return input.slice(basePath.length) || '/';
+            return input;
         };
+        const getScopedPerms = (target?: string) =>
+            getEffectivePermissionsForPath(
+                user.username,
+                user.role,
+                target ? applyBasePathForPermissions(target, perms.basePath) : undefined,
+            );
 
-        // 写操作与读取操作精细权限校验
         if (action === 'list' || action === 'get') {
             const isRoot = !path || path === '/';
-            if (!isRoot && !perms.view) return NextResponse.json({ code: 403, message: '无权浏览子目录' }, { status: 403 });
+            if (!isRoot) {
+                const targetPerms = await getScopedPerms(path);
+                if (!targetPerms.view && !targetPerms.download && !targetPerms.preview) {
+                    return NextResponse.json({ code: 403, message: '该路径已被限制访问' }, { status: 403 });
+                }
+            }
         }
-        if (action === 'search' && !perms.search) return NextResponse.json({ code: 403, message: '无权搜索文件' }, { status: 403 });
-        if (action === 'mkdir' && !perms.upload) return NextResponse.json({ code: 403, message: '无权创建文件夹（需要上传权限）' }, { status: 403 });
-        if (action === 'remove' && !perms.delete) return NextResponse.json({ code: 403, message: '无权删除文件' }, { status: 403 });
-        if (action === 'rename' && !perms.rename) return NextResponse.json({ code: 403, message: '无权修改文件/文件夹名' }, { status: 403 });
+        if (action === 'search') {
+            const targetPerms = await getScopedPerms(parent);
+            if (!targetPerms.search) {
+                return NextResponse.json({ code: 403, message: '无权搜索文件' }, { status: 403 });
+            }
+        }
+        if (action === 'mkdir') {
+            const targetPerms = await getScopedPerms(path);
+            if (!targetPerms.upload) {
+                return NextResponse.json({ code: 403, message: '无权创建文件夹' }, { status: 403 });
+            }
+        }
+        if (action === 'remove') {
+            const targetPerms = await getScopedPerms(path);
+            if (!targetPerms.delete) {
+                return NextResponse.json({ code: 403, message: '无权删除文件' }, { status: 403 });
+            }
+        }
+        if (action === 'rename') {
+            const targetPerms = await getScopedPerms(path);
+            if (!targetPerms.rename) {
+                return NextResponse.json({ code: 403, message: '无权重命名' }, { status: 403 });
+            }
+        }
 
         let result: any;
-
         switch (action) {
             case 'list':
                 result = await alistFetch('/api/fs/list', { path: scopedPath, page: 1, per_page: 0, refresh: false }, config);
+                if (Array.isArray(result?.data?.content)) {
+                    const filtered = [];
+                    for (const item of result.data.content) {
+                        const itemPath = item?.path || `${scopedPath.replace(/\/+$/, '')}/${item?.name || ''}`;
+                        const itemPerms = await getEffectivePermissionsForPath(user.username, user.role, itemPath);
+                        if (!itemPerms.view && !itemPerms.download && !itemPerms.preview) continue;
+                        filtered.push({
+                            ...item,
+                            path: stripBasePath(item?.path),
+                        });
+                    }
+                    result.data.content = filtered;
+                }
                 break;
             case 'get':
                 result = await alistFetch('/api/fs/get', { path: scopedPath }, config);
@@ -159,28 +201,30 @@ export async function POST(request: Request) {
                     keywords: (keywords || '').trim(),
                     scope: typeof scope === 'number' ? scope : 0,
                     page: 1,
-                    // Bigger page size for faster UX; client still filters results.
                     per_page: 5000,
                 }, config);
                 if (Array.isArray(result?.data?.content)) {
-                    result.data.content = result.data.content.map((item: any) => ({
-                        ...item,
-                        parent: stripBasePath(item?.parent),
-                        path: stripBasePath(item?.path),
-                    }));
+                    const filtered = [];
+                    for (const item of result.data.content) {
+                        const itemPath = item?.path || item?.obj_path || item?.full_path || item?.parent;
+                        const itemPerms = await getEffectivePermissionsForPath(user.username, user.role, itemPath);
+                        if (!itemPerms.view && !itemPerms.download && !itemPerms.preview) continue;
+                        filtered.push({
+                            ...item,
+                            parent: stripBasePath(item?.parent),
+                            path: stripBasePath(item?.path),
+                        });
+                    }
+                    result.data.content = filtered;
                 }
                 break;
-
             default:
                 return NextResponse.json({ code: 400, message: `未知操作: ${action}` }, { status: 400 });
         }
 
         return NextResponse.json(result);
-    } catch (e: any) {
-        console.error('[alist] error:', e);
-        return NextResponse.json(
-            { code: 500, message: e?.message || 'AList 代理出错' },
-            { status: 500 },
-        );
+    } catch (error: any) {
+        console.error('[alist] error:', error);
+        return NextResponse.json({ code: 500, message: error?.message || 'AList 代理出错' }, { status: 500 });
     }
 }
