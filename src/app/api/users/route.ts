@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '../_auth';
 import { getUsers, addUser, removeUser, updateUserRole, getSettings, updateSettings, updateAdminPassword } from '../../../lib/users';
-import type { Role, UserPermissions } from '../../../lib/users';
+import type { FilePermissionRule, Role, UserPermissions } from '../../../lib/users';
 
 // GET: 获取用户列表和全局设置（仅 admin）
 export async function GET(request: Request) {
@@ -69,6 +69,12 @@ export async function POST(request: Request) {
                 const globalPerms = currentSettings.permissions || {};
                 globalPerms[username] = permissions;
                 await updateSettings({ permissions: globalPerms });
+                return NextResponse.json({ ok: true, users: await getUsers(), settings: await getSettings() });
+            }
+
+            case 'updateFilePermissionRules': {
+                const { rules } = body as { rules: FilePermissionRule[] };
+                await updateSettings({ filePermissionRules: Array.isArray(rules) ? rules : [] });
                 return NextResponse.json({ ok: true, users: await getUsers(), settings: await getSettings() });
             }
 
