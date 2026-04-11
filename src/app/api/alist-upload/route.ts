@@ -57,8 +57,17 @@ export async function PUT(request: Request) {
             return NextResponse.json({ code: 400, message: '缺少 File-Path 请求头' }, { status: 400 });
         }
 
+        const decodePathSegments = (path: string) => path.split('/').map((seg) => {
+            try { return decodeURIComponent(seg); } catch { return seg; }
+        }).join('/');
+
+        const rawFilePath = decodePathSegments(originalFilePath);
         const userPerms = await getUserPermissions(user.username, user.role);
-        const filePath = applyBasePathForPermissions(originalFilePath, userPerms.basePath);
+        let filePath = applyBasePathForPermissions(rawFilePath, userPerms.basePath);
+        const encodedFilePath = filePath.split('/').map(encodeURIComponent).join('/');
+
+        console.log('[alist-upload] userPerms.basePath:', userPerms.basePath, 'originalFilePath:', originalFilePath, 'rawFilePath:', rawFilePath, 'resolvedFilePath:', filePath, 'encodedFilePath:', encodedFilePath);
+
         const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, filePath);
         if (!pathPerms.upload) {
             return NextResponse.json({ code: 403, message: '该目录禁止上传' }, { status: 403 });
@@ -70,7 +79,7 @@ export async function PUT(request: Request) {
             method: 'PUT',
             headers: {
                 Authorization: tokenData.data.token,
-                'File-Path': filePath,
+                'File-Path': encodedFilePath,
                 'Content-Type': contentType,
                 ...(contentLength ? { 'Content-Length': contentLength } : {}),
             },
