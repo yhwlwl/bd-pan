@@ -51,6 +51,7 @@ export interface GlobalSettings {
     };
     bannedIps?: Record<string, number>;
     hideAlistButton?: boolean;
+    announcement?: string;
 }
 
 export type UserWithPermissions = Omit<User, 'password'> & { permissions: UserPermissions };
@@ -71,6 +72,7 @@ function normalizePath(path: string | undefined): string {
     return normalized.replace(/\/+/g, '/').replace(/\/$/, '') || '/';
 }
 
+// Export for use in route handlers
 export { normalizePath };
 
 export function applyBasePathForPermissions(path: string | undefined, basePath?: string): string {
@@ -78,7 +80,7 @@ export function applyBasePathForPermissions(path: string | undefined, basePath?:
     const normalizedBase = normalizePath(basePath || '/');
     if (normalizedBase === '/') return normalizedPath;
     if (normalizedPath === '/') return normalizedBase;
-    // If the normalizedPath already starts with the base, don't prefix again
+    // 防止重复前缀：如果已经包含 basePath，直接返回
     if (normalizedPath === normalizedBase || normalizedPath.startsWith(`${normalizedBase}/`)) {
         return normalizedPath;
     }
@@ -92,6 +94,7 @@ function ruleMatchesTarget(rule: FilePermissionRule, targetPath: string): boolea
     return normalizedTarget === rulePath || normalizedTarget.startsWith(`${rulePath}/`);
 }
 
+// Export for use in route handlers
 export { ruleMatchesTarget };
 
 export async function getSettings(): Promise<GlobalSettings> {
@@ -142,6 +145,7 @@ export async function getSettings(): Promise<GlobalSettings> {
             direct302: dlModes.direct302 || 'enabled',
         },
         bannedIps: (val.bannedIps || {}) as Record<string, number>,
+        announcement: typeof val.announcement === 'string' ? val.announcement : '',
     };
 }
 
