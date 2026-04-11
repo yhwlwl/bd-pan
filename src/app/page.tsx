@@ -1726,7 +1726,7 @@ export default function Home() {
                       setGlobalAnnouncement(content);
                       setAlistMsg('✅ 公告已成功发布');
                     }}
-                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg transition-all shadow-lg shadow-blue-900/20 active:scale-95"
+                    className="px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-100 text-[10px] font-bold rounded-lg transition-all shadow-md active:scale-95"
                   >
                     📢 立即发布公告
                   </button>
@@ -2531,16 +2531,16 @@ export default function Home() {
 
           {/* 告示板 */}
           {globalAnnouncement && (
-            <div className="mb-6 p-5 rounded-2xl border-2 border-blue-500/60 bg-blue-600/10 shadow-[0_0_20px_rgba(59,130,246,0.15)] relative overflow-hidden backdrop-blur-md">
-              {/* 背景装饰 - 增加亮度 */}
-              <div className="absolute top-0 right-0 w-48 h-48 bg-blue-400/10 rounded-full -mr-24 -mt-24 blur-3xl"></div>
+            <div className="mb-6 p-5 rounded-2xl border-2 border-blue-200 bg-blue-50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative overflow-hidden">
+              {/* 背景装饰 */}
+              <div className="absolute top-0 right-0 w-48 h-48 bg-blue-200/50 rounded-full -mr-24 -mt-24 blur-3xl"></div>
               
               <div className="flex items-center gap-2 mb-3 relative z-10">
-                <span className="flex items-center justify-center w-6 h-6 bg-blue-500 rounded-full text-[12px] shadow-[0_0_10px_rgba(59,130,246,0.5)]">📢</span>
-                <span className="text-[12px] font-black text-blue-400 uppercase tracking-[0.2em]">公告</span>
+                <span className="flex items-center justify-center w-6 h-6 bg-blue-500 rounded-full text-[12px] shadow-lg shadow-blue-200 text-white">📢</span>
+                <span className="text-[12px] font-black text-blue-800 uppercase tracking-[0.2em]">公告</span>
               </div>
               
-              <div className="text-[14px] text-zinc-800 font-medium whitespace-pre-wrap leading-relaxed px-1 relative z-10 drop-shadow-md">
+              <div className="text-[14px] text-zinc-800 font-medium whitespace-pre-wrap leading-relaxed px-1 relative z-10 drop-shadow-sm">
                 {globalAnnouncement}
               </div>
             </div>
