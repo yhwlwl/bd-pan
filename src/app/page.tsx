@@ -1,10 +1,9 @@
-﻿
+
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import CHANGELOG_DATA from '../data/changelog.json';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
-const SIZE_THRESHOLD = 20 * 1024 * 1024; // 20MB
 
 type Role = 'admin' | 'manager' | 'guest';
 type Theme = 'light' | 'dark';
@@ -63,6 +62,7 @@ export interface GlobalSettings {
   };
   bannedIps?: Record<string, number>;
   hideAlistButton?: boolean;
+  announcement?: string;
 }
 
 export default function Home() {
@@ -130,6 +130,7 @@ export default function Home() {
   const [globalDownloadModes, setGlobalDownloadModes] = useState<GlobalSettings['downloadModes']>({
     ecs: 'enabled', cf: 'enabled', raw: 'enabled', vercel: 'disabled', direct302: 'enabled'
   });
+  const [globalAnnouncement, setGlobalAnnouncement] = useState('');
   const [downloadChannel, setDownloadChannel] = useState<'ecs' | 'frp'>('ecs');
   const [newUserName, setNewUserName] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
@@ -425,6 +426,7 @@ export default function Home() {
       .then(data => {
         if (data) {
           if (data.downloadModes) setGlobalDownloadModes(data.downloadModes);
+          if (data.announcement) setGlobalAnnouncement(data.announcement);
           if (data.downloadChannel === 'ecs' || data.downloadChannel === 'frp') {
             setDownloadChannel(data.downloadChannel);
           }
@@ -435,6 +437,7 @@ export default function Home() {
             hideAlistButton: data.hideAlistButton ?? prev.hideAlistButton,
             downloadChannel: (data.downloadChannel as any) || prev.downloadChannel,
             downloadModes: data.downloadModes || prev.downloadModes,
+            announcement: data.announcement || prev.announcement,
           }));
         }
       })
@@ -882,10 +885,8 @@ export default function Home() {
       return;
     }
 
-    if (isBaidu && (item.size || 0) >= SIZE_THRESHOLD) {
+    if (isBaidu) {
       setAlistDownloadModal({ name: item.name, filePath, sign: item.sign });
-    } else if (isBaidu) {
-      alistProxyDownload(filePath, item.name, '下载 - 小文件直链下载');
     } else if (isAliyun) {
       alistProxyDownload(filePath, item.name, '下载 - 阿里云盘直链下载');
     } else {
@@ -1709,6 +1710,28 @@ export default function Home() {
                   >📡 FRP</button>
                 </div>
               </div>
+              <div className="pt-3 mt-3 border-t space-y-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                <span className="text-[10px] block mb-2" style={{ color: 'var(--text-muted)' }}>系统公告 (清空则不显示)</span>
+                <textarea
+                  value={adminSettings.announcement || ''}
+                  onChange={(e) => setAdminSettings(prev => ({ ...prev, announcement: e.target.value }))}
+                  className="w-full h-24 bg-black/40 border border-zinc-800 rounded-lg p-2.5 text-xs text-zinc-200 outline-none focus:border-blue-500/50 transition-colors resize-none placeholder-zinc-600 font-sans"
+                  placeholder="在此输入需要向全部用户显示的系统公告..."
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => {
+                      const content = adminSettings.announcement || '';
+                      adminAction('updateSettings', { settings: { announcement: content } });
+                      setGlobalAnnouncement(content);
+                      setAlistMsg('✅ 公告已成功发布');
+                    }}
+                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg transition-all shadow-lg shadow-blue-900/20 active:scale-95"
+                  >
+                    📢 立即发布公告
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* 用户列表 */}
@@ -2040,7 +2063,7 @@ export default function Home() {
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
                   <p className="text-xs leading-relaxed text-zinc-100">
                     <span className="font-bold text-pink-400">为什么会有这么多复杂的下载方式？</span><br />
-                    百度网盘对于大于 <span className="font-bold text-white">20MB</span> 的文件，会强制要求客户端发送特定的 <code className="text-[10px] bg-black/30 px-1 py-0.5 rounded text-pink-300">User-Agent: pan.baidu.com</code> 才能下载，否则会直接阻断（比如返回 403 错误）。
+                    百度网盘会校验客户端的 <code className="text-[10px] bg-black/30 px-1 py-0.5 rounded text-pink-300">User-Agent: pan.baidu.com</code>，如果不携带正确的 UA，下载请求会被阻断（返回 403 错误）。为了统一 IP 来源、避免触发百度风控，所有百度网盘文件均通过以下方式下载。
                   </p>
                   <div className="h-px w-full bg-white/10"></div>
                   <p className="text-xs leading-relaxed text-zinc-100">
@@ -2052,7 +2075,7 @@ export default function Home() {
               </section>
 
               <section className="space-y-4">
-                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">2. 大文件 (≥20MB) 下载方式对比</h4>
+                <h4 className="text-xs font-black uppercase tracking-wider text-accent border-l-2 border-accent pl-2">下载方式对比</h4>
                 <div className="grid grid-cols-1 gap-4">
                   {/* 阿里云极速线路 */}
                   <div className="p-4 rounded-2xl bg-pink-600/10 border border-pink-500/30">
@@ -2228,9 +2251,9 @@ export default function Home() {
                       const prov = alistProvider.toLowerCase();
                       const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
                       const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
-                      if (isBaidu && (previewItemMeta.size || 0) >= SIZE_THRESHOLD) {
+                      if (isBaidu) {
                         setAlistDownloadModal({ name: previewItemMeta.name, filePath: previewItemMeta.filePath, sign: previewItemMeta.sign });
-                      } else if (isBaidu || isAliyun) {
+                      } else if (isAliyun) {
                         alistProxyDownload(previewItemMeta.filePath, previewItemMeta.name);
                       } else {
                         alistDirectDownload(previewItemMeta.filePath, previewItemMeta.sign);
@@ -2318,13 +2341,13 @@ export default function Home() {
         </div>
       )}
 
-      {/* 大文件下载方式选择弹窗 */}
+      {/* 百度网盘文件下载方式选择弹窗 */}
       {alistDownloadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setAlistDownloadModal(null)}>
           <div className="w-full max-w-sm glass-strong rounded-2xl p-4 mx-4 glow-accent animate-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div>
-                <div className="text-[10px] uppercase tracking-widest font-bold" style={{ color: 'var(--text-muted)' }}>大文件下载 ≥20MB</div>
+                <div className="text-[10px] uppercase tracking-widest font-bold" style={{ color: 'var(--text-muted)' }}>百度网盘文件下载</div>
                 <div className="text-xs font-mono truncate max-w-[260px] mt-1" style={{ color: 'var(--text-primary)' }}>{alistDownloadModal.name}</div>
               </div>
               <button onClick={() => setAlistDownloadModal(null)} className="hover:opacity-100 opacity-60 text-lg transition-opacity">✕</button>
@@ -2505,6 +2528,23 @@ export default function Home() {
       {/* 主内容区 */}
       <main className="flex-1 overflow-y-auto p-4 md:p-8">
         <div className="max-w-4xl mx-auto animate-in">
+
+          {/* 告示板 */}
+          {globalAnnouncement && (
+            <div className="mb-6 p-5 rounded-2xl border-2 border-blue-500/60 bg-blue-600/10 shadow-[0_0_20px_rgba(59,130,246,0.15)] relative overflow-hidden backdrop-blur-md">
+              {/* 背景装饰 - 增加亮度 */}
+              <div className="absolute top-0 right-0 w-48 h-48 bg-blue-400/10 rounded-full -mr-24 -mt-24 blur-3xl"></div>
+              
+              <div className="flex items-center gap-2 mb-3 relative z-10">
+                <span className="flex items-center justify-center w-6 h-6 bg-blue-500 rounded-full text-[12px] shadow-[0_0_10px_rgba(59,130,246,0.5)]">📢</span>
+                <span className="text-[12px] font-black text-blue-400 uppercase tracking-[0.2em]">公告</span>
+              </div>
+              
+              <div className="text-[14px] text-zinc-800 font-medium whitespace-pre-wrap leading-relaxed px-1 relative z-10 drop-shadow-md">
+                {globalAnnouncement}
+              </div>
+            </div>
+          )}
 
           {/* 文件浏览器卡片 */}
           <div className="glass rounded-2xl overflow-hidden">

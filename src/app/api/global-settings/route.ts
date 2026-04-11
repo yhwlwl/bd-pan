@@ -14,7 +14,8 @@ export async function GET() {
       hideAlistButton: settings.hideAlistButton === true,
       downloadModes: settings.downloadModes || {
         ecs: 'enabled', cf: 'enabled', raw: 'enabled', vercel: 'disabled', direct302: 'enabled'
-      }
+      },
+      announcement: settings.announcement
     });
   } catch (error: any) {
     return NextResponse.json({ disableThirdDownload: false }, { status: 500 });
