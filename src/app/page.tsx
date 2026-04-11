@@ -196,6 +196,21 @@ export default function Home() {
 
   const getChildPath = (parentPath: string, name: string) => `${parentPath.replace(/\/+$/, '')}/${name}`;
   const getParentPath = (path: string) => path.replace(/\/[^/]+\/?$/, '') || '/';
+  const normalizeVisiblePath = (path: string) => {
+    const raw = (path || '/').trim();
+    if (!raw || raw === '/') return '/';
+    return (raw.startsWith('/') ? raw : `/${raw}`).replace(/\/+/g, '/').replace(/\/$/, '') || '/';
+  };
+  const applyBasePathToVisiblePath = (path: string, basePath?: string) => {
+    const normalizedPath = normalizeVisiblePath(path);
+    const normalizedBase = normalizeVisiblePath(basePath || '/');
+    if (normalizedBase === '/') return normalizedPath;
+    if (normalizedPath === '/') return normalizedBase;
+    if (normalizedPath === normalizedBase || normalizedPath.startsWith(`${normalizedBase}/`)) {
+      return normalizedPath;
+    }
+    return `${normalizedBase}${normalizedPath}`.replace(/\/+/g, '/');
+  };
   const getPathProviderHints = (path: string, provider?: string) => {
     const providerText = (provider || '').toLowerCase();
     const pathText = path.toLowerCase();
@@ -996,7 +1011,8 @@ export default function Home() {
     setUploadProgress(0);
     try {
       const uploadPath = alistPath.replace(/\/+$/, '') + '/' + alistUploadFile.name;
-      const encodedFilePath = uploadPath.split('/').map(encodeURIComponent).join('/');
+      const realUploadPath = applyBasePathToVisiblePath(uploadPath, userPerms?.basePath);
+      const encodedFilePath = realUploadPath.split('/').map(encodeURIComponent).join('/');
 
       // 1. 尝试直连 ECS 上传（绕过 Vercel，极速）
       let directSuccess = false;

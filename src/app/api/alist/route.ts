@@ -3,9 +3,13 @@ import { verifyToken } from '../_auth';
 import {
     applyBasePathForPermissions,
     checkIpBanned,
+    FilePermissionAction,
     getEffectivePermissionsForPath,
     getSettings,
     getUserPermissions,
+    normalizePath,
+    ruleMatchesTarget,
+    UserPermissions,
 } from '../../../lib/users';
 
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
@@ -60,6 +64,7 @@ function normalizeVisiblePath(path?: string) {
 }
 
 export async function POST(request: Request) {
+    const startTime = Date.now();
     try {
         const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
         if (await checkIpBanned(clientIp)) {
@@ -84,16 +89,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
         }
 
+        console.log(`[alist] ${action} start, path=${path}, user=${user.username}, time=${Date.now() - startTime}ms`);
+
         const customUrl = request.headers.get('x-alist-url');
         const customUser = request.headers.get('x-alist-username');
         const customPass = request.headers.get('x-alist-password');
 
         let config: { url: string; user: string; pass: string };
+        let globalSettings: any;
         if (customUrl) {
             config = { url: customUrl.replace(/\/+$/, ''), user: customUser || '', pass: customPass || '' };
+            globalSettings = await getSettings(); // still need for permissions
         } else {
-            const settings = await getSettings();
-            const channel = settings.downloadChannel || 'ecs';
+            globalSettings = await getSettings();
+            const channel = globalSettings.downloadChannel || 'ecs';
             config = channel === 'ecs'
                 ? { url: ECS_URL, user: ECS_USER, pass: ECS_PASS }
                 : { url: FRP_URL, user: FRP_USER, pass: FRP_PASS };
@@ -121,10 +130,31 @@ export async function POST(request: Request) {
             if (input.startsWith(`${basePath}/`)) return input.slice(basePath.length) || '/';
             return input;
         };
+
+        // Optimized permission checker with cached settings
+        const getEffectivePermissionsForPathCached = (targetPath?: string): UserPermissions => {
+            const basePermissions = perms; // already fetched
+            if (!targetPath || user.role === 'admin') return basePermissions;
+
+            const rules = globalSettings.filePermissionRules || [];
+            const normalizedTarget = normalizePath(targetPath);
+            const effective = { ...basePermissions };
+
+            for (const rule of rules) {
+                if (!Array.isArray(rule.users) || !rule.users.includes(user.username)) continue;
+                if (!ruleMatchesTarget(rule, normalizedTarget)) continue;
+                for (const action of Object.keys(rule.deny || {}) as FilePermissionAction[]) {
+                    if (rule.deny[action]) {
+                        effective[action] = false as never;
+                    }
+                }
+            }
+
+            return effective;
+        };
+
         const getScopedPerms = (target?: string) =>
-            getEffectivePermissionsForPath(
-                user.username,
-                user.role,
+            getEffectivePermissionsForPathCached(
                 target ? applyBasePathForPermissions(target, perms.basePath) : undefined,
             );
 
@@ -167,16 +197,18 @@ export async function POST(request: Request) {
             case 'list':
                 result = await alistFetch('/api/fs/list', { path: scopedPath, page: 1, per_page: 0, refresh: false }, config);
                 if (Array.isArray(result?.data?.content)) {
+                    console.log(`[alist] list fetched ${result.data.content.length} items, time=${Date.now() - startTime}ms`);
                     const filtered = [];
                     for (const item of result.data.content) {
                         const itemPath = item?.path || `${scopedPath.replace(/\/+$/, '')}/${item?.name || ''}`;
-                        const itemPerms = await getEffectivePermissionsForPath(user.username, user.role, itemPath);
+                        const itemPerms = getEffectivePermissionsForPathCached(itemPath);
                         if (!itemPerms.view && !itemPerms.download && !itemPerms.preview) continue;
                         filtered.push({
                             ...item,
                             path: stripBasePath(item?.path),
                         });
                     }
+                    console.log(`[alist] list filtered to ${filtered.length} items, time=${Date.now() - startTime}ms`);
                     result.data.content = filtered;
                 }
                 break;
@@ -207,7 +239,7 @@ export async function POST(request: Request) {
                     const filtered = [];
                     for (const item of result.data.content) {
                         const itemPath = item?.path || item?.obj_path || item?.full_path || item?.parent;
-                        const itemPerms = await getEffectivePermissionsForPath(user.username, user.role, itemPath);
+                        const itemPerms = getEffectivePermissionsForPathCached(itemPath);
                         if (!itemPerms.view && !itemPerms.download && !itemPerms.preview) continue;
                         filtered.push({
                             ...item,

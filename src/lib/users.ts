@@ -71,11 +71,17 @@ function normalizePath(path: string | undefined): string {
     return normalized.replace(/\/+/g, '/').replace(/\/$/, '') || '/';
 }
 
+export { normalizePath };
+
 export function applyBasePathForPermissions(path: string | undefined, basePath?: string): string {
     const normalizedPath = normalizePath(path);
     const normalizedBase = normalizePath(basePath || '/');
     if (normalizedBase === '/') return normalizedPath;
     if (normalizedPath === '/') return normalizedBase;
+    // If the normalizedPath already starts with the base, don't prefix again
+    if (normalizedPath === normalizedBase || normalizedPath.startsWith(`${normalizedBase}/`)) {
+        return normalizedPath;
+    }
     return `${normalizedBase}${normalizedPath}`.replace(/\/+/g, '/');
 }
 
@@ -85,6 +91,8 @@ function ruleMatchesTarget(rule: FilePermissionRule, targetPath: string): boolea
     if (rule.pathType === 'file') return normalizedTarget === rulePath;
     return normalizedTarget === rulePath || normalizedTarget.startsWith(`${rulePath}/`);
 }
+
+export { ruleMatchesTarget };
 
 export async function getSettings(): Promise<GlobalSettings> {
     const defaults: GlobalSettings = {
