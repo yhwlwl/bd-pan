@@ -85,8 +85,9 @@ export default function Home() {
   const [alistLoading, setAlistLoading] = useState(false);
   const [alistError, setAlistError] = useState<string | null>(null);
   const [alistMsg, setAlistMsg] = useState<string | null>(null);
-  const [alistSelected, setAlistSelected] = useState<Set<string>>(new Set());
   const [alistProvider, setAlistProvider] = useState<string>('');
+  const [currentPathPerms, setCurrentPathPerms] = useState<{ delete: boolean; rename: boolean; upload: boolean; search: boolean } | null>(null);
+  const [alistSelected, setAlistSelected] = useState<Set<string>>(new Set());
   const [alistSearchKeyword, setAlistSearchKeyword] = useState('');
   const [alistSearchScope, setAlistSearchScope] = useState<0 | 1>(1);
   const [alistSearchLoading, setAlistSearchLoading] = useState(false);
@@ -98,8 +99,10 @@ export default function Home() {
   // 文件操作
   const [alistShowMkdir, setAlistShowMkdir] = useState(false);
   const [alistMkdirName, setAlistMkdirName] = useState('');
-  const [alistUploadFile, setAlistUploadFile] = useState<File | null>(null);
+  const [alistUploadFiles, setAlistUploadFiles] = useState<File[]>([]);
   const [alistUploading, setAlistUploading] = useState(false);
+  const [uploadProgressMsg, setUploadProgressMsg] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const [alistRenaming, setAlistRenaming] = useState<string | null>(null);
   const [alistNewName, setAlistNewName] = useState('');
   const [alistDownloadModal, setAlistDownloadModal] = useState<{ name: string; filePath: string; sign?: string } | null>(null);
@@ -575,6 +578,7 @@ export default function Home() {
         setAlistFiles(data.data?.content || []);
         setAlistPath(path);
         setAlistProvider(data.data?.provider || '');
+        setCurrentPathPerms(data.data?.current_perms || null);
         setAlistSelected(new Set());
         setAlistSearchActive(false);
         setAlistSearchError(null);
@@ -1006,93 +1010,139 @@ export default function Home() {
   };
 
   const alistUpload = async () => {
-    if (!alistUploadFile || !userToken) return;
+    if (alistUploadFiles.length === 0 || !userToken) return;
     setAlistUploading(true);
     setAlistMsg(null);
     setUploadProgress(0);
-    try {
-      const uploadPath = alistPath.replace(/\/+$/, '') + '/' + alistUploadFile.name;
-      const realUploadPath = applyBasePathToVisiblePath(uploadPath, userPerms?.basePath);
-      const encodedFilePath = realUploadPath.split('/').map(encodeURIComponent).join('/');
+    setUploadProgressMsg('准备上传...');
 
-      // 1. 尝试直连 ECS 上传（绕过 Vercel，极速）
-      let directSuccess = false;
+    let successCount = 0;
+    let failCount = 0;
+    let lastError = '';
+
+    // 提前缓存，避免每个文件都去请求 token
+    let cachedTokenData: any = null;
+    const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    try {
+      const tokenRes = await fetch('/api/alist-token', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${userToken}` },
+      });
+      cachedTokenData = await tokenRes.json();
+    } catch (e) {
+      console.warn('获取直连 token 失败:', e);
+    }
+    
+    // 提前读取自定义配置避免重复读 storage
+    const cc = getCustomConfig();
+
+    for (let i = 0; i < alistUploadFiles.length; i++) {
+      const file = alistUploadFiles[i];
+      setUploadProgressMsg(`正在上传 (${i + 1}/${alistUploadFiles.length}): ${file.name}`);
+      setUploadProgress(Math.round((i / alistUploadFiles.length) * 100));
+
       try {
-        const tokenRes = await fetch('/api/alist-token', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${userToken}` },
-        });
-        const tokenData = await tokenRes.json();
-        const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-        const isAlistHttps = tokenData.url && tokenData.url.startsWith('https');
-        // 只有当协议匹配时才直连（避免 HTTPS 页面发 HTTP 请求导致"不安全"标记）
-        if (tokenData.token && tokenData.url && (!isPageHttps || isAlistHttps)) {
-          setAlistMsg('🚀 直连云端节点上传中...');
+        const relativePath = (file as any).customPath || file.webkitRelativePath || file.name;
+        const uploadPath = alistPath.replace(/\/+$/, '') + '/' + relativePath;
+        const realUploadPath = applyBasePathToVisiblePath(uploadPath, userPerms?.basePath);
+        const encodedFilePath = realUploadPath.split('/').map(encodeURIComponent).join('/');
+
+        // 1. 尝试直连 ECS 上传（绕过 Vercel，极速）
+        let directSuccess = false;
+        try {
+          const isAlistHttps = cachedTokenData && cachedTokenData.url && cachedTokenData.url.startsWith('https');
+
+          if (cachedTokenData && cachedTokenData.token && cachedTokenData.url && (!isPageHttps || isAlistHttps)) {
+            const uploadData: any = await new Promise((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.open('PUT', `${cachedTokenData.url}/api/fs/put`);
+              xhr.setRequestHeader('Authorization', cachedTokenData.token);
+              xhr.setRequestHeader('File-Path', encodedFilePath);
+              xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+              xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                   const fileProgress = (e.loaded / e.total);
+                   const totalProgress = Math.round(((i + fileProgress) / alistUploadFiles.length) * 100);
+                   setUploadProgress(totalProgress);
+                }
+              };
+              xhr.onload = () => {
+                try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
+              };
+              xhr.onerror = () => reject(new Error('CORS_OR_NETWORK'));
+              xhr.send(file);
+            });
+            if (uploadData.code === 200) {
+              directSuccess = true;
+              successCount++;
+            } else {
+              throw new Error(uploadData.message);
+            }
+          }
+        } catch (directErr: any) {
+          if (directErr.message !== 'CORS_OR_NETWORK') {
+             if (!directSuccess) throw directErr;
+          }
+        }
+
+        // 2. Fallback: 通过 Vercel Dashboard 代理上传
+        if (!directSuccess) {
+          const headers: Record<string, string> = {
+            'Authorization': `Bearer ${userToken}`,
+            'File-Path': encodedFilePath,
+            'Content-Type': file.type || 'application/octet-stream',
+            'Content-Length': String(file.size),
+          };
+          const cc = getCustomConfig();
+          if (cc) {
+            if (cc.url) headers['x-alist-url'] = cc.url;
+            if (cc.user) headers['x-alist-username'] = cc.user;
+            if (cc.pass) headers['x-alist-password'] = cc.pass;
+          }
           const uploadData: any = await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
-            xhr.open('PUT', `${tokenData.url}/api/fs/put`);
-            xhr.setRequestHeader('Authorization', tokenData.token);
-            xhr.setRequestHeader('File-Path', encodedFilePath);
-            xhr.setRequestHeader('Content-Type', alistUploadFile!.type || 'application/octet-stream');
+            xhr.open('PUT', '/api/alist-upload');
+            Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
             xhr.upload.onprogress = (e) => {
-              if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+              if (e.lengthComputable) {
+                 const fileProgress = (e.loaded / e.total);
+                 const totalProgress = Math.round(((i + fileProgress) / alistUploadFiles.length) * 100);
+                 setUploadProgress(totalProgress);
+              }
             };
             xhr.onload = () => {
               try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
             };
-            xhr.onerror = () => reject(new Error('CORS_OR_NETWORK'));
-            xhr.send(alistUploadFile);
+            xhr.onerror = () => reject(new Error('网络异常'));
+            xhr.send(file);
           });
           if (uploadData.code === 200) {
-            directSuccess = true;
-            setAlistMsg('✅ 极速上传成功 (直连 ECS)');
-            logUserAction('上传(直连)', uploadPath);
-            setAlistUploadFile(null);
-            alistListDir(alistPath);
+             successCount++;
           } else {
-            setAlistMsg(`❌ ${uploadData.message}`);
-            directSuccess = true; // 虽然失败但不需要 fallback
+             throw new Error(uploadData.message);
           }
         }
-      } catch (directErr: any) {
-        // 直连失败（CORS 或网络问题），降级到 Vercel 代理
-        console.warn('[upload] 直连失败，降级到 Vercel 代理:', directErr.message);
+      } catch (e: any) {
+         failCount++;
+         lastError = e.message;
       }
+    }
 
-      // 2. Fallback: 通过 Vercel Dashboard 代理上传
-      if (!directSuccess) {
-        setAlistMsg('⏳ 通过 Dashboard 中转上传中...');
-        setUploadProgress(0);
-        const headers: Record<string, string> = {
-          'Authorization': `Bearer ${userToken}`,
-          'File-Path': encodedFilePath,
-          'Content-Type': alistUploadFile.type || 'application/octet-stream',
-          'Content-Length': String(alistUploadFile.size),
-        };
-        const cc = getCustomConfig();
-        if (cc) {
-          if (cc.url) headers['x-alist-url'] = cc.url;
-          if (cc.user) headers['x-alist-username'] = cc.user;
-          if (cc.pass) headers['x-alist-password'] = cc.pass;
-        }
-        const uploadData: any = await new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', '/api/alist-upload');
-          Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
-          };
-          xhr.onload = () => {
-            try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
-          };
-          xhr.onerror = () => reject(new Error('网络异常'));
-          xhr.send(alistUploadFile);
-        });
-        if (uploadData.code === 200) { setAlistMsg('✅ 上传成功 (中转)'); logUserAction('上传(中转)', uploadPath); setAlistUploadFile(null); alistListDir(alistPath); }
-        else setAlistMsg(`❌ ${uploadData.message}`);
-      }
-    } catch (e: any) { setAlistMsg(`❌ 上传失败: ${e.message}`); }
-    finally { setAlistUploading(false); setUploadProgress(null); }
+    if (failCount === 0) {
+       setAlistMsg(`✅ 成功上传 ${successCount} 个文件/文件夹`);
+       setAlistUploadFiles([]);
+    } else if (successCount > 0) {
+       setAlistMsg(`⚠️ 上传完成，${successCount} 成功，${failCount} 失败 (最后错误: ${lastError})`);
+       setAlistUploadFiles([]);
+    } else {
+       setAlistMsg(`❌ 上传失败: ${lastError}`);
+    }
+
+    logUserAction('批量上传', `${alistPath} (${successCount} 个文件)`);
+    setAlistUploading(false);
+    setUploadProgress(null);
+    setUploadProgressMsg('');
+    alistListDir(alistPath);
   };
 
   // === 管理面板操作 ===
@@ -2547,7 +2597,75 @@ export default function Home() {
           )}
 
           {/* 文件浏览器卡片 */}
-          <div className="glass rounded-2xl overflow-hidden">
+          <div className="glass rounded-2xl overflow-hidden relative"
+            onDragOver={(e) => { e.preventDefault(); if (canUpload && (currentPathPerms ? currentPathPerms.upload : true)) setIsDragging(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+            onDrop={async (e) => {
+              e.preventDefault();
+              setIsDragging(false);
+              if (!canUpload || (currentPathPerms && !currentPathPerms.upload)) {
+                setAlistMsg("❌ 您没有上传权限");
+                return;
+              }
+              const items = e.dataTransfer.items;
+              const files: File[] = [];
+
+              const readAllEntries = async (dirReader: any): Promise<any[]> => {
+                let entries: any[] = [];
+                const readChunk = () => new Promise<any[]>((resolve, reject) => {
+                   dirReader.readEntries(resolve, reject);
+                });
+                let chunk;
+                do {
+                   chunk = await readChunk();
+                   entries = entries.concat(chunk);
+                } while (chunk.length > 0);
+                return entries;
+              };
+
+              const getFileFromEntry = async (entry: any, path = '') => {
+                if (entry.isFile) {
+                  const file = await new Promise<File>((resolve) => entry.file(resolve));
+                  Object.defineProperty(file, 'customPath', { value: path + file.name });
+                  files.push(file);
+                } else if (entry.isDirectory) {
+                  const dirReader = entry.createReader();
+                  const entries = await readAllEntries(dirReader);
+                  for (const subEntry of entries) {
+                    await getFileFromEntry(subEntry, path + entry.name + '/');
+                  }
+                }
+              };
+
+              if (items) {
+                for (let i = 0; i < items.length; i++) {
+                  const item = items[i];
+                  if (item.kind === 'file') {
+                    const entry = item.webkitGetAsEntry();
+                    if (entry) {
+                      await getFileFromEntry(entry, '');
+                    }
+                  }
+                }
+              } else if (e.dataTransfer.files) {
+                for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                  files.push(e.dataTransfer.files[i]);
+                }
+              }
+
+              if (files.length > 0) {
+                setAlistUploadFiles(prev => [...prev, ...files]);
+              }
+            }}
+          >
+            {isDragging && canUpload && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm border-2 border-dashed border-pink-500 rounded-2xl pointer-events-none">
+                <div className="text-white text-xl font-bold flex flex-col items-center gap-2">
+                  <span className="text-5xl shadow-pink-500/50 drop-shadow-2xl">📥</span>
+                  <span>松开鼠标添加至上传队列</span>
+                </div>
+              </div>
+            )}
 
             {/* 头部工具栏 */}
             <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
@@ -2588,15 +2706,19 @@ export default function Home() {
                     )}
                   </>
                 )}
-                {canUpload && (
+                {canUpload && (currentPathPerms ? currentPathPerms.upload : true) && (
                   <>
                     <button onClick={() => setAlistShowMkdir(!alistShowMkdir)}
                       className="text-[10px] px-2 py-1 rounded transition-opacity hover:opacity-80" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }} title="新建文件夹">
                       + 文件夹
                     </button>
-                    <label className="text-[10px] px-2 py-1 rounded cursor-pointer transition-opacity hover:opacity-80" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }} title="上传文件">
-                      {alistUploading ? '上传中...' : '↑ 上传'}
-                      <input type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setAlistUploadFile(f); }} />
+                    <label className="text-[10px] px-2 py-1 rounded cursor-pointer transition-opacity hover:opacity-80" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }} title="上传文件 (多选)">
+                      {alistUploading ? '上传中...' : '↑ 文件'}
+                      <input type="file" multiple className="hidden" onChange={e => { const f = Array.from(e.target.files || []); if (f.length) setAlistUploadFiles(prev => [...prev, ...f]); e.target.value = ''; }} />
+                    </label>
+                    <label className="text-[10px] px-2 py-1 rounded cursor-pointer transition-opacity hover:opacity-80" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }} title="上传整个文件夹">
+                      {alistUploading ? '上传中...' : '↑ 目录'}
+                      <input type="file" {...{ webkitdirectory: "", directory: "" } as any} multiple className="hidden" onChange={e => { const f = Array.from(e.target.files || []); if (f.length) setAlistUploadFiles(prev => [...prev, ...f]); e.target.value = ''; }} />
                     </label>
                   </>
                 )}
@@ -2642,23 +2764,38 @@ export default function Home() {
             )}
 
             {/* 待上传确认 + 进度条 */}
-            {alistUploadFile && canUpload && (
-              <div className="px-4 py-2" style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] flex-1 truncate" style={{ color: 'var(--text-muted)' }}>📎 {alistUploadFile.name} <span className="text-[9px] opacity-60">({(alistUploadFile.size / 1024 / 1024).toFixed(1)} MB)</span></span>
-                  <button onClick={alistUpload} disabled={alistUploading} className="px-2 py-1 text-[10px] bg-accent text-white rounded font-bold hover:opacity-80 disabled:opacity-50">
-                    {alistUploading ? `${uploadProgress ?? 0}%` : '确认上传'}
-                  </button>
-                  {!alistUploading && <button onClick={() => setAlistUploadFile(null)} className="px-2 py-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>取消</button>}
-                </div>
-                {alistUploading && uploadProgress !== null && (
-                  <div className="mt-2 w-full rounded-full h-1.5 overflow-hidden" style={{ background: 'var(--border-color)' }}>
-                    <div
-                      className="h-full rounded-full transition-all duration-300 ease-out"
-                      style={{ width: `${uploadProgress}%`, background: 'linear-gradient(90deg, #ec4899, #f97316)' }}
-                    />
+            {alistUploadFiles.length > 0 && canUpload && (
+              <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold" style={{ color: 'var(--text-primary)' }}>
+                      📎 待上传 {alistUploadFiles.length} 个文件/文件夹
+                      <span className="text-[9px] opacity-60 font-normal ml-2">
+                        ({(alistUploadFiles.reduce((acc, f) => acc + f.size, 0) / 1024 / 1024).toFixed(1)} MB)
+                      </span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button onClick={alistUpload} disabled={alistUploading} className="px-3 py-1.5 text-[10px] bg-accent text-white rounded-lg font-bold hover:opacity-80 disabled:opacity-50 transition-all shadow-md active:scale-95">
+                        {alistUploading ? '上传中...' : '确认上传全部'}
+                      </button>
+                      {!alistUploading && <button onClick={() => setAlistUploadFiles([])} className="px-3 py-1.5 text-[10px] rounded-lg transition-all border" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)', background: 'var(--bg-input)' }}>清空队列</button>}
+                    </div>
                   </div>
-                )}
+                  {alistUploading && uploadProgress !== null && (
+                    <div className="w-full">
+                      <div className="flex justify-between text-[9px] mb-1.5 font-mono">
+                        <span style={{ color: 'var(--text-muted)' }} className="truncate max-w-[80%]">{uploadProgressMsg || '上传中...'}</span>
+                        <span className="text-accent font-bold">{uploadProgress}%</span>
+                      </div>
+                      <div className="w-full rounded-full h-1.5 overflow-hidden" style={{ background: 'var(--bg-input)' }}>
+                        <div
+                          className="h-full rounded-full transition-all duration-300 ease-out"
+                          style={{ width: `${uploadProgress}%`, background: 'linear-gradient(90deg, var(--accent), #f97316)' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -2847,13 +2984,13 @@ export default function Home() {
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2h-1V9a5 5 0 10-10 0v2H6a2 2 0 00-2 2v6a2 2 0 002 2zm3-10V9a3 3 0 116 0v2H9z" /></svg>
                                   </button>
                                 )}
-                                {canRename && (
+                                {canRename && (file.perms ? file.perms.rename : true) && (
                                   <button onClick={() => { setAlistRenaming(filePath); setAlistNewName(file.name); }}
                                     className="text-zinc-600 hover:text-blue-400 transition-colors p-0.5" title="重命名">
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                   </button>
                                 )}
-                                {canDelete && (
+                                {canDelete && (file.perms ? file.perms.delete : true) && (
                                   <button onClick={() => alistRemove(file)}
                                     className="text-zinc-600 hover:text-red-500 transition-colors p-0.5" title="删除">
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>

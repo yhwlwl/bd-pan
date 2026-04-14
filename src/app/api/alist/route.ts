@@ -180,15 +180,24 @@ export async function POST(request: Request) {
             }
         }
         if (action === 'remove') {
-            const targetPerms = await getScopedPerms(path);
-            if (!targetPerms.delete) {
+            const parentPerms = await getScopedPerms(path);
+            if (!parentPerms.delete) {
                 return NextResponse.json({ code: 403, message: '无权删除文件' }, { status: 403 });
+            }
+            // 额外检查每一个具体项，防止绕过特定路径记录的禁止删除规则
+            const items = names || (name ? [name] : []);
+            for (const n of items) {
+                const fullItemPath = `${(path || '').replace(/\/+$/, '')}/${n}`;
+                const itemPerms = await getScopedPerms(fullItemPath);
+                if (!itemPerms.delete) {
+                    return NextResponse.json({ code: 403, message: `您没有删除该项的权限: ${n}` }, { status: 403 });
+                }
             }
         }
         if (action === 'rename') {
-            const targetPerms = await getScopedPerms(path);
-            if (!targetPerms.rename) {
-                return NextResponse.json({ code: 403, message: '无权重命名' }, { status: 403 });
+            const itemPerms = await getScopedPerms(path);
+            if (!itemPerms.rename) {
+                return NextResponse.json({ code: 403, message: '无权重命名该项' }, { status: 403 });
             }
         }
 
@@ -196,6 +205,15 @@ export async function POST(request: Request) {
         switch (action) {
             case 'list':
                 result = await alistFetch('/api/fs/list', { path: scopedPath, page: 1, per_page: 0, refresh: false }, config);
+                if (result?.data) {
+                    const currentPathPerms = await getScopedPerms(path);
+                    result.data.current_perms = {
+                        delete: currentPathPerms.delete,
+                        rename: currentPathPerms.rename,
+                        upload: currentPathPerms.upload,
+                        search: currentPathPerms.search,
+                    };
+                }
                 if (Array.isArray(result?.data?.content)) {
                     console.log(`[alist] list fetched ${result.data.content.length} items, time=${Date.now() - startTime}ms`);
                     const filtered = [];
@@ -206,6 +224,13 @@ export async function POST(request: Request) {
                         filtered.push({
                             ...item,
                             path: stripBasePath(item?.path),
+                            perms: {
+                                delete: itemPerms.delete,
+                                rename: itemPerms.rename,
+                                upload: itemPerms.upload,
+                                download: itemPerms.download,
+                                preview: itemPerms.preview
+                            }
                         });
                     }
                     console.log(`[alist] list filtered to ${filtered.length} items, time=${Date.now() - startTime}ms`);
@@ -245,6 +270,13 @@ export async function POST(request: Request) {
                             ...item,
                             parent: stripBasePath(item?.parent),
                             path: stripBasePath(item?.path),
+                            perms: {
+                                delete: itemPerms.delete,
+                                rename: itemPerms.rename,
+                                upload: itemPerms.upload,
+                                download: itemPerms.download,
+                                preview: itemPerms.preview
+                            }
                         });
                     }
                     result.data.content = filtered;
