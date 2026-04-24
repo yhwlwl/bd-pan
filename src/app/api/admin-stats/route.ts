@@ -25,6 +25,19 @@ export async function GET(request: Request) {
 
         if (error) throw error;
 
+        const { data: viewLogs, error: viewLogsError, count } = await supabase
+            .from('view_logs')
+            .select('visit_time, ip_address, user_agent, city, region, country, page_source, username', { count: 'exact' })
+            .eq('page_source', 'pan')
+            .order('visit_time', { ascending: false });
+
+        if (viewLogsError) {
+            console.error('[stats] view_logs error:', viewLogsError);
+            throw viewLogsError;
+        }
+
+        let totalPanVisits = count || 0;
+
         let past24hDownloads = 0;
         let totalDownloads = 0;
         
@@ -45,12 +58,6 @@ export async function GET(request: Request) {
         const riskTypes = ['上传', '删除', '重命名', '建立文件夹'];
 
         (logs || []).forEach(log => {
-            // Stats
-            if (log.ip) {
-                if (!ipStats[log.ip]) ipStats[log.ip] = { count: 0, lastActive: log.created_at, lastUser: log.username, location: log.location || '未知定位' };
-                ipStats[log.ip].count++;
-            }
-
             const isDownload = log.action_type.startsWith('下载 -');
             const isPast24h = new Date(log.created_at) >= twentyFourHoursAgo;
 
@@ -92,6 +99,19 @@ export async function GET(request: Request) {
             }
         });
 
+        (viewLogs || []).forEach(log => {
+            const ip = log.ip_address;
+            if (!ip) return;
+            const location = [log.country, log.region, log.city].filter(Boolean).join(' ') || '未知定位';
+            if (!ipStats[ip]) ipStats[ip] = { count: 0, lastActive: log.visit_time, lastUser: log.username || '访客', location };
+            ipStats[ip].count++;
+            if (new Date(log.visit_time) > new Date(ipStats[ip].lastActive)) {
+                ipStats[ip].lastActive = log.visit_time;
+                ipStats[ip].lastUser = log.username || '访客';
+                ipStats[ip].location = location;
+            }
+        });
+
         // Sort IP stats by count descending
         const topIps = Object.entries(ipStats)
             .map(([ip, data]) => ({ ip, ...data }))
@@ -101,12 +121,14 @@ export async function GET(request: Request) {
         return NextResponse.json({
             code: 200,
             data: {
+                totalPanVisits,
                 past24hDownloads,
                 totalDownloads,
                 channelStats,
                 highRiskLogs,
                 topIps,
-                allDownloadLogs
+                allDownloadLogs,
+                viewLogs: viewLogs || []
             }
         });
 

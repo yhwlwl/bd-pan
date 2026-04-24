@@ -32,6 +32,7 @@ export async function POST(req: Request) {
                 region: region,
                 country: country,
                 page_source: body.source || 'pan',
+                username: body.username || '访客',
             }
         ]);
 

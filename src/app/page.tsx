@@ -107,6 +107,7 @@ export default function Home() {
   const [alistNewName, setAlistNewName] = useState('');
   const [alistDownloadModal, setAlistDownloadModal] = useState<{ name: string; filePath: string; sign?: string } | null>(null);
   const [nodeLatencies, setNodeLatencies] = useState<Record<string, number | null>>({});
+  const [isCompressing, setIsCompressing] = useState(false);
   // 文件预览
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office'; filePath: string; sign?: string; size?: number } | null>(null);
   const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' | 'unknown' } | null>(null);
@@ -155,7 +156,7 @@ export default function Home() {
   });
 
   const [ipLimit, setIpLimit] = useState<number>(5);
-  const [ipSort, setIpSort] = useState<'count' | 'time'>('count');
+  const [ipSort, setIpSort] = useState<'count' | 'time' | 'flow'>('count');
   const [riskLimit, setRiskLimit] = useState<number>(5);
   const [selectedChannelDetailedStats, setSelectedChannelDetailedStats] = useState<string | null>(null);
   const [allDownloadStatsModal, setAllDownloadStatsModal] = useState<{ title: string; logs: any[] } | null>(null);
@@ -387,6 +388,7 @@ export default function Home() {
       const savedRole = window.localStorage.getItem('BDPAN_ROLE') as Role | null;
       const savedUser = window.localStorage.getItem('BDPAN_USERNAME');
       const savedPerms = window.localStorage.getItem('BDPAN_PERMS');
+      const trackedUsername = savedUser || '访客';
       if (savedToken && savedRole) {
         setUserToken(savedToken);
         setUserRole(savedRole);
@@ -404,6 +406,7 @@ export default function Home() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              username: trackedUsername,
               time: new Date().toISOString(),
               ip: data.ip,
               country: data.country_name || '',
@@ -418,7 +421,7 @@ export default function Home() {
           fetch('/api/track', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ time: new Date().toISOString(), device: navigator.userAgent, source: 'pan' })
+            body: JSON.stringify({ username: trackedUsername, time: new Date().toISOString(), device: navigator.userAgent, source: 'pan' })
           }).catch(() => { });
         });
     }
@@ -934,35 +937,184 @@ export default function Home() {
   };
 
   const alistBatchDownload = () => {
+    console.log('[批量下载] 触发，选中项:', alistSelected);
+    console.log('[批量下载] 权限检查:', { canDownload, userPerms });
+    
+    if (!canDownload) { 
+      setAlistMsg('❌ 无下载权限'); 
+      console.warn('[批量下载] 权限不足');
+      return; 
+    }
+    if (alistSelected.size === 0) {
+      console.warn('[批量下载] 未选中任何项');
+      return;
+    }
+
     const prov = alistProvider.toLowerCase();
     const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
     const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
 
-    alistSelected.forEach(name => {
+    console.log('[批量下载] 云盘类型:', { prov, isBaidu, isAliyun });
+
+    const selectedItems = Array.from(alistSelected).map(name => {
       const file = alistFiles.find((f: any) => f.name === name);
       const filePath = `${alistPath.replace(/\/+$/, '')}/${name}`;
+      return { name, file, filePath, isDir: file?.is_dir || false };
+    });
+
+    // 分离文件和文件夹
+    const files = selectedItems.filter(item => !item.isDir);
+    const folders = selectedItems.filter(item => item.isDir);
+
+    console.log('[批量下载] 项目分类:', { 文件数: files.length, 文件夹数: folders.length });
+
+    // 下载文件
+    files.forEach(({ name, file, filePath }) => {
+      console.log('[批量下载] 下载文件:', name);
       if (isBaidu || isAliyun) {
-        // 百度和阿里云盘都走代理下载
-        alistProxyDownload(filePath, name);
+        alistProxyDownload(filePath, name, '批量下载 - 代理');
       } else {
-        alistDirectDownload(filePath, file?.sign);
+        alistDirectDownload(filePath, file?.sign, '批量下载 - 直连');
       }
     });
+
+    // 处理文件夹下载
+    if (folders.length > 0) {
+      console.log('[批量下载] 打包文件夹:', folders.map(f => f.name));
+      alistBatchDownloadFolders(folders);
+    } else {
+      console.log('[批量下载] 未选中文件夹，仅处理了文件');
+      if (files.length > 0) {
+        setAlistMsg(`✅ 已触发 ${files.length} 个文件的下载`);
+      }
+    }
+
     setAlistSelected(new Set());
+  };
+
+  // 批量下载文件夹 - 打包为ZIP保留层级关系
+  const alistBatchDownloadFolders = (folders: Array<{ name: string; filePath: string }>) => {
+    const paths = folders.map(f => f.filePath);
+    console.log('[ZIP下载] 打包路径:', paths);
+    console.log('[ZIP下载] 用户令牌:', userToken ? '已认证' : '未认证');
+    
+    logUserAction('批量下载文件夹', `${alistPath} - ${paths.join(', ')}`);
+    
+    setIsCompressing(true);
+    setAlistMsg('[ZIP] 开始生成 ZIP 文件...');
+    
+    // 使用文件夹名称作为 ZIP 名称
+    const zipFileName = folders.length === 1 ? folders[0].name : `多个文件夹_${new Date().getTime()}`;
+    
+    const params = new URLSearchParams();
+    params.set('paths', JSON.stringify(paths));
+    if (userToken) params.set('token', userToken);
+
+    // 先获取预览信息
+    const previewUrl = `/api/alist-zip-preview?${params.toString()}`;
+    const previewOptions: RequestInit = {};
+    if (userToken) {
+      previewOptions.headers = {
+        'Authorization': `Bearer ${userToken}`,
+      };
+    }
+
+    fetch(previewUrl, previewOptions)
+      .then(res => res.json())
+      .then(data => {
+        setAlistMsg('[ZIP] 开始生成');
+        
+        // 显示目录信息
+        if (data.dirs && data.dirs.length > 0) {
+          data.dirs.forEach((dir: { name: string; fileCount: number }, index: number) => {
+            setTimeout(() => {
+              setAlistMsg(`[ZIP] 获取目录 ${dir.name}，共 ${dir.fileCount} 个文件`);
+            }, 1000 + index * 500);
+          });
+        }
+        
+        // 开始下载
+        setTimeout(() => {
+          const downloadUrl = `/api/alist-zip-download?${params.toString()}`;
+          console.log('[ZIP下载] 下载 URL:', downloadUrl);
+          
+          const fetchOptions: RequestInit = {};
+          if (userToken) {
+            fetchOptions.headers = {
+              'Authorization': `Bearer ${userToken}`,
+            };
+          }
+          
+          fetch(downloadUrl, fetchOptions)
+            .then(async response => {
+              if (!response.ok) {
+                console.error('[ZIP下载] 请求失败:', response.status, response.statusText);
+                if (response.status === 401) {
+                  throw new Error('授权失败，请重新登录');
+                }
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+              }
+
+              setAlistMsg('[ZIP] 完成');
+              setTimeout(() => setAlistMsg('✨ 压缩完成，正在下载...'), 500);
+              
+              return response.blob();
+            })
+            .then(blob => {
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `${zipFileName}.zip`;
+              a.style.display = 'none';
+              document.body.appendChild(a);
+              
+              console.log('[ZIP下载] 触发浏览器下载:', `${zipFileName}.zip`);
+              a.click();
+              
+              setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                console.log('[ZIP下载] 已清理');
+                setIsCompressing(false);
+                setAlistMsg('✅ 下载完成');
+                setTimeout(() => setAlistMsg(null), 3000);
+              }, 100);
+            })
+            .catch(err => {
+              console.error('[ZIP下载] 错误:', err);
+              setIsCompressing(false);
+              setAlistMsg(`❌ 下载失败: ${err.message}`);
+              setTimeout(() => setAlistMsg(null), 5000);
+            });
+        }, 1000 + (data.dirs ? data.dirs.length * 500 : 0) + 500);
+      })
+      .catch(err => {
+        console.error('[ZIP预览] 错误:', err);
+        setIsCompressing(false);
+        setAlistMsg(`❌ 获取预览信息失败: ${err.message}`);
+        setTimeout(() => setAlistMsg(null), 5000);
+      });
   };
 
   const alistToggleSelect = (name: string) => {
     setAlistSelected(prev => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
+      if (next.has(name)) {
+        next.delete(name);
+        console.log('[复选框] 取消选中:', name);
+      } else {
+        next.add(name);
+        console.log('[复选框] 选中:', name);
+      }
+      console.log('[复选框] 当前选中项总数:', next.size);
       return next;
     });
   };
 
   const alistSelectAll = () => {
-    const fileNames = alistFiles.filter((f: any) => !f.is_dir).map((f: any) => f.name);
-    if (alistSelected.size === fileNames.length) setAlistSelected(new Set());
-    else setAlistSelected(new Set(fileNames));
+    const allNames = alistFiles.map((f: any) => f.name);
+    if (alistSelected.size === allNames.length) setAlistSelected(new Set());
+    else setAlistSelected(new Set(allNames));
   };
 
   // === 文件管理操作 ===
@@ -1507,6 +1659,12 @@ export default function Home() {
                     <span className="text-[24px] font-black text-blue-500">{adminStats.totalDownloads || 0}</span>
                     <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>总历史下载数</span>
                   </div>
+                  <div
+                    className="flex flex-col items-center px-4 py-2 rounded-xl"
+                  >
+                    <span className="text-[24px] font-black text-cyan-500">{adminStats.totalPanVisits || 0}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>总访问次数</span>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 text-[10px]">
                   {[
@@ -1534,7 +1692,7 @@ export default function Home() {
             )}
 
             {/* 访问统计与封禁 */}
-            {adminStats && adminStats.topIps && adminStats.topIps.length > 0 && (
+            {adminStats && ((adminStats.topIps && adminStats.topIps.length > 0) || (adminStats.viewLogs && adminStats.viewLogs.length > 0)) && (
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="flex items-center justify-between">
                   <div className="text-[10px] uppercase font-bold tracking-widest text-red-500">IP 访问统计与封禁</div>
@@ -1547,6 +1705,7 @@ export default function Home() {
                     >
                       <option value="count">按请求数</option>
                       <option value="time">按最新活跃</option>
+                      <option value="flow">流水显示</option>
                     </select>
                     <select
                       value={ipLimit}
@@ -1565,52 +1724,105 @@ export default function Home() {
                   <table className="w-full text-left text-[11px]">
                     <thead className="sticky top-0 backdrop-blur" style={{ background: 'var(--bg-input)' }}>
                       <tr>
-                        <th className="py-2 text-zinc-400 font-normal w-[120px]">访问源 (IP/定位)</th>
-                        <th className="py-2 text-zinc-400 font-normal text-center">流水 / 最新活跃时间</th>
-                        <th className="py-2 text-zinc-400 font-normal w-[60px] truncate">账号</th>
-                        <th className="py-2 text-right text-zinc-400 font-normal w-[40px]">操作</th>
+                        {ipSort === 'flow' ? (
+                          <>
+                            <th className="py-2 text-zinc-400 font-normal w-[120px]">访问源</th>
+                            <th className="py-2 text-zinc-400 font-normal w-[120px]">时间</th>
+                            <th className="py-2 text-zinc-400 font-normal w-[90px]">账号</th>
+                            <th className="py-2 text-zinc-400 font-normal w-[40px]">操作</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="py-2 text-zinc-400 font-normal w-[120px]">访问源 (IP/定位)</th>
+                            <th className="py-2 text-zinc-400 font-normal text-center">流水 / 最新活跃时间</th>
+                            <th className="py-2 text-zinc-400 font-normal w-[60px] truncate">账号</th>
+                            <th className="py-2 text-zinc-400 font-normal w-[40px] text-right">操作</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
-                      {[...adminStats.topIps].sort((a: any, b: any) => ipSort === 'count' ? b.count - a.count : new Date(b.lastActive).getTime() - new Date(a.lastActive).getTime()).slice(0, ipLimit).map((ipHit: any) => {
-                        const isBanned = adminSettings?.bannedIps?.[ipHit.ip] && adminSettings.bannedIps[ipHit.ip] > Date.now();
-                        const banExpiry = isBanned ? new Date(adminSettings.bannedIps![ipHit.ip]).toLocaleString() : '';
-                        return (
-                          <tr key={ipHit.ip} className="border-t border-zinc-800/30">
-                            <td className="py-1.5 w-[120px] truncate" title={`${ipHit.ip} - ${ipHit.location}`}>
-                              <div className="font-mono text-zinc-300">{ipHit.ip}</div>
-                              <div className="text-[9px] text-zinc-500">{ipHit.location || '未知定位'}</div>
-                            </td>
-                            <td className="py-1.5 text-center">
-                              <div className="text-zinc-400 font-bold">{ipHit.count}</div>
-                              <div className="text-[9px] text-zinc-500">{new Date(ipHit.lastActive).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-                            </td>
-                            <td className="py-1.5 text-zinc-400 w-[60px] truncate" title={ipHit.lastUser}>{ipHit.lastUser}</td>
-                            <td className="py-1.5 text-right w-[40px]">
-                              {isBanned ? (
-                                <button
-                                  onClick={() => {
-                                    const newBans = { ...adminSettings.bannedIps };
-                                    delete newBans[ipHit.ip];
-                                    adminAction('updateSettings', { settings: { bannedIps: newBans } });
-                                  }}
-                                  className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20" title={`过期时间: ${banExpiry}`}>解封</button>
-                              ) : (
-                                <button
-                                  onClick={() => {
-                                    const hoursStr = window.prompt(`需要封禁 IP ${ipHit.ip} 多少小时？\n输入 0 或取消可终止操作。`, '24');
-                                    if (!hoursStr) return;
-                                    const hours = parseInt(hoursStr, 10);
-                                    if (isNaN(hours) || hours <= 0) return;
-                                    const newBans = { ...(adminSettings.bannedIps || {}), [ipHit.ip]: Date.now() + hours * 3600 * 1000 };
-                                    adminAction('updateSettings', { settings: { bannedIps: newBans } });
-                                  }}
-                                  className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20">封禁</button>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
+                      {ipSort === 'flow' ? (
+                        (adminStats.viewLogs || []).slice(0, ipLimit).map((log: any, idx: number) => {
+                          const location = [log.country, log.region, log.city].filter(Boolean).join(' ') || '未知';
+                          const isBanned = adminSettings?.bannedIps?.[log.ip_address] && adminSettings.bannedIps[log.ip_address] > Date.now();
+                          const banExpiry = isBanned ? new Date(adminSettings.bannedIps![log.ip_address]).toLocaleString() : '';
+                          return (
+                            <tr key={idx} className="border-t border-zinc-800/30">
+                              <td className="py-1.5 w-[120px] truncate" title={`${log.ip_address} - ${location}`}>
+                                <div className="font-mono text-zinc-300">{log.ip_address}</div>
+                                <div className="text-[9px] text-zinc-500">{location}</div>
+                              </td>
+                              <td className="py-1.5 w-[120px] truncate text-zinc-400" title={new Date(log.visit_time).toLocaleString()}>
+                                {new Date(log.visit_time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td className="py-1.5 w-[90px] truncate text-zinc-400" title={log.username}>{log.username || '访客'}</td>
+                              <td className="py-1.5 text-right w-[40px]">
+                                {isBanned ? (
+                                  <button
+                                    onClick={() => {
+                                      const newBans = { ...adminSettings.bannedIps };
+                                      delete newBans[log.ip_address];
+                                      adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                    }}
+                                    className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20" title={`过期时间: ${banExpiry}`}>解封</button>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      const hoursStr = window.prompt(`需要封禁 IP ${log.ip_address} 多少小时？\n输入 0 或取消可终止操作。`, '24');
+                                      if (!hoursStr) return;
+                                      const hours = parseInt(hoursStr, 10);
+                                      if (isNaN(hours) || hours <= 0) return;
+                                      const newBans = { ...(adminSettings.bannedIps || {}), [log.ip_address]: Date.now() + hours * 3600 * 1000 };
+                                      adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                    }}
+                                    className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20">封禁</button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        [...adminStats.topIps].sort((a: any, b: any) => ipSort === 'count' ? b.count - a.count : new Date(b.lastActive).getTime() - new Date(a.lastActive).getTime()).slice(0, ipLimit).map((ipHit: any) => {
+                          const isBanned = adminSettings?.bannedIps?.[ipHit.ip] && adminSettings.bannedIps[ipHit.ip] > Date.now();
+                          const banExpiry = isBanned ? new Date(adminSettings.bannedIps![ipHit.ip]).toLocaleString() : '';
+                          return (
+                            <tr key={ipHit.ip} className="border-t border-zinc-800/30">
+                              <td className="py-1.5 w-[120px] truncate" title={`${ipHit.ip} - ${ipHit.location}`}>
+                                <div className="font-mono text-zinc-300">{ipHit.ip}</div>
+                                <div className="text-[9px] text-zinc-500">{ipHit.location || '未知定位'}</div>
+                              </td>
+                              <td className="py-1.5 text-center">
+                                <div className="text-zinc-400 font-bold">{ipHit.count}</div>
+                                <div className="text-[9px] text-zinc-500">{new Date(ipHit.lastActive).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                              </td>
+                              <td className="py-1.5 text-zinc-400 w-[60px] truncate" title={ipHit.lastUser}>{ipHit.lastUser}</td>
+                              <td className="py-1.5 text-right w-[40px]">
+                                {isBanned ? (
+                                  <button
+                                    onClick={() => {
+                                      const newBans = { ...adminSettings.bannedIps };
+                                      delete newBans[ipHit.ip];
+                                      adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                    }}
+                                    className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20" title={`过期时间: ${banExpiry}`}>解封</button>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      const hoursStr = window.prompt(`需要封禁 IP ${ipHit.ip} 多少小时？\n输入 0 或取消可终止操作。`, '24');
+                                      if (!hoursStr) return;
+                                      const hours = parseInt(hoursStr, 10);
+                                      if (isNaN(hours) || hours <= 0) return;
+                                      const newBans = { ...(adminSettings.bannedIps || {}), [ipHit.ip]: Date.now() + hours * 3600 * 1000 };
+                                      adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                    }}
+                                    className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20">封禁</button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2842,9 +3054,22 @@ export default function Home() {
               </div>
             </div>
 
-            {alistMsg && (
-              <div className={`px-4 py-1.5 text-[11px] font-bold ${alistMsg.startsWith('✅') ? 'bg-green-500/10 text-green-500' : alistMsg.startsWith('🚀') ? 'bg-blue-500/10 text-blue-500' : 'bg-yellow-500/10 text-yellow-500'}`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                {alistMsg}
+            {(alistMsg || isCompressing) && (
+              <div>
+                <div className={`px-4 py-1.5 text-[11px] font-bold flex items-center gap-2 transition-all ${
+                  isCompressing 
+                    ? 'bg-blue-500/10 text-blue-400' 
+                    : alistMsg?.startsWith('✅') 
+                    ? 'bg-green-500/10 text-green-400' 
+                    : alistMsg?.startsWith('❌') 
+                    ? 'bg-red-500/10 text-red-400'
+                    : alistMsg?.startsWith('✨')
+                    ? 'bg-yellow-500/10 text-yellow-400'
+                    : 'bg-yellow-500/10 text-yellow-400'
+                }`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  {isCompressing && <span className="loading loading-spinner loading-xs"></span>}
+                  {isCompressing ? '🔄 正在生成压缩包...' : alistMsg}
+                </div>
               </div>
             )}
 
@@ -2934,11 +3159,9 @@ export default function Home() {
                     const filePath = `${alistPath.replace(/\/+$/, '')}/${file.name}`;
                     return (
                       <div key={idx} className="flex items-center gap-2 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors group">
-                        {/* 复选框 */}
-                        {!file.is_dir ? (
-                          <input type="checkbox" checked={alistSelected.has(file.name)} onChange={() => alistToggleSelect(file.name)}
-                            className="w-3 h-3 accent-pink-500 shrink-0 cursor-pointer" />
-                        ) : <span className="w-3 shrink-0" />}
+                        {/* 复选框 - 支持文件和文件夹 */}
+                        <input type="checkbox" checked={alistSelected.has(file.name)} onChange={() => alistToggleSelect(file.name)}
+                          className="w-3 h-3 accent-pink-500 shrink-0 cursor-pointer" title={file.is_dir ? '选择文件夹' : '选择文件'} />
 
                         {/* 图标 */}
                         <span className="text-base shrink-0">{getFileIcon(file)}</span>
@@ -3011,7 +3234,16 @@ export default function Home() {
             <div className="px-4 py-2 flex items-center justify-between text-[10px]" style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-card)', color: 'var(--text-faint)' }}>
               <div className="flex items-center gap-3">
                 <button onClick={alistSelectAll} className="hover:opacity-100 opacity-80 transition-opacity">
-                  {alistSelected.size > 0 ? `☑ ${alistSelected.size} 个文件` : `${alistFiles.length} 个项目`}
+                  {alistSelected.size > 0 ? (
+                    <>
+                      ☑ {alistSelected.size} 个选中项
+                      {Array.from(alistSelected).filter(name => alistFiles.find((f: any) => f.name === name)?.is_dir).length > 0 && (
+                        <span style={{ color: 'var(--text-muted)' }}> (含 {Array.from(alistSelected).filter(name => alistFiles.find((f: any) => f.name === name)?.is_dir).length} 个文件夹)</span>
+                      )}
+                    </>
+                  ) : (
+                    `${alistFiles.length} 个项目`
+                  )}
                 </button>
                 {alistSelected.size > 0 && (
                   <button onClick={alistBatchDownload} className="text-[10px] font-bold flex items-center gap-1 text-accent">
