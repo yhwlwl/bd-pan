@@ -26,7 +26,8 @@ export type FilePermissionAction = 'view' | 'search' | 'download' | 'upload' | '
 export interface FilePermissionRule {
     id: string;
     path: string;
-    pathType: 'file' | 'dir';
+    pathType: 'file' | 'dir' | 'regex';
+    regexScope?: 'name' | 'path';
     groupName?: string;
     users: string[];
     deny: Partial<Record<FilePermissionAction, boolean>>;
@@ -91,7 +92,20 @@ function ruleMatchesTarget(rule: FilePermissionRule, targetPath: string): boolea
     const rulePath = normalizePath(rule.path);
     const normalizedTarget = normalizePath(targetPath);
     if (rule.pathType === 'file') return normalizedTarget === rulePath;
-    return normalizedTarget === rulePath || normalizedTarget.startsWith(`${rulePath}/`);
+    if (rule.pathType === 'dir') return normalizedTarget === rulePath || normalizedTarget.startsWith(`${rulePath}/`);
+    if (rule.pathType === 'regex') {
+        try {
+            const regex = new RegExp(rule.path, 'i');
+            if (rule.regexScope === 'name') {
+                const name = normalizedTarget.split('/').pop() || '';
+                return regex.test(name);
+            }
+            return regex.test(normalizedTarget);
+        } catch {
+            return false;
+        }
+    }
+    return false;
 }
 
 // Export for use in route handlers

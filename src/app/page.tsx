@@ -26,7 +26,8 @@ type FilePermissionAction = 'view' | 'search' | 'download' | 'upload' | 'delete'
 interface FilePermissionRule {
   id: string;
   path: string;
-  pathType: 'file' | 'dir';
+  pathType: 'file' | 'dir' | 'regex';
+  regexScope?: 'name' | 'path';
   groupName?: string;
   users: string[];
   deny: Partial<Record<FilePermissionAction, boolean>>;
@@ -111,7 +112,7 @@ export default function Home() {
   const [isCompressing, setIsCompressing] = useState(false);
   // 文件预览
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office'; filePath: string; sign?: string; size?: number } | null>(null);
-  const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' | 'unknown' } | null>(null);
+  const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' | 'unknown'; perms?: { download?: boolean; preview?: boolean } } | null>(null);
   const [previewText, setPreviewText] = useState<string>('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewStarted, setPreviewStarted] = useState(false);
@@ -147,6 +148,14 @@ export default function Home() {
   const [filePermRules, setFilePermRules] = useState<FilePermissionRule[]>([]);
   const [filePermMsg, setFilePermMsg] = useState<string | null>(null);
   const [filePermTypeLocked, setFilePermTypeLocked] = useState(false);
+  const [regexPreview, setRegexPreview] = useState<{
+    loading: boolean;
+    total: number;
+    files: Array<{ name: string; path: string; is_dir: boolean }>;
+    truncated: boolean;
+    error?: string;
+    debug?: { alistTotal: number; listedDirs?: number; elapsedMs: number };
+  } | null>(null);
   const [filePermDraft, setFilePermDraft] = useState<FilePermissionRule>({
     id: '',
     path: '/',
@@ -247,7 +256,7 @@ export default function Home() {
 
   const openPreview = async (item: any, filePath: string) => {
     const type = getPreviewType(item.name) || 'unknown';
-    setPreviewItemMeta({ name: item.name, filePath, sign: item.sign, size: item.size, type: type as any });
+    setPreviewItemMeta({ name: item.name, filePath, sign: item.sign, size: item.size, type: type as any, perms: (item as any).perms });
     setPreviewStarted(false);
     setPreviewFile(null);
     setPreviewText('');
@@ -881,6 +890,12 @@ export default function Home() {
     if (!canDownload) { setAlistMsg('❌ 无下载权限'); return; }
 
     const filePath = item.path || getChildPath(currentPath, item.name);
+
+    // 检查文件级权限（正则规则 / 路径规则）
+    const filePerms = (item as any).perms as { download?: boolean; preview?: boolean } | undefined;
+    const fileDownloadDenied = filePerms?.download === false;
+    const filePreviewDenied = filePerms?.preview === false;
+
     const { isBaidu, isAliyun } = getPathProviderHints(filePath, provider);
     const previewType = getPreviewType(item.name);
 
@@ -889,7 +904,18 @@ export default function Home() {
         setAlistMsg('❌ 您没有在线预览的权限');
         return;
       }
+      if (filePreviewDenied && fileDownloadDenied) {
+        setAlistMsg('❌ 该文件已被权限规则禁止访问');
+        return;
+      }
+      // 可以预览：打开预览（下载按钮在预览弹窗里会被禁用如果 download denied）
       openPreview(item, filePath);
+      return;
+    }
+
+    // 不可预览的文件：下载被禁就直接拒绝
+    if (fileDownloadDenied) {
+      setAlistMsg('❌ 该文件已被权限规则禁止下载');
       return;
     }
 
@@ -930,6 +956,12 @@ export default function Home() {
       const newPath = `${alistPath.replace(/\/+$/, '')}/${item.name}`;
       setAlistSelected(new Set());
       alistListDir(newPath);
+      return;
+    }
+
+    // 检查文件级权限
+    if (item.perms?.preview === false) {
+      setAlistMsg('❌ 该文件已被权限规则禁止预览');
       return;
     }
 
@@ -1361,10 +1393,11 @@ export default function Home() {
     return (trimmed.startsWith('/') ? trimmed : `/${trimmed}`).replace(/\/+/g, '/').replace(/\/$/, '') || '/';
   };
 
-  const createDefaultFileRule = (path: string = '/', pathType: 'file' | 'dir' = 'file'): FilePermissionRule => ({
+  const createDefaultFileRule = (path: string = '/', pathType: 'file' | 'dir' | 'regex' = 'file'): FilePermissionRule => ({
     id: '',
-    path: normalizeRulePath(path),
+    path: pathType === 'regex' ? '' : normalizeRulePath(path),
     pathType,
+    regexScope: 'path',
     groupName: '',
     users: ['guest'],
     deny: pathType === 'file'
@@ -1422,11 +1455,21 @@ export default function Home() {
   };
 
   const submitFilePermissionDraft = async () => {
-    const normalizedPath = normalizeRulePath(filePermDraft.path);
+    const isRegex = filePermDraft.pathType === 'regex';
+    const rulePath = isRegex ? filePermDraft.path.trim() : normalizeRulePath(filePermDraft.path);
     const users = filePermDraft.users.filter(Boolean);
-    if (!normalizedPath || users.length === 0) {
-      setFilePermMsg('请选择路径和至少一个用户');
+
+    if (!rulePath || users.length === 0) {
+      setFilePermMsg(isRegex ? '请输入匹配表达式并至少选择一个用户' : '请选择路径和至少一个用户');
       return;
+    }
+
+    // 如果是 regex 类型，验证正则合法性
+    if (isRegex) {
+      try { new RegExp(rulePath); } catch {
+        setFilePermMsg('正则表达式语法错误，请检查');
+        return;
+      }
     }
 
     const nextRule: FilePermissionRule = {
@@ -1435,7 +1478,8 @@ export default function Home() {
         ? Object.fromEntries(Object.entries(filePermDraft.deny).filter(([key, value]) => key !== 'upload' && value)) as Partial<Record<FilePermissionAction, boolean>>
         : filePermDraft.deny,
       id: filePermDraft.id || `rule_${Date.now()}`,
-      path: normalizedPath,
+      path: rulePath,
+      regexScope: isRegex ? (filePermDraft.regexScope || 'path') : undefined,
       groupName: filePermDraft.groupName?.trim() || '',
       users,
       updatedAt: Date.now(),
@@ -1449,6 +1493,7 @@ export default function Home() {
     const ok = await saveFilePermissionRules(nextRules);
     if (ok) {
       setFilePermDraft(createDefaultFileRule(alistPath, 'dir'));
+      setRegexPreview(null);
     }
   };
 
@@ -1587,7 +1632,7 @@ export default function Home() {
           )}
           {canControlFile && (
             <button
-              onClick={() => openFilePermissionPanel(alistPath, 'dir')}
+              onClick={() => openFilePermissionPanel(alistPath, 'dir', false)}
               className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"
               style={{ color: 'var(--accent-2)' }}
             >
@@ -2511,6 +2556,7 @@ export default function Home() {
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!canDownload) { setAlistMsg('❌ 您没有下载权限'); return; }
+                      if (previewItemMeta?.perms?.download === false) { setAlistMsg('❌ 该文件已被权限规则禁止下载'); return; }
                       const prov = alistProvider.toLowerCase();
                       const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
                       const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
@@ -3362,22 +3408,106 @@ export default function Home() {
               <div className="rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="text-[11px] font-bold mb-3" style={{ color: 'var(--text-primary)' }}>规则编辑</div>
                 <div className="space-y-3">
-                  <input
-                    value={filePermDraft.path}
-                    onChange={e => setFilePermDraft(prev => ({ ...prev, path: e.target.value }))}
-                    placeholder="/文件夹/文件"
-                    className="w-full rounded px-3 py-2 text-[11px] outline-none"
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      value={filePermDraft.path}
+                      onChange={e => { setFilePermDraft(prev => ({ ...prev, path: e.target.value })); setRegexPreview(null); }}
+                      placeholder={filePermDraft.pathType === 'regex' ? '例如: 密码|密钥|secret' : '/文件夹/文件'}
+                      className="flex-1 rounded px-3 py-2 text-[11px] outline-none"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                    />
+                    {filePermDraft.pathType === 'regex' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const pattern = filePermDraft.path.trim();
+                          if (!pattern) { setFilePermMsg('请先输入匹配表达式'); return; }
+                          try { new RegExp(pattern); } catch { setFilePermMsg('正则表达式语法错误，请检查'); return; }
+                          setRegexPreview({ loading: true, total: 0, files: [], truncated: false });
+                          setFilePermMsg(null);
+                          try {
+                            const res = await fetch('/api/file-permissions', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
+                              body: JSON.stringify({
+                                action: 'preview',
+                                pattern,
+                                scopePath: '/',
+                                regexScope: filePermDraft.regexScope || 'path',
+                              }),
+                            });
+                            const data = await res.json();
+                            if (!res.ok) { setRegexPreview({ loading: false, total: 0, files: [], truncated: false, error: data.error || '预览失败' }); return; }
+                            setRegexPreview({ loading: false, total: data.total, files: data.files, truncated: data.truncated, debug: data.debug });
+                          } catch { setRegexPreview({ loading: false, total: 0, files: [], truncated: false, error: '预览接口异常' }); }
+                        }}
+                        disabled={regexPreview?.loading}
+                        className="shrink-0 rounded px-3 py-2 text-[11px] font-bold transition-all hover:opacity-90 text-white disabled:opacity-50"
+                        style={{ background: 'var(--accent)' }}
+                      >
+                        {regexPreview?.loading ? '⏳ 搜索中...' : '🔍 预览匹配'}
+                      </button>
+                    )}
+                  </div>
+                  {filePermDraft.pathType === 'regex' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>匹配范围：</span>
+                      <select
+                        value={filePermDraft.regexScope || 'path'}
+                        onChange={e => { setFilePermDraft(prev => ({ ...prev, regexScope: e.target.value as 'name' | 'path' })); setRegexPreview(null); }}
+                        className="rounded px-2 py-1 text-[10px] outline-none"
+                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                      >
+                        <option value="path">完整路径</option>
+                        <option value="name">仅文件名</option>
+                      </select>
+                    </div>
+                  )}
+                  {/* 预览结果 */}
+                  {regexPreview && !regexPreview.loading && (
+                    <div className="rounded-lg p-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                      {regexPreview.error ? (
+                        <div className="text-[11px] text-red-400">{regexPreview.error}</div>
+                      ) : (
+                        <>
+                          <div className="text-[11px] font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+                            📊 匹配到 <span style={{ color: 'var(--accent)' }}>{regexPreview.total}</span> 个文件/文件夹
+                            {regexPreview.truncated && <span className="text-[10px] text-orange-400 ml-1">（仅显示前 2000 条，请细化表达式）</span>}
+                          </div>
+                          {regexPreview.debug && (
+                            <div className="text-[10px] mb-2 flex flex-wrap gap-x-3 gap-y-0.5" style={{ color: 'var(--text-faint)' }}>
+                              <span>🔍 搜索候选 {regexPreview.debug.alistTotal} 条</span>
+                              {(regexPreview.debug.listedDirs || 0) > 0 && <span>📂 深入 {regexPreview.debug.listedDirs} 个目录</span>}
+                              <span>✅ 匹配 {regexPreview.total} 条</span>
+                              <span>⏱ {regexPreview.debug.elapsedMs}ms</span>
+                            </div>
+                          )}
+                          {regexPreview.files.length > 0 && (
+                            <div className="max-h-[200px] overflow-y-auto space-y-1 custom-scrollbar">
+                              {regexPreview.files.map((f, i) => (
+                                <div key={i} className="text-[10px] font-mono truncate flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                                  <span>{f.is_dir ? '📁' : '📄'}</span>
+                                  <span className="truncate" title={f.path}>{f.path}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {regexPreview.files.length === 0 && (
+                            <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>未找到匹配项，请尝试其他表达式</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
                   <div className="grid md:grid-cols-2 gap-3">
                     <select
                       value={filePermDraft.pathType}
                       onChange={e => setFilePermDraft(prev => {
-                        const nextType = e.target.value as 'file' | 'dir';
+                        const nextType = e.target.value as 'file' | 'dir' | 'regex';
                         const nextDeny = nextType === 'file'
                           ? Object.fromEntries(Object.entries(prev.deny).filter(([key, value]) => key !== 'upload' && value)) as Partial<Record<FilePermissionAction, boolean>>
                           : prev.deny;
-                        return { ...prev, pathType: nextType, deny: nextDeny };
+                        return { ...prev, pathType: nextType, deny: nextDeny, regexScope: (prev.regexScope || 'path') as 'name' | 'path' };
                       })}
                       disabled={filePermTypeLocked}
                       className="rounded px-3 py-2 text-[11px] outline-none"
@@ -3385,6 +3515,7 @@ export default function Home() {
                     >
                       <option value="file">单独文件</option>
                       <option value="dir">文件夹及子目录</option>
+                      <option value="regex">正则表达式匹配</option>
                     </select>
                     <input
                       value={filePermDraft.groupName || ''}
@@ -3429,7 +3560,7 @@ export default function Home() {
                         ['view', '打开'],
                         ['download', '下载'],
                         ['preview', '预览'],
-                        ...(filePermDraft.pathType === 'dir' ? [['upload', '上传']] as const : []),
+                        ...(filePermDraft.pathType !== 'file' ? [['upload', '上传']] as const : []),
                         ['rename', '重命名'],
                         ['delete', '删除'],
                         ['search', '搜索'],
@@ -3475,7 +3606,7 @@ export default function Home() {
                         <div className="min-w-0">
                           <div className="text-[11px] font-mono break-all" style={{ color: 'var(--text-primary)' }}>{rule.path}</div>
                           <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                            {rule.pathType === 'dir' ? '文件夹及子目录' : '单独文件'}
+                            {rule.pathType === 'dir' ? '文件夹及子目录' : rule.pathType === 'regex' ? `正则表达式匹配 · ${rule.regexScope === 'name' ? '仅文件名' : '完整路径'}` : '单独文件'}
                             {rule.groupName ? ` · 分组 ${rule.groupName}` : ' · 单项规则'}
                           </div>
                           <div className="text-[10px] mt-1" style={{ color: 'var(--text-faint)' }}>
