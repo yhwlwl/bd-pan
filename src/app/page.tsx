@@ -106,6 +106,7 @@ export default function Home() {
   const [alistRenaming, setAlistRenaming] = useState<string | null>(null);
   const [alistNewName, setAlistNewName] = useState('');
   const [alistDownloadModal, setAlistDownloadModal] = useState<{ name: string; filePath: string; sign?: string } | null>(null);
+  const [alistCopyLinkModal, setAlistCopyLinkModal] = useState<{ url: string; fileName: string } | null>(null);
   const [nodeLatencies, setNodeLatencies] = useState<Record<string, number | null>>({});
   const [isCompressing, setIsCompressing] = useState(false);
   // 文件预览
@@ -2629,7 +2630,7 @@ export default function Home() {
                       downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
                     }
                     window.open(downloadUrl, '_blank');
-                    setAlistMsg('🚀 已启动阿里云服务器通道 (自动处理 UA)');
+                    setAlistMsg('已启动阿里云服务器通道');
                     setAlistDownloadModal(null);
                   }}
                   disabled={globalDownloadModes?.ecs === 'disabled'}
@@ -2638,14 +2639,14 @@ export default function Home() {
                 >
                   <div>
                     <div className="text-[12px] font-bold pb-0.5 text-pink-400 group-hover:text-pink-300 transition-colors flex items-center gap-2">
-                      <span>🚀 阿里云服务器极速下载 (最推荐) {globalDownloadModes?.ecs === 'disabled' && '(已禁用)'}</span>
+                      <span>阿里云服务器下载 {globalDownloadModes?.ecs === 'disabled' && '(已禁用)'}</span>
                       {nodeLatencies['ecs'] !== undefined && (
                         <span className={`text-[9px] px-1.5 py-0.5 rounded border ${nodeLatencies['ecs'] === -1 ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-pink-500/10 border-pink-500/20 text-pink-400'}`}>
                           {nodeLatencies['ecs'] === -1 ? '不通 / 超时' : nodeLatencies['ecs'] === -2 ? '已连接 (HTTP限制)' : `${nodeLatencies['ecs']}ms`}
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-zinc-500">阿里云服务器代理中转，自动携带百度 UA，无文件大小限制</div>
+                    <div className="text-[10px] text-zinc-500">阿里云服务器代理中转，速度近期较慢</div>
                   </div>
                   <div className="text-pink-500/30 group-hover:text-pink-400 transition-colors">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -2676,14 +2677,14 @@ export default function Home() {
                 >
                   <div>
                     <div className="text-[12px] font-bold pb-1 text-blue-400 group-hover:text-blue-300 transition-colors flex items-center gap-2">
-                      <span>🌟 Cloudflare 边缘加速 {globalDownloadModes?.cf === 'disabled' && '(已禁用)'}</span>
+                      <span>Cloudflare 边缘加速 {globalDownloadModes?.cf === 'disabled' && '(已禁用)'}</span>
                       {nodeLatencies['cf'] !== undefined && (
                         <span className={`text-[9px] px-1.5 py-0.5 rounded border ${nodeLatencies['cf'] === -1 ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'}`}>
                           {nodeLatencies['cf'] === -1 ? '超时丢包' : `${nodeLatencies['cf']}ms`}
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-zinc-500">通过海外节点无痕中转，全球加速，不耗服务器流量</div>
+                    <div className="text-[10px] text-zinc-500">通过Cloudflare中转，速度中等</div>
                   </div>
                   <div className="text-blue-500/30 group-hover:text-blue-400 transition-colors">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>
@@ -2700,19 +2701,23 @@ export default function Home() {
                     fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
                       .then(r => r.json())
                       .then(data => {
+                        let url = '';
                         if (data.code === 200 && data.data?.raw_url) {
-                          navigator.clipboard.writeText(data.data.raw_url);
-                          setAlistMsg('✅ 百度CDN真实直链已复制！粘贴到迅雷/IDM即可满速下载');
+                          url = data.data.raw_url;
                         } else {
                           const sign = data.code === 200 ? (data.data?.sign || '') : '';
-                          const url = sign ? `${getAlistBase()}/d${alistDownloadModal!.filePath}?sign=${sign}` : `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
-                          navigator.clipboard.writeText(url);
-                          setAlistMsg('✅ 链接已复制（备用）');
+                          url = sign ? `${getAlistBase()}/d${alistDownloadModal!.filePath}?sign=${sign}` : `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
                         }
+                        navigator.clipboard.writeText(url).then(() => {
+                          setAlistMsg('✅ 直链已自动复制到剪贴板');
+                        }).catch(() => {
+                          setAlistMsg('⚠️ 自动复制失败，请手动复制');
+                        });
+                        setAlistCopyLinkModal({ url, fileName: alistDownloadModal!.name });
                       }).catch(() => {
                         const url = `${getAlistBase()}/d${alistDownloadModal!.filePath}`;
-                        navigator.clipboard.writeText(url);
-                        setAlistMsg('✅ 链接已复制');
+                        navigator.clipboard.writeText(url).catch(() => {});
+                        setAlistCopyLinkModal({ url, fileName: alistDownloadModal!.name });
                       });
                     setAlistDownloadModal(null);
                   }}
@@ -2722,14 +2727,14 @@ export default function Home() {
                 >
                   <div>
                     <div className="text-[12px] font-bold text-emerald-200 group-hover:text-emerald-100 transition-colors flex items-center gap-2">
-                      <span>🚀 复制直链 (迅雷/IDM/NDM) {globalDownloadModes?.raw === 'disabled' && '(已禁用)'}</span>
+                      <span>复制直链 (迅雷/IDM/NDM) {globalDownloadModes?.raw === 'disabled' && '(已禁用)'}</span>
                       {nodeLatencies['raw'] !== undefined && (
                         <span className={`text-[9px] px-1.5 py-0.5 rounded border ${nodeLatencies['raw'] === -1 ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'}`}>
                           {nodeLatencies['raw'] === -1 ? '超时丢包' : `${nodeLatencies['raw']}ms`}
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-zinc-500">搭配 IDM/NDM 并设置 UA 为 pan.baidu.com 可满速</div>
+                    <div className="text-[10px] text-zinc-500">搭配 IDM/NDM 并设置 UA 为 pan.baidu.com </div>
                   </div>
                   <div className="text-emerald-500/30 group-hover:text-emerald-400 transition-colors">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
@@ -2758,9 +2763,9 @@ export default function Home() {
                 >
                   <div>
                     <div className={`text-[11px] font-bold ${globalDownloadModes?.vercel === 'disabled' ? 'text-zinc-500' : 'text-pink-400'}`}>
-                      🔥 服务器中转下载 {globalDownloadModes?.vercel === 'disabled' ? '(已被系统禁用)' : '(备用)'}
+                      vercel 服务器中转下载 {globalDownloadModes?.vercel === 'disabled' ? '(已被系统禁用)' : '(备用)'}
                     </div>
-                    <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>消耗服务器流量，仅在方案一失效时使用</div>
+                    <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>备用方案消耗服务器流量，仅在失效时使用</div>
                   </div>
                 </button>
               )}
@@ -2770,18 +2775,92 @@ export default function Home() {
                 <button
                   onClick={() => {
                     if (globalDownloadModes?.direct302 === 'disabled') return;
-                    alistDirectDownload(alistDownloadModal!.filePath, alistDownloadModal!.sign, '下载 - 302 直链跳转 (不加 UA)');
+                    setAlistMsg('⏳ 正在获取直链...');
+                    logUserAction('下载 - 302 直链跳转', alistDownloadModal!.filePath);
+                    fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
+                      .then(r => r.json())
+                      .then(data => {
+                        if (data.code === 200) {
+                          const sign = data.data?.sign || '';
+                          const publicPath = alistDownloadModal!.filePath;
+                          const directUrl = sign
+                            ? `${getAlistBase()}/p${publicPath}?sign=${sign}`
+                            : `${getAlistBase()}/p${publicPath}`;
+                          window.open(directUrl, '_blank');
+                          setAlistMsg('🚀 已启动直链下载');
+                        } else {
+                          setAlistMsg('❌ 获取直链失败，请尝试其他方式');
+                        }
+                      }).catch(() => {
+                        setAlistMsg('❌ 获取直链接口异常，请尝试其他方式');
+                      });
                     setAlistDownloadModal(null);
                   }}
                   disabled={globalDownloadModes?.direct302 === 'disabled'}
-                  className={`w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left border transition-colors ${globalDownloadModes?.direct302 === 'disabled' ? 'opacity-50 cursor-not-allowed bg-black/20 border-zinc-800' : 'border-zinc-700 bg-black/40 hover:border-zinc-500'}`}
+                  className={`w-full flex items-center justify-between rounded-xl px-4 py-3 text-left transition-all duration-300 border shadow-sm ${globalDownloadModes?.direct302 === 'disabled' ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:scale-[1.02] active:scale-[0.98] group'}`}
+                  style={globalDownloadModes?.direct302 !== 'disabled' ? { background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(8, 145, 178, 0.05) 100%)', borderColor: 'rgba(6, 182, 212, 0.3)' } : {}}
                 >
                   <div>
-                    <div className="text-[11px] font-bold text-zinc-300">⚡ 302 直链跳转（不加 UA）{globalDownloadModes?.direct302 === 'disabled' && '(已禁用)'}</div>
-                    <div className="text-[10px] text-zinc-500">直接跳转百度 CDN，大文件可能被拦截阻断</div>
+                    <div className="text-[12px] font-bold text-cyan-200 group-hover:text-cyan-100 transition-colors flex items-center gap-2">
+                      <span>⚡️ 直链下载{globalDownloadModes?.direct302 === 'disabled' && '(已禁用)'}</span>
+                    </div>
+                    <div className="text-[10px] text-zinc-500">获取直链下载，速度近期最快</div>
+                  </div>
+                  <div className="text-cyan-500/30 group-hover:text-cyan-400 transition-colors">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                   </div>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 复制直链弹窗 */}
+      {alistCopyLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setAlistCopyLinkModal(null)}>
+          <div className="w-full max-w-lg glass-strong rounded-2xl p-5 mx-4 shadow-2xl animate-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest font-bold text-emerald-400">直链已生成</div>
+                <div className="text-xs font-mono truncate max-w-[360px] mt-1" style={{ color: 'var(--text-primary)' }}>{alistCopyLinkModal.fileName}</div>
+              </div>
+              <button onClick={() => setAlistCopyLinkModal(null)} className="hover:opacity-100 opacity-60 text-lg transition-opacity">✕</button>
+            </div>
+            <div className="relative">
+              <textarea
+                readOnly
+                value={alistCopyLinkModal.url}
+                className="w-full rounded-lg px-3 py-2.5 text-xs font-mono break-all resize-none outline-none select-all"
+                style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', minHeight: '80px' }}
+                onFocus={(e) => { e.target.select(); }}
+                onClick={(e) => { (e.target as HTMLTextAreaElement).select(); }}
+              />
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(alistCopyLinkModal.url).then(() => {
+                    setAlistMsg('✅ 直链已复制到剪贴板');
+                  }).catch(() => {
+                    setAlistMsg('⚠️ 复制失败，请手动选中上方链接复制');
+                  });
+                }}
+                className="flex-1 rounded-lg px-4 py-2.5 text-xs font-bold transition-all hover:opacity-90 text-white"
+                style={{ background: 'var(--accent)' }}
+              >
+                📋 复制链接
+              </button>
+              <button
+                onClick={() => setAlistCopyLinkModal(null)}
+                className="rounded-lg px-4 py-2.5 text-xs font-bold transition-all"
+                style={{ border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
+              >
+                关闭
+              </button>
+            </div>
+            <div className="text-[10px] mt-2 text-center" style={{ color: 'var(--text-muted)' }}>
+              如自动复制失败，请手动选中上方链接后 Ctrl+C 复制
             </div>
           </div>
         </div>
