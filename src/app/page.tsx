@@ -168,6 +168,7 @@ export default function Home() {
   const [ipLimit, setIpLimit] = useState<number>(5);
   const [ipSort, setIpSort] = useState<'count' | 'time' | 'flow'>('count');
   const [riskLimit, setRiskLimit] = useState<number>(5);
+  const [logFilter, setLogFilter] = useState<string>('全部');
   const [selectedChannelDetailedStats, setSelectedChannelDetailedStats] = useState<string | null>(null);
   const [allDownloadStatsModal, setAllDownloadStatsModal] = useState<{ title: string; logs: any[] } | null>(null);
   // === 远端 AList 设置（仅本地生效） ===
@@ -1897,17 +1898,33 @@ export default function Home() {
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="flex items-center justify-between">
                   <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>操作日志 (最近)</div>
-                  <select
-                    value={riskLimit}
-                    onChange={(e) => setRiskLimit(Number(e.target.value))}
-                    className="rounded px-1.5 py-0.5 text-[10px] outline-none transition-all"
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                  >
-                    <option value={10}>显示 10 条</option>
-                    <option value={50}>显示 50 条</option>
-                    <option value={200}>显示 200 条</option>
-                    <option value={99999}>显示全部</option>
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      value={logFilter}
+                      onChange={(e) => setLogFilter(e.target.value)}
+                      className="rounded px-1.5 py-0.5 text-[10px] outline-none transition-all"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                    >
+                      <option value="全部">全部</option>
+                      <option value="被拦截">🚫 被拦截</option>
+                      <option value="失败">⚠️ 失败</option>
+                      <option value="下载">⬇️ 下载</option>
+                      <option value="删除">🗑 删除</option>
+                      <option value="文件权限">🔒 权限</option>
+                      <option value="登录">🔑 登录</option>
+                    </select>
+                    <select
+                      value={riskLimit}
+                      onChange={(e) => setRiskLimit(Number(e.target.value))}
+                      className="rounded px-1.5 py-0.5 text-[10px] outline-none transition-all"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                    >
+                      <option value={10}>10 条</option>
+                      <option value={50}>50 条</option>
+                      <option value={200}>200 条</option>
+                      <option value={99999}>全部</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                   <table className="w-full text-left text-[11px]">
@@ -1921,7 +1938,12 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody>
-                      {adminStats.recentActions.slice(0, riskLimit).map((log: any, idx: number) => {
+                      {adminStats.recentActions
+                        .filter((log: any) => {
+                          if (logFilter === '全部') return true;
+                          return log.action.includes(logFilter);
+                        })
+                        .slice(0, riskLimit).map((log: any, idx: number) => {
                         const actColor = log.action.includes('被拦截') ? 'text-red-400' :
                           log.action.includes('失败') ? 'text-orange-400' :
                           log.action.startsWith('下载') ? 'text-emerald-400' :
