@@ -2555,8 +2555,8 @@ export default function Home() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (!canDownload) { setAlistMsg('❌ 您没有下载权限'); return; }
-                      if (previewItemMeta?.perms?.download === false) { setAlistMsg('❌ 该文件已被权限规则禁止下载'); return; }
+                      if (!canDownload) { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]); setAlistMsg('❌ 您没有下载权限'); return; }
+                      if (previewItemMeta?.perms?.download === false) { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]); setAlistMsg('❌ 该文件已被权限规则禁止下载'); return; }
                       const prov = alistProvider.toLowerCase();
                       const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
                       const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
