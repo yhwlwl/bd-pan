@@ -50,31 +50,29 @@ export async function GET(request: Request) {
             other: { past24h: 0, total: 0, logs: [] } 
         };
         const ipStats: Record<string, { count: number, lastActive: string, lastUser: string, location: string }> = {};
-        const highRiskLogs: any[] = [];
+        const recentActions: any[] = [];
         const allDownloadLogs: any[] = [];
 
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        
-        const riskTypes = ['上传', '删除', '重命名', '建立文件夹'];
 
         (logs || []).forEach(log => {
-            const isDownload = log.action_type.startsWith('下载 -');
+            const isDownload = log.action_type.startsWith('下载 -') || log.action_type.startsWith('下载');
             const isPast24h = new Date(log.created_at) >= twentyFourHoursAgo;
 
             if (isDownload) {
                 totalDownloads++;
                 if (isPast24h) past24hDownloads++;
-                
+
                 let key = 'other';
                 if (log.action_type.includes('阿里云服务器极速下载')) key = 'ecs';
                 else if (log.action_type.includes('Cloudflare 边缘加速')) key = 'cf';
                 else if (log.action_type.includes('复制直链')) key = 'raw';
                 else if (log.action_type.includes('vercel服务器中转下载')) key = 'vercel';
                 else if (log.action_type.includes('302 直链跳转')) key = 'direct302';
-                
+
                 channelStats[key].total++;
                 if (isPast24h) channelStats[key].past24h++;
-                
+
                 const logObj = {
                     username: log.username,
                     ip: log.ip,
@@ -86,17 +84,15 @@ export async function GET(request: Request) {
                 allDownloadLogs.push({ ...logObj, channel: key });
             }
 
-            // High risk events
-            if (riskTypes.some(rt => log.action_type.includes(rt))) {
-                highRiskLogs.push({
-                    username: log.username,
-                    action: log.action_type,
-                    item: log.action_item,
-                    time: log.created_at,
-                    ip: log.ip,
-                    location: log.location || '未知定位',
-                });
-            }
+            // 所有操作都收集（不再过滤）
+            recentActions.push({
+                username: log.username,
+                action: log.action_type,
+                item: log.action_item,
+                time: log.created_at,
+                ip: log.ip,
+                location: log.location || '未知定位',
+            });
         });
 
         (viewLogs || []).forEach(log => {
@@ -125,7 +121,7 @@ export async function GET(request: Request) {
                 past24hDownloads,
                 totalDownloads,
                 channelStats,
-                highRiskLogs,
+                recentActions,
                 topIps,
                 allDownloadLogs,
                 viewLogs: viewLogs || []

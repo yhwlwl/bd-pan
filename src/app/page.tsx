@@ -339,14 +339,15 @@ export default function Home() {
     }
   };
 
-  const logUserAction = async (action_type: string, action_item: string) => {
+  const logUserAction = async (action_type: string, action_item: string, status: 'success' | 'blocked' | 'failed' = 'success', customUsername?: string) => {
     try {
+      const suffix = status === 'blocked' ? ' - 被拦截' : status === 'failed' ? ' - 失败' : '';
       await fetch('/api/log-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: username || '游客',
-          action_type,
+          username: customUsername || username || '游客',
+          action_type: action_type + suffix,
           action_item
         })
       });
@@ -523,7 +524,7 @@ export default function Home() {
         body: JSON.stringify({ username: uname, password: pwd }),
       });
       const data = await res.json();
-      if (!res.ok || !data.token) { setAuthError(data.error || '登录失败'); return; }
+      if (!res.ok || !data.token) { logUserAction('登录', uname, 'failed', uname); setAuthError(data.error || '登录失败'); return; }
       setUserToken(data.token);
       setUserRole(data.role);
       setUsername(data.username);
@@ -536,7 +537,8 @@ export default function Home() {
       }
       setLoginUsername('');
       setLoginPassword('');
-    } catch { setAuthError('登录接口异常'); }
+      logUserAction('登录', data.username, 'success', data.username);
+    } catch { logUserAction('登录', uname, 'failed', uname); setAuthError('登录接口异常'); }
     finally { setAuthLoading(false); }
   };
 
@@ -596,6 +598,7 @@ export default function Home() {
         setAlistSearchActive(false);
         setAlistSearchError(null);
         setAlistSearchResults([]);
+        logUserAction('浏览目录', path);
       } else {
         setAlistError(data.message || '加载失败');
         if (data.code === 401 || data.code === 403) setAlistFiles([]);
@@ -794,6 +797,7 @@ export default function Home() {
         });
 
       setAlistSearchResults(results);
+      logUserAction('搜索文件', `${alistPath}: "${keyword}" (${results.length}条)`);
       if (results.length === 0 && merged.size === 0) setAlistSearchError(lastError);
     } catch (error: any) {
       if (searchRunId === alistSearchRunRef.current) {
@@ -887,34 +891,42 @@ export default function Home() {
       return;
     }
 
-    if (!canDownload) { setAlistMsg('❌ 无下载权限'); return; }
-
     const filePath = item.path || getChildPath(currentPath, item.name);
+
+    if (!canDownload) {
+      logUserAction('下载', filePath, 'blocked');
+      setAlistMsg('❌ 无下载权限'); return;
+    }
 
     // 检查文件级权限（正则规则 / 路径规则）
     const filePerms = (item as any).perms as { download?: boolean; preview?: boolean } | undefined;
     const fileDownloadDenied = filePerms?.download === false;
     const filePreviewDenied = filePerms?.preview === false;
 
+    console.log(`[openAlistItem] file=${filePath}, perms=`, filePerms, `downloadDenied=${fileDownloadDenied}, previewDenied=${filePreviewDenied}`);
+
     const { isBaidu, isAliyun } = getPathProviderHints(filePath, provider);
     const previewType = getPreviewType(item.name);
 
     if (previewType) {
       if (!userPerms?.preview) {
+        logUserAction('预览', filePath, 'blocked');
         setAlistMsg('❌ 您没有在线预览的权限');
         return;
       }
       if (filePreviewDenied && fileDownloadDenied) {
+        logUserAction('预览', filePath, 'blocked');
         setAlistMsg('❌ 该文件已被权限规则禁止访问');
         return;
       }
-      // 可以预览：打开预览（下载按钮在预览弹窗里会被禁用如果 download denied）
+      console.log(`[openAlistItem] 打开预览: ${filePath}`);
       openPreview(item, filePath);
       return;
     }
 
     // 不可预览的文件：下载被禁就直接拒绝
     if (fileDownloadDenied) {
+      logUserAction('下载', filePath, 'blocked');
       setAlistMsg('❌ 该文件已被权限规则禁止下载');
       return;
     }
@@ -961,6 +973,7 @@ export default function Home() {
 
     // 检查文件级权限
     if (item.perms?.preview === false) {
+      logUserAction('预览', `${alistPath.replace(/\/+$/, '')}/${item.name}`, 'blocked');
       setAlistMsg('❌ 该文件已被权限规则禁止预览');
       return;
     }
@@ -1157,9 +1170,9 @@ export default function Home() {
     try {
       const res = await fetchAlist({ action: 'mkdir', path: alistPath, dir_name: alistMkdirName.trim() });
       const data = await res.json();
-      if (data.code === 200) { setAlistMsg('✅ 文件夹创建成功'); setAlistMkdirName(''); setAlistShowMkdir(false); alistListDir(alistPath); }
-      else setAlistMsg(`❌ ${data.message}`);
-    } catch { setAlistMsg('❌ 接口异常'); }
+      if (data.code === 200) { setAlistMsg('✅ 文件夹创建成功'); setAlistMkdirName(''); setAlistShowMkdir(false); alistListDir(alistPath); logUserAction('新建文件夹', `${alistPath}/${alistMkdirName.trim()}`); }
+      else { logUserAction('新建文件夹', `${alistPath}/${alistMkdirName.trim()}`, 'failed'); setAlistMsg(`❌ ${data.message}`); }
+    } catch { logUserAction('新建文件夹', `${alistPath}/${alistMkdirName.trim()}`, 'failed'); setAlistMsg('❌ 接口异常'); }
   };
 
   const alistRemove = async (file: any) => {
@@ -1177,9 +1190,10 @@ export default function Home() {
     try {
       const res = await fetchAlist({ action: 'remove', path: alistPath, names: [name] });
       const data = await res.json();
-      if (data.code === 200) { setAlistMsg('✅ 删除成功'); logUserAction('删除', `${alistPath.replace(/\/+$/, '')}/${name}`); alistListDir(alistPath); }
-      else setAlistMsg(`❌ ${data.message}`);
-    } catch { setAlistMsg('❌ 接口异常'); }
+      const delPath = `${alistPath.replace(/\/+$/, '')}/${name}`;
+      if (data.code === 200) { setAlistMsg('✅ 删除成功'); logUserAction('删除', delPath); alistListDir(alistPath); }
+      else { logUserAction('删除', delPath, 'failed'); setAlistMsg(`❌ ${data.message}`); }
+    } catch { logUserAction('删除', `${alistPath.replace(/\/+$/, '')}/${name}`, 'failed'); setAlistMsg('❌ 接口异常'); }
     setAlistDeleteConfirm(null);
   };
 
@@ -1189,8 +1203,9 @@ export default function Home() {
     try {
       const res = await fetchAlist({ action: 'rename', path: filePath, newName: alistNewName.trim() });
       const data = await res.json();
-      if (data.code === 200) { setAlistMsg('✅ 重命名成功'); logUserAction('重命名', `${filePath} -> ${alistNewName.trim()}`); setAlistRenaming(null); setAlistNewName(''); alistListDir(alistPath); }
-      else setAlistMsg(`❌ ${data.message}`);
+      const renameInfo = `${filePath} -> ${alistNewName.trim()}`;
+      if (data.code === 200) { setAlistMsg('✅ 重命名成功'); logUserAction('重命名', renameInfo); setAlistRenaming(null); setAlistNewName(''); alistListDir(alistPath); }
+      else { logUserAction('重命名', renameInfo, 'failed'); setAlistMsg(`❌ ${data.message}`); }
     } catch { setAlistMsg('❌ 接口异常'); }
   };
 
@@ -1492,6 +1507,8 @@ export default function Home() {
 
     const ok = await saveFilePermissionRules(nextRules);
     if (ok) {
+      const ruleDesc = `[${nextRule.pathType}] ${nextRule.path} (用户:${nextRule.users.join(',')}, 禁:${Object.keys(nextRule.deny).filter(k => nextRule.deny[k as FilePermissionAction]).join(',')})`;
+      logUserAction('文件权限 - 保存规则', ruleDesc);
       setFilePermDraft(createDefaultFileRule(alistPath, 'dir'));
       setRegexPreview(null);
     }
@@ -1875,47 +1892,55 @@ export default function Home() {
               </div>
             )}
 
-            {/* 高危操作审计 */}
-            {adminStats && adminStats.highRiskLogs && adminStats.highRiskLogs.length > 0 && (
+            {/* 操作日志 */}
+            {adminStats && adminStats.recentActions && adminStats.recentActions.length > 0 && (
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="flex items-center justify-between">
-                  <div className="text-[10px] uppercase font-bold tracking-widest text-orange-400">高危操作审计 (最近)</div>
+                  <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>操作日志 (最近)</div>
                   <select
                     value={riskLimit}
                     onChange={(e) => setRiskLimit(Number(e.target.value))}
                     className="rounded px-1.5 py-0.5 text-[10px] outline-none transition-all"
                     style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   >
-                    <option value={5}>显示 5 条</option>
                     <option value={10}>显示 10 条</option>
                     <option value={50}>显示 50 条</option>
+                    <option value={200}>显示 200 条</option>
                     <option value={99999}>显示全部</option>
                   </select>
                 </div>
-                <div className="max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                <div className="max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                   <table className="w-full text-left text-[11px]">
                     <thead className="sticky top-0 backdrop-blur" style={{ background: 'var(--bg-input)' }}>
                       <tr>
                         <th className="py-2 text-zinc-400 font-normal w-[65px]">时间</th>
                         <th className="py-2 text-zinc-400 font-normal w-[45px]">用户</th>
-                        <th className="py-2 text-zinc-400 font-normal w-[50px]">动作</th>
+                        <th className="py-2 text-zinc-400 font-normal w-[85px]">动作</th>
                         <th className="py-2 text-zinc-400 font-normal">对象</th>
                         <th className="py-2 text-zinc-400 font-normal w-[100px]">源 IP/定位</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {adminStats.highRiskLogs.slice(0, riskLimit).map((log: any, idx: number) => (
+                      {adminStats.recentActions.slice(0, riskLimit).map((log: any, idx: number) => {
+                        const actColor = log.action.includes('被拦截') ? 'text-red-400' :
+                          log.action.includes('失败') ? 'text-orange-400' :
+                          log.action.startsWith('下载') ? 'text-emerald-400' :
+                          log.action.startsWith('删除') ? 'text-red-400' :
+                          log.action.startsWith('登录') ? 'text-blue-400' :
+                          log.action.includes('文件权限') ? 'text-purple-400' :
+                          'text-zinc-300';
+                        return (
                         <tr key={idx} className="border-t border-zinc-800/30">
                           <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                           <td className="py-1.5 text-zinc-300 font-bold w-[45px] truncate" title={log.username}>{log.username}</td>
-                          <td className="py-1.5 text-orange-300 w-[50px] truncate" title={log.action}>{log.action}</td>
-                          <td className="py-1.5 text-zinc-400 truncate max-w-[100px]" title={log.item}>{log.item}</td>
+                          <td className={`py-1.5 w-[85px] truncate ${actColor}`} title={log.action}>{log.action}</td>
+                          <td className="py-1.5 text-zinc-400 truncate max-w-[120px]" title={log.item}>{log.item}</td>
                           <td className="py-1.5 w-[100px] truncate" title={`${log.ip} - ${log.location}`}>
                             <div className="font-mono text-zinc-500 truncate">{log.ip}</div>
                             <div className="text-[9px] text-zinc-600 truncate">{log.location}</div>
                           </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
@@ -2555,8 +2580,8 @@ export default function Home() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (!canDownload) { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]); setAlistMsg('❌ 您没有下载权限'); return; }
-                      if (previewItemMeta?.perms?.download === false) { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]); setAlistMsg('❌ 该文件已被权限规则禁止下载'); return; }
+                      if (!canDownload) { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]); logUserAction('下载', previewItemMeta?.filePath || '', 'blocked'); setAlistMsg('❌ 您没有下载权限'); return; }
+                      if (previewItemMeta?.perms?.download === false) { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]); logUserAction('下载', previewItemMeta?.filePath || '', 'blocked'); setAlistMsg('❌ 该文件已被权限规则禁止下载'); return; }
                       const prov = alistProvider.toLowerCase();
                       const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
                       const isAliyun = prov.includes('aliyun') || alistPath.toLowerCase().includes('aliyun') || alistPath.includes('阿里云盘');
@@ -2668,6 +2693,7 @@ export default function Home() {
                   onClick={() => {
                     if (globalDownloadModes?.ecs === 'disabled') return;
                     setAlistMsg('⏳ 正在连接阿里云服务器...');
+                    console.log(`[下载:ECS] ${alistDownloadModal!.filePath}`);
                     logUserAction('下载 - 阿里云服务器极速下载', alistDownloadModal!.filePath);
                     let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal!.filePath)}`;
                     if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
@@ -2706,6 +2732,7 @@ export default function Home() {
                   onClick={() => {
                     if (globalDownloadModes?.cf === 'disabled') return;
                     setAlistMsg('⏳ 正在连接 cf.ryantan.fun 代理节点...');
+                    console.log(`[下载:CF] ${alistDownloadModal!.filePath}`);
                     logUserAction('下载 - Cloudflare 边缘加速', alistDownloadModal!.filePath);
                     fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
                       .then(r => r.json())
@@ -2743,6 +2770,7 @@ export default function Home() {
                 <button
                   onClick={() => {
                     if (globalDownloadModes?.raw === 'disabled') return;
+                    console.log(`[下载:RAW] ${alistDownloadModal!.filePath}`);
                     logUserAction('下载 - 复制直链', alistDownloadModal!.filePath);
                     fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
                       .then(r => r.json())
@@ -2793,6 +2821,7 @@ export default function Home() {
                 <button
                   onClick={() => {
                     if (globalDownloadModes?.vercel === 'disabled') return;
+                    console.log(`[下载:Vercel] ${alistDownloadModal!.filePath}`);
                     logUserAction('下载 - vercel服务器中转下载', alistDownloadModal!.filePath);
                     let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal!.filePath)}`;
                     if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
@@ -2822,6 +2851,7 @@ export default function Home() {
                   onClick={() => {
                     if (globalDownloadModes?.direct302 === 'disabled') return;
                     setAlistMsg('⏳ 正在获取直链...');
+                    console.log(`[下载:Direct302] ${alistDownloadModal!.filePath}`);
                     logUserAction('下载 - 302 直链跳转', alistDownloadModal!.filePath);
                     fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
                       .then(r => r.json())
@@ -3627,9 +3657,12 @@ export default function Home() {
                           <button
                             onClick={async () => {
                               const ok = await saveFilePermissionRules(filePermRules.filter(item => item.id !== rule.id));
-                              if (ok && filePermDraft.id === rule.id) {
-                                setFilePermTypeLocked(false);
-                                setFilePermDraft(createDefaultFileRule(alistPath, 'dir'));
+                              if (ok) {
+                                logUserAction('文件权限 - 删除规则', `[${rule.pathType}] ${rule.path}`);
+                                if (filePermDraft.id === rule.id) {
+                                  setFilePermTypeLocked(false);
+                                  setFilePermDraft(createDefaultFileRule(alistPath, 'dir'));
+                                }
                               }
                             }}
                             className="text-[10px] px-2 py-1 rounded"

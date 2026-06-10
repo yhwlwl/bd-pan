@@ -89,7 +89,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
         }
 
-        console.log(`[alist] ${action} start, path=${path}, user=${user.username}, time=${Date.now() - startTime}ms`);
+        console.log(`[alist] ${action} start, path=${path}, user=${user.username}, role=${user.role}, time=${Date.now() - startTime}ms`);
 
         const customUrl = request.headers.get('x-alist-url');
         const customUser = request.headers.get('x-alist-username');
@@ -139,15 +139,21 @@ export async function POST(request: Request) {
             const rules = globalSettings.filePermissionRules || [];
             const normalizedTarget = normalizePath(targetPath);
             const effective = { ...basePermissions };
+            let hitCount = 0;
 
             for (const rule of rules) {
                 if (!Array.isArray(rule.users) || !rule.users.includes(user.username)) continue;
                 if (!ruleMatchesTarget(rule, normalizedTarget)) continue;
+                hitCount++;
                 for (const action of Object.keys(rule.deny || {}) as FilePermissionAction[]) {
                     if (rule.deny[action]) {
                         effective[action] = false as never;
                     }
                 }
+            }
+
+            if (hitCount > 0) {
+                console.log(`[alist:perms] ${normalizedTarget} → ${hitCount} 条规则命中, download=${effective.download}, preview=${effective.preview}, view=${effective.view}`);
             }
 
             return effective;

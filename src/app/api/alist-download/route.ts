@@ -65,11 +65,15 @@ export async function GET(request: Request) {
         const basePerms = await getUserPermissions(user.username, user.role);
         const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
         const isPreview = searchParams.get('preview') === '1';
+        console.log(`[download] path=${path}, absolutePath=${absolutePath}, user=${user.username}, role=${user.role}, isPreview=${isPreview}`);
         const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
+        console.log(`[download] perms: download=${pathPerms.download}, preview=${pathPerms.preview}, view=${pathPerms.view}`);
         if (isPreview && !pathPerms.preview) {
+            console.warn(`[download] 预览被拒: ${absolutePath}`);
             return new Response('该文件禁止预览', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
         }
         if (!isPreview && !pathPerms.download) {
+            console.warn(`[download] 下载被拒: ${absolutePath}`);
             return new Response('该文件禁止下载', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
         }
 
