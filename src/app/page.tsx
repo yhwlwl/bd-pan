@@ -553,7 +553,7 @@ export default function Home() {
         body: JSON.stringify({ guest: true }),
       });
       const data = await res.json();
-      if (!res.ok || !data.token) { setAuthError(data.error || '游客模式不可用'); return; }
+      if (!res.ok || !data.token) { logUserAction('登录 - 游客', '游客模式不可用', 'failed', 'guest'); setAuthError(data.error || '游客模式不可用'); return; }
       setUserToken(data.token);
       setUserRole(data.role);
       setUsername(data.username);
@@ -564,7 +564,8 @@ export default function Home() {
         window.localStorage.setItem('BDPAN_USERNAME', data.username);
         if (data.permissions) window.localStorage.setItem('BDPAN_PERMS', JSON.stringify(data.permissions));
       }
-    } catch { setAuthError('登录接口异常'); }
+      logUserAction('登录 - 游客', 'guest', 'success', 'guest');
+    } catch { logUserAction('登录 - 游客', '接口异常', 'failed', 'guest'); setAuthError('登录接口异常'); }
     finally { setAuthLoading(false); }
   };
 
@@ -1944,13 +1945,14 @@ export default function Home() {
                           return log.action.includes(logFilter);
                         })
                         .slice(0, riskLimit).map((log: any, idx: number) => {
-                        const actColor = log.action.includes('被拦截') ? 'text-red-400' :
-                          log.action.includes('失败') ? 'text-orange-400' :
-                          log.action.startsWith('下载') ? 'text-emerald-400' :
-                          log.action.startsWith('删除') ? 'text-red-400' :
-                          log.action.startsWith('登录') ? 'text-blue-400' :
+                        const actColor = log.action.includes('被拦截') ? 'text-red-400 font-bold' :
+                          log.action.includes('失败')   ? 'text-orange-400' :
+                          log.action.includes('删除')   ? 'text-red-400' :
+                          log.action.includes('下载')   ? 'text-green-400' :
+                          log.action.includes('上传')   ? 'text-yellow-400' :
+                          log.action.includes('登录')   ? 'text-blue-400' :
                           log.action.includes('文件权限') ? 'text-purple-400' :
-                          'text-zinc-300';
+                          'text-zinc-400';
                         return (
                         <tr key={idx} className="border-t border-zinc-800/30">
                           <td className="py-1.5 text-zinc-500 w-[65px] truncate" title={new Date(log.time).toLocaleString()}>{new Date(log.time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
@@ -2884,7 +2886,14 @@ export default function Home() {
                           const directUrl = sign
                             ? `${getAlistBase()}/p${publicPath}?sign=${sign}`
                             : `${getAlistBase()}/p${publicPath}`;
-                          window.open(directUrl, '_blank');
+                          // 用 <a> 标签代替 window.open，兼容 iOS 弹窗拦截
+                          const a = document.createElement('a');
+                          a.href = directUrl;
+                          a.download = alistDownloadModal!.name;
+                          a.target = '_blank';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
                           setAlistMsg('🚀 已启动直链下载');
                         } else {
                           setAlistMsg('❌ 获取直链失败，请尝试其他方式');
