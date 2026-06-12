@@ -2907,8 +2907,11 @@ export default function Home() {
                     if (globalDownloadModes?.direct302 === 'disabled') return;
                     console.log(`[下载:Direct302] ${alistDownloadModal!.filePath}`);
                     logUserAction('下载 - 302 直链跳转', alistDownloadModal!.filePath);
-                    // 同选项①：同步构造 URL，window.open 不被 iOS 拦截
-                    const directUrl = `${getAlistBase()}/p${alistDownloadModal!.filePath}`;
+                    // 同步构造直链 URL（sign 已在模态框数据中，无需异步获取）
+                    const sign = alistDownloadModal!.sign;
+                    const directUrl = sign
+                      ? `${getAlistBase()}/p${alistDownloadModal!.filePath}?sign=${sign}`
+                      : `${getAlistBase()}/p${alistDownloadModal!.filePath}`;
                     window.open(directUrl, '_blank');
                     setAlistMsg('🚀 已启动直链下载');
                     setAlistDownloadModal(null);
