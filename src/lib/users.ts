@@ -19,6 +19,10 @@ export interface UserPermissions {
     setting: boolean;
     controlFile?: boolean;
     basePath?: string;
+    viewStats?: boolean;
+    viewActionLogs?: boolean;
+    viewIpStats?: boolean;
+    viewDownloadLogs?: boolean;
 }
 
 export type FilePermissionAction = 'view' | 'search' | 'download' | 'upload' | 'delete' | 'rename' | 'preview';
@@ -184,6 +188,10 @@ export async function getUserPermissions(username: string, role: Role): Promise<
         setting: false,
         controlFile: true,
         basePath: '/',
+        viewStats: false,
+        viewActionLogs: false,
+        viewIpStats: false,
+        viewDownloadLogs: false,
     };
 
     const defaultGuest: UserPermissions = {
@@ -197,6 +205,10 @@ export async function getUserPermissions(username: string, role: Role): Promise<
         setting: false,
         controlFile: false,
         basePath: '/',
+        viewStats: false,
+        viewActionLogs: false,
+        viewIpStats: false,
+        viewDownloadLogs: false,
     };
 
     if (role === 'admin') {

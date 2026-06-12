@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '../_auth';
+import { getUserPermissions } from '../../../lib/users';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -10,8 +11,15 @@ export async function GET(request: Request) {
     try {
         const authHeader = request.headers.get('authorization') || undefined;
         const user = verifyToken(authHeader);
-        if (!user || user.role !== 'admin') {
-            return NextResponse.json({ code: 401, message: '无权限访问统计信息' }, { status: 401 });
+        if (!user) {
+            return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
+        }
+        if (user.role !== 'admin') {
+            const perms = await getUserPermissions(user.username, user.role);
+            const canViewLogs = perms.viewStats || perms.viewActionLogs || perms.viewIpStats || perms.viewDownloadLogs;
+            if (!canViewLogs) {
+                return NextResponse.json({ code: 401, message: '无权限访问统计信息' }, { status: 401 });
+            }
         }
 
         if (!supabase) {

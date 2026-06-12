@@ -19,6 +19,10 @@ export interface UserPermissions {
   setting?: boolean;
   controlFile?: boolean;
   basePath?: string;
+  viewStats?: boolean;
+  viewActionLogs?: boolean;
+  viewIpStats?: boolean;
+  viewDownloadLogs?: boolean;
 }
 
 type FilePermissionAction = 'view' | 'search' | 'download' | 'upload' | 'delete' | 'rename' | 'preview';
@@ -1349,8 +1353,16 @@ export default function Home() {
 
   // === 管理面板操作 ===
   const fetchAdminData = async () => {
-    if (!userToken || userRole !== 'admin') return;
+    if (!userToken) return;
     try {
+      // 非 admin 只拉统计数据（操作日志等）
+      if (userRole !== 'admin') {
+        const statsRes = await fetch('/api/admin-stats', { headers: { 'Authorization': `Bearer ${userToken}` } });
+        const sData = await statsRes.json();
+        if (sData.code === 200 && sData.data) setAdminStats(sData.data);
+        return;
+      }
+      // admin 拉全部
       const [usrRes, statsRes] = await Promise.all([
         fetch('/api/users', { headers: { 'Authorization': `Bearer ${userToken}` } }),
         fetch('/api/admin-stats', { headers: { 'Authorization': `Bearer ${userToken}` } })
@@ -1649,6 +1661,15 @@ export default function Home() {
               👑 管理
             </button>
           )}
+          {!isAdmin && (userPerms?.viewStats || userPerms?.viewActionLogs || userPerms?.viewIpStats || userPerms?.viewDownloadLogs) && (
+            <button
+              onClick={() => { setShowAdminPanel(true); fetchAdminData(); }}
+              className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              📊 日志
+            </button>
+          )}
           {canControlFile && (
             <button
               onClick={() => openFilePermissionPanel(alistPath, 'dir', false)}
@@ -1691,8 +1712,8 @@ export default function Home() {
           <div className="w-full max-w-lg glass-strong rounded-2xl p-5 mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <span className="text-lg">👑</span>
-                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>管理面板</h3>
+                <span className="text-lg">{isAdmin ? '👑' : '📊'}</span>
+                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{isAdmin ? '管理面板' : '日志面板'}</h3>
               </div>
               <button onClick={() => setShowAdminPanel(false)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
             </div>
@@ -1704,7 +1725,7 @@ export default function Home() {
             )}
 
             {/* 数据大盘 */}
-            {adminStats && (
+            {adminStats && (isAdmin || userPerms?.viewStats) && (
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>实时数据审计 (全量历史)</div>
                 <div className="flex items-center justify-between mx-2 mb-2">
@@ -1757,10 +1778,10 @@ export default function Home() {
             )}
 
             {/* 访问统计与封禁 */}
-            {adminStats && ((adminStats.topIps && adminStats.topIps.length > 0) || (adminStats.viewLogs && adminStats.viewLogs.length > 0)) && (
+            {adminStats && (isAdmin || userPerms?.viewIpStats) && ((adminStats.topIps && adminStats.topIps.length > 0) || (adminStats.viewLogs && adminStats.viewLogs.length > 0)) && (
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="flex items-center justify-between">
-                  <div className="text-[10px] uppercase font-bold tracking-widest text-red-500">IP 访问统计与封禁</div>
+                  <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: isAdmin ? '#ef4444' : 'var(--text-muted)' }}>IP 访问统计{isAdmin && '与封禁'}</div>
                   <div className="flex gap-2">
                     <select
                       value={ipSort}
@@ -1822,6 +1843,7 @@ export default function Home() {
                                 {new Date(log.visit_time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </td>
                               <td className="py-1.5 w-[90px] truncate text-zinc-400" title={log.username}>{log.username || '访客'}</td>
+                              {isAdmin && (
                               <td className="py-1.5 text-right w-[40px]">
                                 {isBanned ? (
                                   <button
@@ -1844,6 +1866,7 @@ export default function Home() {
                                     className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20">封禁</button>
                                 )}
                               </td>
+                              )}
                             </tr>
                           );
                         })
@@ -1862,6 +1885,7 @@ export default function Home() {
                                 <div className="text-[9px] text-zinc-500">{new Date(ipHit.lastActive).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                               </td>
                               <td className="py-1.5 text-zinc-400 w-[60px] truncate" title={ipHit.lastUser}>{ipHit.lastUser}</td>
+                              {isAdmin && (
                               <td className="py-1.5 text-right w-[40px]">
                                 {isBanned ? (
                                   <button
@@ -1884,6 +1908,7 @@ export default function Home() {
                                     className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20">封禁</button>
                                 )}
                               </td>
+                              )}
                             </tr>
                           )
                         })
@@ -1895,7 +1920,7 @@ export default function Home() {
             )}
 
             {/* 操作日志 */}
-            {adminStats && adminStats.recentActions && adminStats.recentActions.length > 0 && (
+            {adminStats && (isAdmin || userPerms?.viewActionLogs) && adminStats.recentActions && adminStats.recentActions.length > 0 && (
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="flex items-center justify-between">
                   <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>操作日志 (最近)</div>
@@ -1972,7 +1997,7 @@ export default function Home() {
             )}
 
             {/* 安全设置：超管密码 */}
-            <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+            <div className={`mb-5 rounded-xl p-4 ${isAdmin ? '' : 'hidden'}`} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>安全设置</div>
               <div className="flex items-center gap-2">
                 <input
@@ -1996,9 +2021,8 @@ export default function Home() {
               </div>
             </div>
 
-
             {/* 全局设置 */}
-            <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+            <div className={`mb-5 rounded-xl p-4 ${isAdmin ? '' : 'hidden'}`} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>全局设置</div>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>启用游客模式 · {adminSettings.enableGuestMode ? '已开启' : '已关闭'}</span>
@@ -2092,7 +2116,7 @@ export default function Home() {
             </div>
 
             {/* 用户列表 */}
-            <div className="mb-5 rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+            <div className={`mb-5 rounded-xl p-4 ${isAdmin ? '' : 'hidden'}`} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>用户列表</div>
               <div className="space-y-2">
                 {adminUsers.filter((u) => u.username !== 'admin').map((u) => (
@@ -2139,11 +2163,16 @@ export default function Home() {
                             { key: 'delete', label: '🗑️ 删除' },
                             { key: 'rename', label: '📝 重命名' },
                             { key: 'setting', label: '⚙️ 本地配置' },
-                            { key: 'controlFile', label: '🔒 文件管理' }
+                            { key: 'controlFile', label: '🔒 文件管理' },
+                            { key: 'viewStats', label: '📊 数据审计' },
+                            { key: 'viewActionLogs', label: '📋 操作日志' },
+                            { key: 'viewIpStats', label: '🌐 IP统计' },
+                            { key: 'viewDownloadLogs', label: '📥 下载明细' }
                           ].map(perm => {
+                            const isLogPerm = ['viewStats', 'viewActionLogs', 'viewIpStats', 'viewDownloadLogs'].includes(perm.key);
                             const uPerms = (u.permissions || {}) as any as Record<string, boolean>;
                             const isOn = uPerms[perm.key] === true;
-                            const viewOff = perm.key !== 'view' && perm.key !== 'controlFile' && !uPerms.view;
+                            const viewOff = !isLogPerm && perm.key !== 'view' && perm.key !== 'controlFile' && !uPerms.view;
                             return (
                               <label key={perm.key} className={`flex items-center gap-1.5 cursor-pointer ${viewOff ? 'opacity-30 pointer-events-none' : 'hover:opacity-80'}`}>
                                 <input
@@ -2190,6 +2219,7 @@ export default function Home() {
             </div>
 
             {/* 添加用户 */}
+            {isAdmin && (
             <div className="rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
               <div className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>添加用户</div>
               <div className="flex flex-col gap-2">
@@ -2225,6 +2255,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
+            )}
           </div>
         </div>
       )}
@@ -2874,33 +2905,12 @@ export default function Home() {
                 <button
                   onClick={() => {
                     if (globalDownloadModes?.direct302 === 'disabled') return;
-                    setAlistMsg('⏳ 正在获取直链...');
                     console.log(`[下载:Direct302] ${alistDownloadModal!.filePath}`);
                     logUserAction('下载 - 302 直链跳转', alistDownloadModal!.filePath);
-                    fetchAlist({ action: 'get', path: alistDownloadModal!.filePath })
-                      .then(r => r.json())
-                      .then(data => {
-                        if (data.code === 200) {
-                          const sign = data.data?.sign || '';
-                          const publicPath = alistDownloadModal!.filePath;
-                          const directUrl = sign
-                            ? `${getAlistBase()}/p${publicPath}?sign=${sign}`
-                            : `${getAlistBase()}/p${publicPath}`;
-                          // 用 <a> 标签代替 window.open，兼容 iOS 弹窗拦截
-                          const a = document.createElement('a');
-                          a.href = directUrl;
-                          a.download = alistDownloadModal!.name;
-                          a.target = '_blank';
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          setAlistMsg('🚀 已启动直链下载');
-                        } else {
-                          setAlistMsg('❌ 获取直链失败，请尝试其他方式');
-                        }
-                      }).catch(() => {
-                        setAlistMsg('❌ 获取直链接口异常，请尝试其他方式');
-                      });
+                    // 同选项①：同步构造 URL，window.open 不被 iOS 拦截
+                    const directUrl = `${getAlistBase()}/p${alistDownloadModal!.filePath}`;
+                    window.open(directUrl, '_blank');
+                    setAlistMsg('🚀 已启动直链下载');
                     setAlistDownloadModal(null);
                   }}
                   disabled={globalDownloadModes?.direct302 === 'disabled'}
@@ -2911,7 +2921,7 @@ export default function Home() {
                     <div className="text-[12px] font-bold text-cyan-200 group-hover:text-cyan-100 transition-colors flex items-center gap-2">
                       <span>⚡️ 直链下载{globalDownloadModes?.direct302 === 'disabled' && '(已禁用)'}</span>
                     </div>
-                    <div className="text-[10px] text-zinc-500">获取直链下载，速度近期最快</div>
+                    <div className="text-[10px] text-zinc-500">直连网盘服务器，不消耗中转流量，兼容移动端</div>
                   </div>
                   <div className="text-cyan-500/30 group-hover:text-cyan-400 transition-colors">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
