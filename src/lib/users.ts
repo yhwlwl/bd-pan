@@ -57,6 +57,7 @@ export interface GlobalSettings {
     bannedIps?: Record<string, number>;
     hideAlistButton?: boolean;
     announcement?: string;
+    sessionDurationHours?: number;
 }
 
 export type UserWithPermissions = Omit<User, 'password'> & { permissions: UserPermissions };
@@ -122,6 +123,7 @@ export async function getSettings(): Promise<GlobalSettings> {
         filePermissionRules: [],
         disableThirdDownload: false,
         hideAlistButton: true,
+        sessionDurationHours: 8,
         downloadChannel: 'ecs',
         downloadModes: {
             ecs: 'enabled',
@@ -164,6 +166,7 @@ export async function getSettings(): Promise<GlobalSettings> {
         },
         bannedIps: (val.bannedIps || {}) as Record<string, number>,
         announcement: typeof val.announcement === 'string' ? val.announcement : '',
+        sessionDurationHours: typeof val.sessionDurationHours === 'number' ? val.sessionDurationHours : 8,
     };
 }
 

@@ -11,13 +11,15 @@ export async function POST(request: Request) {
 
         const body = await request.json();
 
+        const settings = await getSettings();
+        const durationHours = settings.sessionDurationHours || 8;
+
         // 游客模式
         if (body.guest === true) {
-            const settings = await getSettings();
             if (!settings.enableGuestMode) {
                 return NextResponse.json({ error: '系统已关闭游客访问' }, { status: 403 });
             }
-            const token = signToken('guest', 'guest');
+            const token = signToken('guest', 'guest', durationHours);
             if (!token) return NextResponse.json({ error: '服务端配置异常' }, { status: 500 });
             const permissions = await getUserPermissions('guest', 'guest');
             return NextResponse.json({ token, role: 'guest', username: 'guest', permissions });
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
         }
 
-        const token = signToken(user.username, user.role);
+        const token = signToken(user.username, user.role, durationHours);
         if (!token) return NextResponse.json({ error: '服务端配置异常' }, { status: 500 });
 
         const permissions = await getUserPermissions(user.username, user.role);

@@ -1,16 +1,15 @@
 import crypto from 'crypto';
 import type { Role } from '../../lib/users';
 
-const TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // 8 小时
-
 function getSecret() {
     return process.env.ADMIN_TOKEN_SECRET || '***REDACTED***';
 }
 
-export function signToken(username: string, role: Role): string | null {
+export function signToken(username: string, role: Role, durationHours?: number): string | null {
     const secret = getSecret();
+    const ttl = (durationHours && durationHours > 0 ? durationHours : 8) * 60 * 60 * 1000;
     const payload = {
-        exp: Date.now() + TOKEN_TTL_MS,
+        exp: Date.now() + ttl,
         username,
         role,
     };

@@ -92,6 +92,9 @@ export async function GET(request: Request) {
                 allDownloadLogs.push({ ...logObj, channel: key });
             }
 
+            // 非 admin 看不到 admin 的操作日志
+            if (user.role !== 'admin' && log.username === 'admin') return;
+
             // 所有操作都收集（不再过滤）
             recentActions.push({
                 username: log.username,

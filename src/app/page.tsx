@@ -68,6 +68,7 @@ export interface GlobalSettings {
   bannedIps?: Record<string, number>;
   hideAlistButton?: boolean;
   announcement?: string;
+  sessionDurationHours?: number;
 }
 
 export default function Home() {
@@ -2043,6 +2044,24 @@ export default function Home() {
                       }`}
                   >📡 FRP</button>
                 </div>
+              </div>
+              <div className="pt-3 mt-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>登录保持时长（小时）</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={adminSettings.sessionDurationHours ?? 8}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (!isNaN(v) && v > 0) {
+                      setAdminSettings(prev => ({ ...prev, sessionDurationHours: v }));
+                      adminAction('updateSettings', { settings: { sessionDurationHours: v } });
+                    }
+                  }}
+                  className="w-16 rounded px-2 py-1 text-[10px] text-center outline-none"
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                />
               </div>
               <div className="pt-3 mt-3 border-t space-y-2" style={{ borderColor: 'var(--border-subtle)' }}>
                 <span className="text-[10px] block mb-2" style={{ color: 'var(--text-muted)' }}>系统公告 (清空则不显示)</span>
