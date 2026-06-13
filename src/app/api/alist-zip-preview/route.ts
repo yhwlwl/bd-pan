@@ -107,7 +107,7 @@ export async function GET(request: Request) {
         const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
         const user = verifyToken(authHeader);
         if (!user) {
-            return new Response('Unauthorized', { status: 401, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+            return NextResponse.json({ error: '请先登录' }, { status: 401 });
         }
 
         // Check permissions
@@ -118,7 +118,8 @@ export async function GET(request: Request) {
             const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
 
             if (!pathPerms.view || !pathPerms.download) {
-                return new Response(`Access denied for path: ${path}`, { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+                console.log(`[ZIP-preview] 权限拒绝: ${path} (view=${pathPerms.view}, download=${pathPerms.download})`);
+                return NextResponse.json({ error: `无权访问: ${path}`, denied: true }, { status: 403 });
             }
         }
 

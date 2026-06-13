@@ -47,7 +47,7 @@ async function getAllFilesInDir(
     dirPath: string,
     maxDepth: number = 100,
     currentDepth: number = 0,
-): Promise<Array<{ path: string; size: number; is_dir: boolean; name: string }>> {
+): Promise<Array<{ path: string; size: number; is_dir: boolean; name: string; sign?: string }>> {
     if (currentDepth >= maxDepth) return [];
 
     const res = await fetch(`${aListUrl}/api/fs/list`, {
@@ -73,6 +73,7 @@ async function getAllFilesInDir(
                 size: item.size || 0,
                 is_dir: false,
                 name: item.name,
+                sign: item.sign || undefined,
             });
         }
     }
@@ -107,18 +108,19 @@ export async function GET(request: Request) {
         const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
         const user = verifyToken(authHeader);
         if (!user) {
-            return new Response('Unauthorized', { status: 401, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+            return NextResponse.json({ error: '请先登录' }, { status: 401 });
         }
 
         // Check permissions
         const basePerms = await getUserPermissions(user.username, user.role);
-        
+
         for (const path of paths) {
             const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
             const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
-            
+
             if (!pathPerms.view || !pathPerms.download) {
-                return new Response(`Access denied for path: ${path}`, { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+                console.log(`[ZIP-download] 权限拒绝: ${path} (view=${pathPerms.view}, download=${pathPerms.download})`);
+                return NextResponse.json({ error: `无权访问: ${path}`, denied: true }, { status: 403 });
             }
         }
 
@@ -130,7 +132,7 @@ export async function GET(request: Request) {
 
         const aListToken = await getAlistToken(url, aUser, aPass);
 
-        console.log('[ZIP] 开始生成 ZIP 文件...');
+        console.log(`[ZIP:T1首选] 开始打包, ${paths.length} 个路径 → /p/ 直链优先`);
 
         // Load archiver
         let archiverModule: any;
@@ -166,6 +168,7 @@ export async function GET(request: Request) {
         // Start background processing immediately
         (async () => {
             try {
+                let totalT1 = 0, totalT2 = 0, totalT3 = 0, totalFailed = 0;
                 console.log('[ZIP] 开始生成');
 
                 // Process each path
@@ -204,7 +207,29 @@ export async function GET(request: Request) {
                             archive.append(Buffer.alloc(0), { name: pathName + '/.gitkeep' });
                         } else {
                             const downloadFile = async (file: any) => {
+                                const relativePath = file.path
+                                    .replace(absolutePath, pathName)
+                                    .replace(/^\//, '')
+                                    .replace(/\\/g, '/');
                                 try {
+                                    // T1 首选：alist /p/ 直链下载
+                                    if (file.sign) {
+                                        const proxyUrl = `${url}/p${file.path}?sign=${file.sign}`;
+                                        let stream = await fetch(proxyUrl, {
+                                            headers: { Authorization: aListToken },
+                                            signal: AbortSignal.timeout(30000),
+                                        });
+                                        if (stream.ok) {
+                                            const buf = Buffer.from(await stream.arrayBuffer());
+                                            archive.append(buf, { name: relativePath });
+                                            totalT1++;
+                                            return;
+                                        }
+                                    }
+                                    totalT2++;
+                                } catch { totalT2++; }
+                                try {
+                                    // T3 保底：get → raw_url → 百度 CDN
                                     let fileRes = await fetch(`${url}/api/fs/get`, {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json', Authorization: aListToken },
@@ -217,50 +242,64 @@ export async function GET(request: Request) {
                                     const rawUrl = fileData.data?.raw_url;
                                     if (!rawUrl) return;
 
-                                    let fileStream = await fetch(rawUrl, {
+                                    let stream = await fetch(rawUrl, {
                                         headers: { 'User-Agent': 'pan.baidu.com' },
                                         signal: AbortSignal.timeout(30000),
                                     });
-                                    if (!fileStream.ok) return;
-
-                                    const relativePath = file.path
-                                        .replace(absolutePath, pathName)
-                                        .replace(/^\//, '')
-                                        .replace(/\\/g, '/');
-                                    const fileBuffer = Buffer.from(await fileStream.arrayBuffer());
-                                    archive.append(fileBuffer, { name: relativePath });
+                                    if (!stream.ok) return;
+                                    const buf = Buffer.from(await stream.arrayBuffer());
+                                    archive.append(buf, { name: relativePath });
+                                    totalT3++;
                                 } catch (e) {
-                                    console.warn('[ZIP] 文件错误:', file.path);
+                                    totalFailed++;
                                 }
                             };
 
+                            const CONCURRENCY = 6;
                             let activeCount = 0;
                             for (let i = 0; i < allFiles.length; i++) {
-                                while (activeCount >= 3) await new Promise(r => setTimeout(r, 10));
+                                while (activeCount >= CONCURRENCY) await new Promise(r => setTimeout(r, 10));
                                 activeCount++;
                                 downloadFile(allFiles[i]).finally(() => activeCount--);
                             }
                             while (activeCount > 0) await new Promise(r => setTimeout(r, 10));
                         }
                     } else {
-                        const rawUrl = getData.data?.raw_url;
-                        if (!rawUrl) continue;
-                        try {
-                            let fileStream = await fetch(rawUrl, {
-                                headers: { 'User-Agent': 'pan.baidu.com' },
-                                signal: AbortSignal.timeout(30000),
-                            });
-                            if (!fileStream.ok) continue;
-                            const fileBuffer = Buffer.from(await fileStream.arrayBuffer());
-                            archive.append(fileBuffer, { name: pathName });
-                        } catch (e) {
-                            console.warn('[ZIP] 单文件错误:', pathName);
+                        // 单文件：首选 /p/ 直链，降级百度 CDN
+                        const sign = getData.data?.sign || '';
+                        const fileUrl = sign ? `${url}/p${absolutePath}?sign=${sign}` : null;
+                        let downloaded = false;
+                        if (fileUrl) {
+                            try {
+                                let stream = await fetch(fileUrl, {
+                                    headers: { Authorization: aListToken },
+                                    signal: AbortSignal.timeout(30000),
+                                });
+                                if (stream.ok) {
+                                    const buf = Buffer.from(await stream.arrayBuffer());
+                                    archive.append(buf, { name: pathName });
+                                    downloaded = true;
+                                }
+                            } catch {}
+                        }
+                        if (!downloaded) {
+                            const rawUrl = getData.data?.raw_url;
+                            if (!rawUrl) continue;
+                            try {
+                                let fileStream = await fetch(rawUrl, {
+                                    headers: { 'User-Agent': 'pan.baidu.com' },
+                                    signal: AbortSignal.timeout(30000),
+                                });
+                                if (!fileStream.ok) continue;
+                                const fileBuffer = Buffer.from(await fileStream.arrayBuffer());
+                                archive.append(fileBuffer, { name: pathName });
+                            } catch {}
                         }
                     }
                 }
 
                 if (true) {
-                    console.log(`[ZIP] 完成`);
+                    console.log(`[ZIP] 完成 → T1直链:${totalT1} T2降级:${totalT2} T3保底:${totalT3} 失败:${totalFailed}`);
                     archive.finalize();
                 }
             } catch (e: any) {
