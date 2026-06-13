@@ -96,7 +96,8 @@ export async function GET(request: Request) {
             const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
             const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
             if (!pathPerms.view || !pathPerms.download) {
-                return NextResponse.json({ error: `无权访问: ${path}`, denied: true }, { status: 403 });
+                skipped++;
+                continue;
             }
 
             const pathName = path.split('/').pop() || 'folder';
@@ -124,6 +125,10 @@ export async function GET(request: Request) {
                 result.push({ name: pathName, path: absolutePath, sign, size: gd.data?.size || 0, relativePath: pathName });
                 totalSize += gd.data?.size || 0;
             }
+        }
+
+        if (result.length === 0 && skipped > 0) {
+            return NextResponse.json({ error: '所有选定项均被权限策略禁止访问', denied: true }, { status: 403 });
         }
 
         return NextResponse.json({ files: result, totalFiles: result.length, totalSize, skipped });

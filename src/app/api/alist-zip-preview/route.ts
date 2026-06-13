@@ -113,16 +113,6 @@ export async function GET(request: Request) {
         // Check permissions
         const basePerms = await getUserPermissions(user.username, user.role);
 
-        for (const path of paths) {
-            const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
-            const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
-
-            if (!pathPerms.view || !pathPerms.download) {
-                console.log(`[ZIP-preview] 权限拒绝: ${path} (view=${pathPerms.view}, download=${pathPerms.download})`);
-                return NextResponse.json({ error: `无权访问: ${path}`, denied: true }, { status: 403 });
-            }
-        }
-
         const settings = await getSettings();
         const channel = settings.downloadChannel || 'ecs';
         const url = channel === 'ecs' ? ECS_URL : FRP_URL;
@@ -133,10 +123,19 @@ export async function GET(request: Request) {
 
         // 收集目录信息用于显示
         const dirInfos: Array<{ name: string; fileCount: number }> = [];
+        let deniedCount = 0;
 
         for (const path of paths) {
             const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
             const pathName = path.split('/').pop() || 'folder';
+
+            // 权限检查
+            const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
+            if (!pathPerms.view || !pathPerms.download) {
+                console.log(`[ZIP-preview] 权限跳过: ${path}`);
+                deniedCount++;
+                continue;
+            }
 
             const getRes = await fetch(`${url}/api/fs/get`, {
                 method: 'POST',
@@ -155,6 +154,10 @@ export async function GET(request: Request) {
                 const allFiles = await getAllFilesInDir(url, aListToken, absolutePath);
                 dirInfos.push({ name: pathName, fileCount: allFiles.length });
             }
+        }
+
+        if (dirInfos.length === 0 && deniedCount > 0) {
+            return NextResponse.json({ error: '所有选定项均被权限策略禁止访问', denied: true }, { status: 403 });
         }
 
         return NextResponse.json({

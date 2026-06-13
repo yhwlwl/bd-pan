@@ -113,17 +113,22 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: '请先登录' }, { status: 401 });
         }
 
-        // Check permissions
+        // Check permissions (顶层跳过，子文件在预扫描时逐个检查)
         const basePerms = await getUserPermissions(user.username, user.role);
+        let deniedCount = 0;
 
         for (const path of paths) {
             const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
             const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
 
             if (!pathPerms.view || !pathPerms.download) {
-                console.log(`[ZIP-download] 权限拒绝: ${path} (view=${pathPerms.view}, download=${pathPerms.download})`);
-                return NextResponse.json({ error: `无权访问: ${path}`, denied: true }, { status: 403 });
+                console.log(`[ZIP-download] 权限跳过: ${path}`);
+                deniedCount++;
+                continue;
             }
+        }
+        if (deniedCount > 0 && deniedCount === paths.length) {
+            return NextResponse.json({ error: '所有选定项均被权限策略禁止访问', denied: true }, { status: 403 });
         }
 
         const settings = await getSettings();

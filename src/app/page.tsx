@@ -478,11 +478,13 @@ export default function Home() {
     }
   }, [userToken]);
 
-  // 自动清除消息
+  // 自动清除消息（30s）
+  const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (alistMsg) {
-      const t = setTimeout(() => setAlistMsg(null), 3000);
-      return () => clearTimeout(t);
+      if (msgTimerRef.current) clearTimeout(msgTimerRef.current);
+      msgTimerRef.current = setTimeout(() => setAlistMsg(null), 30000);
+      return () => { if (msgTimerRef.current) clearTimeout(msgTimerRef.current); };
     }
   }, [alistMsg]);
 
@@ -1050,11 +1052,10 @@ export default function Home() {
 
       const fileList: Array<{ path: string; sign: string; relativePath: string }> = data.files || [];
       const skipped = data.skipped || 0;
-      if (skipped > 0) setAlistMsg(`⚠️ ${skipped} 个文件因权限策略未包含`);
 
       if (fileList.length === 0) {
         setT2Progress(null);
-        setAlistMsg('❌ 没有可下载的文件');
+        setAlistMsg(skipped > 0 ? `⚠️ 所有文件均被权限策略禁止访问` : '❌ 没有可下载的文件');
         return;
       }
 
@@ -1063,16 +1064,28 @@ export default function Home() {
 
       const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+      const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+      const interval = isMobile ? 2000 : 600;
       for (let i = 0; i < fileList.length; i++) {
         const f = fileList[i];
         const url = f.sign ? `${alistBase}/p${f.path}?sign=${f.sign}` : `${alistBase}/p${f.path}`;
-        window.open(url, '_blank');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = f.relativePath.split('/').pop() || '';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
         setT2Progress({ current: i + 1, total: fileList.length, msg: `⏳ 正在下载 ${i + 1}/${fileList.length}...` });
-        await delay(800); // 800ms 间隔避免浏览器拦截
+        await delay(interval);
       }
 
       setT2Progress(null);
-      setAlistMsg(`✅ 已触发 ${fileList.length} 个文件下载`);
+      if (skipped > 0) {
+        setAlistMsg(`⚠️ 已触发 ${fileList.length} 个文件下载，${skipped} 个因权限策略跳过`);
+      } else {
+        setAlistMsg(`✅ 已触发 ${fileList.length} 个文件下载`);
+      }
       setTimeout(() => setAlistMsg(null), 4000);
     } catch (err: any) {
       setT2Progress(null);
@@ -3338,18 +3351,24 @@ export default function Home() {
             {(alistMsg || isCompressing) && (
               <div>
                 <div className={`px-4 py-1.5 text-[11px] font-bold flex items-center gap-2 transition-all ${
-                  isCompressing 
-                    ? 'bg-blue-500/10 text-blue-400' 
-                    : alistMsg?.startsWith('✅') 
-                    ? 'bg-green-500/10 text-green-400' 
-                    : alistMsg?.startsWith('❌') 
+                  isCompressing
+                    ? 'bg-blue-500/10 text-blue-400'
+                    : alistMsg?.startsWith('✅')
+                    ? 'bg-green-500/10 text-green-400'
+                    : alistMsg?.startsWith('❌')
                     ? 'bg-red-500/10 text-red-400'
+                    : alistMsg?.startsWith('⚠️')
+                    ? 'bg-yellow-500/10 text-yellow-400'
                     : alistMsg?.startsWith('✨')
                     ? 'bg-yellow-500/10 text-yellow-400'
                     : 'bg-yellow-500/10 text-yellow-400'
                 }`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                   {isCompressing && <span className="loading loading-spinner loading-xs"></span>}
-                  {isCompressing ? '🔄 正在生成压缩包...' : alistMsg}
+                  <span className="flex-1">{isCompressing ? '🔄 正在生成压缩包...' : alistMsg}</span>
+                  {!isCompressing && (
+                    <button onClick={() => { if (msgTimerRef.current) clearTimeout(msgTimerRef.current); setAlistMsg(null); }}
+                      className="shrink-0 opacity-50 hover:opacity-100 transition-opacity text-sm">✕</button>
+                  )}
                 </div>
               </div>
             )}
