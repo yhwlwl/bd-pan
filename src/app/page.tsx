@@ -115,6 +115,8 @@ export default function Home() {
   const [alistCopyLinkModal, setAlistCopyLinkModal] = useState<{ url: string; fileName: string } | null>(null);
   const [nodeLatencies, setNodeLatencies] = useState<Record<string, number | null>>({});
   const [isCompressing, setIsCompressing] = useState(false);
+  const [batchModeModal, setBatchModeModal] = useState<{ folders: Array<{ name: string; filePath: string }>; files: Array<{ name: string; file: any; filePath: string }> } | null>(null);
+  const [t2Progress, setT2Progress] = useState<{ current: number; total: number; msg: string } | null>(null);
   // 文件预览
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office'; filePath: string; sign?: string; size?: number } | null>(null);
   const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' | 'unknown'; perms?: { download?: boolean; preview?: boolean } } | null>(null);
@@ -1016,33 +1018,66 @@ export default function Home() {
     });
 
     // 分离文件和文件夹
-    const files = selectedItems.filter(item => !item.isDir);
-    const folders = selectedItems.filter(item => item.isDir);
+    const fileItems = selectedItems.filter(item => !item.isDir);
+    const folderItems = selectedItems.filter(item => item.isDir);
 
-    console.log('[批量下载] 项目分类:', { 文件数: files.length, 文件夹数: folders.length });
-
-    // 下载文件
-    files.forEach(({ name, file, filePath }) => {
-      console.log('[批量下载] 下载文件:', name);
-      if (isBaidu || isAliyun) {
-        alistProxyDownload(filePath, name, '批量下载 - 代理');
-      } else {
-        alistDirectDownload(filePath, file?.sign, '批量下载 - 直连');
-      }
-    });
-
-    // 处理文件夹下载
-    if (folders.length > 0) {
-      console.log('[批量下载] 打包文件夹:', folders.map(f => f.name));
-      alistBatchDownloadFolders(folders);
-    } else {
-      console.log('[批量下载] 未选中文件夹，仅处理了文件');
-      if (files.length > 0) {
-        setAlistMsg(`✅ 已触发 ${files.length} 个文件的下载`);
-      }
+    // 文件夹也走统一流程：展示选择弹窗
+    if (folderItems.length > 0 || fileItems.length > 0) {
+      setBatchModeModal({ folders: folderItems, files: fileItems });
     }
 
     setAlistSelected(new Set());
+  };
+
+  // T2: 逐个直链自动下载
+  const alistBatchDownloadT2 = async (folders: Array<{ name: string; filePath: string }>, files: Array<{ name: string; file: any; filePath: string }>) => {
+    setBatchModeModal(null);
+    const allPaths = [...folders.map(f => f.filePath), ...files.map(f => f.filePath)];
+    logUserAction('批量下载 - 逐个直链', `${alistPath} - ${allPaths.join(', ')}`);
+
+    const params = new URLSearchParams();
+    params.set('paths', JSON.stringify(allPaths));
+    if (userToken) params.set('token', userToken);
+    const headers: Record<string, string> = {};
+    if (userToken) headers['Authorization'] = `Bearer ${userToken}`;
+
+    setT2Progress({ current: 0, total: 0, msg: '⏳ 正在获取文件列表...' });
+
+    try {
+      const res = await fetch(`/api/alist-batch-list?${params.toString()}`, { headers });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+      const fileList: Array<{ path: string; sign: string; relativePath: string }> = data.files || [];
+      const skipped = data.skipped || 0;
+      if (skipped > 0) setAlistMsg(`⚠️ ${skipped} 个文件因权限策略未包含`);
+
+      if (fileList.length === 0) {
+        setT2Progress(null);
+        setAlistMsg('❌ 没有可下载的文件');
+        return;
+      }
+
+      const alistBase = getAlistBase();
+      setT2Progress({ current: 0, total: fileList.length, msg: `⏳ 正在下载 0/${fileList.length}...` });
+
+      const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+      for (let i = 0; i < fileList.length; i++) {
+        const f = fileList[i];
+        const url = f.sign ? `${alistBase}/p${f.path}?sign=${f.sign}` : `${alistBase}/p${f.path}`;
+        window.open(url, '_blank');
+        setT2Progress({ current: i + 1, total: fileList.length, msg: `⏳ 正在下载 ${i + 1}/${fileList.length}...` });
+        await delay(800); // 800ms 间隔避免浏览器拦截
+      }
+
+      setT2Progress(null);
+      setAlistMsg(`✅ 已触发 ${fileList.length} 个文件下载`);
+      setTimeout(() => setAlistMsg(null), 4000);
+    } catch (err: any) {
+      setT2Progress(null);
+      setAlistMsg(`❌ ${err.message}`);
+    }
   };
 
   // 批量下载文件夹 - alist /p/ 直链 + ZIP 打包
@@ -2707,6 +2742,72 @@ export default function Home() {
             <div className="p-3 text-center text-[10px] border-t" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-faint)' }}>
               历史版本记录就到这里啦 ~
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 批量下载 T1/T2 选择弹窗 */}
+      {batchModeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setBatchModeModal(null)}>
+          <div className="w-full max-w-sm glass-strong rounded-2xl p-5 mx-4 animate-in" onClick={e => e.stopPropagation()}>
+            <div className="text-center mb-4">
+              <div className="text-lg mb-1">📦</div>
+              <div className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>批量下载</div>
+              <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                {batchModeModal.folders.length > 0 && `${batchModeModal.folders.length} 个文件夹`}
+                {batchModeModal.folders.length > 0 && batchModeModal.files.length > 0 && ' + '}
+                {batchModeModal.files.length > 0 && `${batchModeModal.files.length} 个文件`}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <button
+                onClick={() => {
+                  setBatchModeModal(null);
+                  // 文件和文件夹合并打包
+                  const allItems = [...batchModeModal.folders, ...batchModeModal.files];
+                  if (allItems.length > 0) {
+                    alistBatchDownloadFolders(allItems);
+                  }
+                }}
+                className="w-full flex items-center justify-between rounded-xl px-4 py-3 text-left border transition-all hover:scale-[1.02] active:scale-[0.98] group"
+                style={{ background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(8, 145, 178, 0.05))', borderColor: 'rgba(6, 182, 212, 0.3)' }}
+              >
+                <div>
+                  <div className="text-[12px] font-bold text-cyan-200">📦 打包下载 (ZIP)</div>
+                  <div className="text-[10px] text-zinc-500">合并为一个压缩包，保留目录结构</div>
+                </div>
+              </button>
+              <button
+                onClick={() => alistBatchDownloadT2(batchModeModal.folders, batchModeModal.files)}
+                className="w-full flex items-center justify-between rounded-xl px-4 py-3 text-left border transition-all hover:scale-[1.02] active:scale-[0.98] group"
+                style={{ background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(22, 163, 74, 0.05))', borderColor: 'rgba(34, 197, 94, 0.3)' }}
+              >
+                <div>
+                  <div className="text-[12px] font-bold text-green-200">⚡ 逐个下载 (直链满速)</div>
+                  <div className="text-[10px] text-zinc-500">每个文件直连下载，不经过服务器中转</div>
+                </div>
+              </button>
+              <button onClick={() => setBatchModeModal(null)}
+                className="w-full text-center text-[11px] py-2 rounded-lg transition-all"
+                style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+              >取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* T2 进度提示 */}
+      {t2Progress && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-2xl animate-in"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+          <div className="flex items-center gap-3 text-[13px] font-bold">
+            <span>⚡</span>
+            <span>{t2Progress.msg}</span>
+            {t2Progress.total > 0 && (
+              <div className="w-32 h-2 rounded-full bg-zinc-700 overflow-hidden">
+                <div className="h-full bg-green-500 transition-all" style={{ width: `${(t2Progress.current / t2Progress.total) * 100}%` }} />
+              </div>
+            )}
           </div>
         </div>
       )}
