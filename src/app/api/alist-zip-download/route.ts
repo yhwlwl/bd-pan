@@ -8,6 +8,8 @@ import {
     getUserPermissions,
 } from '../../../lib/users';
 
+export const maxDuration = 300; // Vercel: max 300s for streaming
+
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_URL = ALIST_BASE_DEFAULT;
 const ECS_USER = process.env.ALIST_USERNAME || '';
@@ -134,83 +136,75 @@ export async function GET(request: Request) {
 
         console.log(`[ZIP:T1首选] 开始打包, ${paths.length} 个路径 → /p/ 直链优先`);
 
-        // Load archiver
-        let archiverModule: any;
-        try {
-            archiverModule = (await import('archiver')).default;
-        } catch (e) {
-            return new Response('Missing archiver: npm install archiver', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+        // 预扫描：递归列文件 + 权限检查，统计跳过数
+        let totalSkipped = 0;
+        type FileEntry = { path: string; size: number; name: string; sign?: string; relativePath: string };
+        const allEntries: Array<{ pathName: string; absolutePath: string; isDir: boolean; sign?: string; files: FileEntry[] }> = [];
+
+        for (const path of paths) {
+            const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
+            const pathName = path.split('/').pop() || 'folder';
+
+            let getRes = null;
+            for (let retry = 0; retry < 3; retry++) {
+                try { getRes = await fetch(`${url}/api/fs/get`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: aListToken }, body: JSON.stringify({ path: absolutePath }), signal: AbortSignal.timeout(10000) }); if (getRes.ok) break; } catch { if (retry === 2) break; await new Promise(r => setTimeout(r, 1000 * (retry + 1))); }
+            }
+            if (!getRes || !getRes.ok) continue;
+            const getData = await getRes.json();
+            if (getData.code !== 200) continue;
+
+            const isDir = getData.data?.is_dir || false;
+            const files: FileEntry[] = [];
+
+            if (isDir) {
+                const rawFiles = await getAllFilesInDir(url, aListToken, absolutePath);
+                for (const f of rawFiles) {
+                    const fp = await getEffectivePermissionsForPath(user.username, user.role, f.path);
+                    if (fp.download === false) { totalSkipped++; continue; }
+                    const relativePath = f.path.replace(absolutePath, pathName).replace(/^\//, '').replace(/\\/g, '/');
+                    files.push({ path: f.path, size: f.size, name: f.name, sign: f.sign, relativePath });
+                }
+                if (totalSkipped > 0) console.log(`[ZIP] ${pathName}: 跳过 ${totalSkipped} 个被禁止下载的文件`);
+            } else {
+                const sign = getData.data?.sign || '';
+                files.push({ path: absolutePath, size: getData.data?.size || 0, name: pathName, sign, relativePath: pathName });
+            }
+            allEntries.push({ pathName, absolutePath, isDir, sign: getData.data?.sign, files });
         }
 
-        // Generate ZIP - streaming
+        // Load archiver
+        let archiverModule: any;
+        try { archiverModule = (await import('archiver')).default; } catch { return new Response('Missing archiver: npm install archiver', { status: 503 }); }
         const archive: any = archiverModule('zip', { zlib: { level: 0 } });
-        
-        // Set response headers
+
+        // Vercel 兼容：用 Web ReadableStream 替代 Node PassThrough
+        const stream = new ReadableStream({
+            start(controller) {
+                archive.on('data', (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
+                archive.on('end', () => controller.close());
+                archive.on('error', (err: any) => { console.error('[ZIP] 错误:', err.message); controller.error(err); });
+            },
+        });
+
         const responseHeaders = new Headers();
         responseHeaders.set('Content-Type', 'application/zip');
         const fileName = 'download.zip';
         responseHeaders.set('Content-Disposition', `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-        responseHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-        responseHeaders.set('Pragma', 'no-cache');
-        responseHeaders.set('Expires', '0');
+        responseHeaders.set('X-Skipped-Files', String(totalSkipped));
 
-        // Create PassThrough stream
-        const { PassThrough } = require('stream');
-        const passThrough = new PassThrough();
-        
-        archive.pipe(passThrough);
-
-        archive.on('error', (err: any) => {
-            console.error('[ZIP] 错误:', err.message);
-            passThrough.destroy();
-        });
-
-        // Start background processing immediately
+        // Start processing
         (async () => {
             try {
                 let totalT1 = 0, totalT2 = 0, totalT3 = 0, totalFailed = 0;
                 console.log('[ZIP] 开始生成');
 
-                // Process each path
-                for (const path of paths) {
-                    const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
-                    const pathName = path.split('/').pop() || 'folder';
-
-                    let getRes = null;
-                    for (let retry = 0; retry < 3; retry++) {
-                        try {
-                            getRes = await fetch(`${url}/api/fs/get`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', Authorization: aListToken },
-                                body: JSON.stringify({ path: absolutePath }),
-                                signal: AbortSignal.timeout(10000),
-                            });
-                            if (getRes.ok) break;
-                        } catch (e: any) {
-                            if (retry === 2) throw e;
-                            await new Promise(r => setTimeout(r, 1000 * (retry + 1)));
-                        }
-                    }
-
-                    if (!getRes || !getRes.ok) continue;
-
-                    const getData = await getRes.json();
-                    if (getData.code !== 200) continue;
-
-                    const isDir = getData.data?.is_dir || false;
-
+                for (const entry of allEntries) {
+                    const { pathName, absolutePath, isDir, files } = entry;
                     if (isDir) {
-                        const allFiles = await getAllFilesInDir(url, aListToken, absolutePath);
-                        console.log(`[ZIP] 获取目录 ${pathName}，共 ${allFiles.length} 个文件`);
-                        
-                        if (allFiles.length === 0) {
+                        if (files.length === 0) {
                             archive.append(Buffer.alloc(0), { name: pathName + '/.gitkeep' });
                         } else {
-                            const downloadFile = async (file: any) => {
-                                const relativePath = file.path
-                                    .replace(absolutePath, pathName)
-                                    .replace(/^\//, '')
-                                    .replace(/\\/g, '/');
+                            const downloadFile = async (file: FileEntry) => {
                                 try {
                                     // T1 首选：alist /p/ 直链下载
                                     if (file.sign) {
@@ -221,7 +215,7 @@ export async function GET(request: Request) {
                                         });
                                         if (stream.ok) {
                                             const buf = Buffer.from(await stream.arrayBuffer());
-                                            archive.append(buf, { name: relativePath });
+                                            archive.append(buf, { name: file.relativePath });
                                             totalT1++;
                                             return;
                                         }
@@ -248,7 +242,7 @@ export async function GET(request: Request) {
                                     });
                                     if (!stream.ok) return;
                                     const buf = Buffer.from(await stream.arrayBuffer());
-                                    archive.append(buf, { name: relativePath });
+                                    archive.append(buf, { name: file.relativePath });
                                     totalT3++;
                                 } catch (e) {
                                     totalFailed++;
@@ -257,58 +251,51 @@ export async function GET(request: Request) {
 
                             const CONCURRENCY = 6;
                             let activeCount = 0;
-                            for (let i = 0; i < allFiles.length; i++) {
+                            for (let i = 0; i < files.length; i++) {
                                 while (activeCount >= CONCURRENCY) await new Promise(r => setTimeout(r, 10));
                                 activeCount++;
-                                downloadFile(allFiles[i]).finally(() => activeCount--);
+                                downloadFile(files[i]).finally(() => activeCount--);
                             }
                             while (activeCount > 0) await new Promise(r => setTimeout(r, 10));
                         }
                     } else {
                         // 单文件：首选 /p/ 直链，降级百度 CDN
-                        const sign = getData.data?.sign || '';
+                        const sign = entry.sign || '';
                         const fileUrl = sign ? `${url}/p${absolutePath}?sign=${sign}` : null;
                         let downloaded = false;
                         if (fileUrl) {
                             try {
-                                let stream = await fetch(fileUrl, {
-                                    headers: { Authorization: aListToken },
-                                    signal: AbortSignal.timeout(30000),
-                                });
+                                let stream = await fetch(fileUrl, { headers: { Authorization: aListToken }, signal: AbortSignal.timeout(30000) });
                                 if (stream.ok) {
-                                    const buf = Buffer.from(await stream.arrayBuffer());
-                                    archive.append(buf, { name: pathName });
-                                    downloaded = true;
-                                }
-                            } catch {}
+                                    archive.append(Buffer.from(await stream.arrayBuffer()), { name: pathName });
+                                    downloaded = true; totalT1++;
+                                } else totalT2++;
+                            } catch { totalT2++; }
                         }
                         if (!downloaded) {
-                            const rawUrl = getData.data?.raw_url;
-                            if (!rawUrl) continue;
                             try {
-                                let fileStream = await fetch(rawUrl, {
-                                    headers: { 'User-Agent': 'pan.baidu.com' },
-                                    signal: AbortSignal.timeout(30000),
-                                });
+                                const getRes2 = await fetch(`${url}/api/fs/get`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: aListToken }, body: JSON.stringify({ path: absolutePath }), signal: AbortSignal.timeout(10000) });
+                                if (!getRes2.ok) continue;
+                                const gd = await getRes2.json();
+                                const rawUrl = gd.data?.raw_url;
+                                if (!rawUrl) continue;
+                                let fileStream = await fetch(rawUrl, { headers: { 'User-Agent': 'pan.baidu.com' }, signal: AbortSignal.timeout(30000) });
                                 if (!fileStream.ok) continue;
-                                const fileBuffer = Buffer.from(await fileStream.arrayBuffer());
-                                archive.append(fileBuffer, { name: pathName });
-                            } catch {}
+                                archive.append(Buffer.from(await fileStream.arrayBuffer()), { name: pathName });
+                                totalT3++;
+                            } catch { totalFailed++; }
                         }
                     }
                 }
 
-                if (true) {
-                    console.log(`[ZIP] 完成 → T1直链:${totalT1} T2降级:${totalT2} T3保底:${totalT3} 失败:${totalFailed}`);
-                    archive.finalize();
-                }
+                console.log(`[ZIP] 完成 → T1直链:${totalT1} T2降级:${totalT2} T3保底:${totalT3} 失败:${totalFailed}`);
+                await archive.finalize();
             } catch (e: any) {
                 console.error('[ZIP] 错误:', e);
-                archive.destroy();
             }
         })();
 
-        return new NextResponse(passThrough as any, { status: 200, headers: responseHeaders });
+        return new NextResponse(stream, { status: 200, headers: responseHeaders });
     } catch (error: any) {
         console.error('[ZIP] 初始化错误:', error);
         return new Response(`错误: ${error?.message}`, { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
