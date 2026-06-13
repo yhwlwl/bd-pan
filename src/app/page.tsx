@@ -1077,17 +1077,26 @@ export default function Home() {
           console.log(`[批量下载:T1] 目录数=${data.dirs.length}, 文件数=${totalFiles}`);
         }
         fetch(`/api/alist-zip-download?${params.toString()}`, headers)
-          .then(async r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob(); })
-          .then(blob => {
+          .then(async r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const skipped = parseInt(r.headers.get('X-Skipped-Files') || '0', 10);
+            const blob = await r.blob();
+            return { blob, skipped };
+          })
+          .then(({ blob, skipped }) => {
             const u = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = u; a.download = `${zipFileName}.zip`;
             document.body.appendChild(a); a.click();
             setTimeout(() => { window.URL.revokeObjectURL(u); document.body.removeChild(a); }, 100);
             setIsCompressing(false);
-            setAlistMsg('✅ ZIP 下载完成');
-            console.log(`[批量下载:T1] ✅ ZIP 下载完成`);
-            setTimeout(() => setAlistMsg(null), 3000);
+            if (skipped > 0) {
+              setAlistMsg(`⚠️ 下载完成，${skipped} 个文件因权限策略未包含`);
+            } else {
+              setAlistMsg('✅ ZIP 下载完成');
+            }
+            console.log(`[批量下载:T1] ✅ ZIP 下载完成, 跳过:${skipped}`);
+            setTimeout(() => setAlistMsg(null), 4000);
           })
           .catch(err => {
             setIsCompressing(false);
