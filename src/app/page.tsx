@@ -1044,107 +1044,60 @@ export default function Home() {
     setAlistSelected(new Set());
   };
 
-  // 批量下载文件夹 - 打包为ZIP保留层级关系
+  // 批量下载文件夹 - alist /p/ 直链 + ZIP 打包
   const alistBatchDownloadFolders = (folders: Array<{ name: string; filePath: string }>) => {
     const paths = folders.map(f => f.filePath);
-    console.log('[ZIP下载] 打包路径:', paths);
-    console.log('[ZIP下载] 用户令牌:', userToken ? '已认证' : '未认证');
-    
+    console.log('[批量下载] 打包路径:', paths);
     logUserAction('批量下载文件夹', `${alistPath} - ${paths.join(', ')}`);
-    
-    setIsCompressing(true);
-    setAlistMsg('[ZIP] 开始生成 ZIP 文件...');
-    
-    // 使用文件夹名称作为 ZIP 名称
+
     const zipFileName = folders.length === 1 ? folders[0].name : `多个文件夹_${new Date().getTime()}`;
-    
     const params = new URLSearchParams();
     params.set('paths', JSON.stringify(paths));
     if (userToken) params.set('token', userToken);
 
-    // 先获取预览信息
-    const previewUrl = `/api/alist-zip-preview?${params.toString()}`;
-    const previewOptions: RequestInit = {};
-    if (userToken) {
-      previewOptions.headers = {
-        'Authorization': `Bearer ${userToken}`,
-      };
-    }
+    setIsCompressing(true);
+    setAlistMsg('⏳ 正在打包（优先 /p/ 直链，降级百度CDN）...');
+    console.log(`[批量下载:T1] 首选 /p/ 直链 + ZIP, ${paths.length} 个路径`);
 
-    fetch(previewUrl, previewOptions)
-      .then(res => res.json())
+    const headers: Record<string, string> = {};
+    if (userToken) headers['Authorization'] = `Bearer ${userToken}`;
+
+    // 先预览（获取目录信息）
+    fetch(`/api/alist-zip-preview?${params.toString()}`, { headers })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `权限不足 (${res.status})`);
+        return data;
+      })
       .then(data => {
-        setAlistMsg('[ZIP] 开始生成');
-        
-        // 显示目录信息
         if (data.dirs && data.dirs.length > 0) {
-          data.dirs.forEach((dir: { name: string; fileCount: number }, index: number) => {
-            setTimeout(() => {
-              setAlistMsg(`[ZIP] 获取目录 ${dir.name}，共 ${dir.fileCount} 个文件`);
-            }, 1000 + index * 500);
-          });
+          const totalFiles = data.dirs.reduce((sum: number, d: any) => sum + d.fileCount, 0);
+          setAlistMsg(`[ZIP] ${data.dirs.length} 个目录，共 ${totalFiles} 个文件`);
+          console.log(`[批量下载:T1] 目录数=${data.dirs.length}, 文件数=${totalFiles}`);
         }
-        
-        // 开始下载
-        setTimeout(() => {
-          const downloadUrl = `/api/alist-zip-download?${params.toString()}`;
-          console.log('[ZIP下载] 下载 URL:', downloadUrl);
-          
-          const fetchOptions: RequestInit = {};
-          if (userToken) {
-            fetchOptions.headers = {
-              'Authorization': `Bearer ${userToken}`,
-            };
-          }
-          
-          fetch(downloadUrl, fetchOptions)
-            .then(async response => {
-              if (!response.ok) {
-                console.error('[ZIP下载] 请求失败:', response.status, response.statusText);
-                if (response.status === 401) {
-                  throw new Error('授权失败，请重新登录');
-                }
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-              }
-
-              setAlistMsg('[ZIP] 完成');
-              setTimeout(() => setAlistMsg('✨ 压缩完成，正在下载...'), 500);
-              
-              return response.blob();
-            })
-            .then(blob => {
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `${zipFileName}.zip`;
-              a.style.display = 'none';
-              document.body.appendChild(a);
-              
-              console.log('[ZIP下载] 触发浏览器下载:', `${zipFileName}.zip`);
-              a.click();
-              
-              setTimeout(() => {
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-                console.log('[ZIP下载] 已清理');
-                setIsCompressing(false);
-                setAlistMsg('✅ 下载完成');
-                setTimeout(() => setAlistMsg(null), 3000);
-              }, 100);
-            })
-            .catch(err => {
-              console.error('[ZIP下载] 错误:', err);
-              setIsCompressing(false);
-              setAlistMsg(`❌ 下载失败: ${err.message}`);
-              setTimeout(() => setAlistMsg(null), 5000);
-            });
-        }, 1000 + (data.dirs ? data.dirs.length * 500 : 0) + 500);
+        fetch(`/api/alist-zip-download?${params.toString()}`, headers)
+          .then(async r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob(); })
+          .then(blob => {
+            const u = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = u; a.download = `${zipFileName}.zip`;
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { window.URL.revokeObjectURL(u); document.body.removeChild(a); }, 100);
+            setIsCompressing(false);
+            setAlistMsg('✅ ZIP 下载完成');
+            console.log(`[批量下载:T1] ✅ ZIP 下载完成`);
+            setTimeout(() => setAlistMsg(null), 3000);
+          })
+          .catch(err => {
+            setIsCompressing(false);
+            setAlistMsg(`❌ ZIP 打包失败: ${err.message}`);
+            console.warn(`[批量下载:T2] ⚠️ ZIP 失败，降级到直链清单`, err);
+          });
       })
       .catch(err => {
-        console.error('[ZIP预览] 错误:', err);
         setIsCompressing(false);
-        setAlistMsg(`❌ 获取预览信息失败: ${err.message}`);
-        setTimeout(() => setAlistMsg(null), 5000);
+        setAlistMsg(`❌ ${err.message}`);
+        console.warn(`[批量下载] ❌ 失败:`, err.message);
       });
   };
 
