@@ -3450,8 +3450,8 @@ export default function Home() {
               </div>
             )}
 
-            <div className="grid lg:grid-cols-[1.2fr_1fr] gap-4">
-              <div className="rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+            <div className="grid lg:grid-cols-[1fr_1.2fr] gap-4">
+              <div className="rounded-xl p-4 min-w-0" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="text-[11px] font-bold mb-3" style={{ color: 'var(--text-primary)' }}>规则编辑</div>
                 <div className="space-y-3">
                   <div className="flex gap-2">
@@ -3529,11 +3529,11 @@ export default function Home() {
                             </div>
                           )}
                           {regexPreview.files.length > 0 && (
-                            <div className="max-h-[200px] overflow-y-auto space-y-1 custom-scrollbar">
+                            <div className="max-h-[200px] overflow-y-auto overflow-x-hidden space-y-1 custom-scrollbar">
                               {regexPreview.files.map((f, i) => (
-                                <div key={i} className="text-[10px] font-mono truncate flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-                                  <span>{f.is_dir ? '📁' : '📄'}</span>
-                                  <span className="truncate" title={f.path}>{f.path}</span>
+                                <div key={i} className="text-[10px] font-mono flex items-center gap-1 min-w-0" style={{ color: 'var(--text-muted)' }}>
+                                  <span className="shrink-0">{f.is_dir ? '📁' : '📄'}</span>
+                                  <span className="truncate min-w-0" title={f.path}>{f.path}</span>
                                 </div>
                               ))}
                             </div>
