@@ -7,6 +7,7 @@ import {
     getSettings,
     getUserPermissions,
 } from '../../../lib/users';
+import { pgInsert } from '../../../lib/pg-adapter';
 
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
@@ -39,6 +40,13 @@ function normalizeVisiblePath(path?: string) {
     const raw = (path || '/').trim();
     if (!raw || raw === '/') return '/';
     return (raw.startsWith('/') ? raw : `/${raw}`).replace(/\/+/g, '/').replace(/\/$/, '') || '/';
+}
+
+function formatBytes(bytes: number): string {
+    if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)}GB`;
+    if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)}MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+    return `${bytes}B`;
 }
 
 export async function GET(request: Request) {
@@ -147,13 +155,32 @@ export async function GET(request: Request) {
             fileRes = await fetch(proxyUrl, { headers: proxyHeaders });
         }
 
+        const fileSize = parseInt(fileRes.headers.get('Content-Length') || '0', 10) || (getData.data?.size || 0);
+
         if (!fileRes.ok && fileRes.status !== 206) {
             const errText = await fileRes.text().catch(() => '');
+            // 记录下载失败
+            pgInsert('bdpan_action_logs', {
+                username: user.username,
+                action_type: `下载${isPreview ? ' - 预览' : ''} - 失败`,
+                action_item: `${path} (${formatBytes(fileSize)})`,
+                ip: clientIp, location: '未知定位',
+                log_text: `${user.username} 下载失败: ${path} HTTP${fileRes.status}`,
+            }).catch(() => {});
             return new Response(`下载失败 (${fileRes.status}): ${errText.substring(0, 200)}`, {
                 status: fileRes.status,
                 headers: { 'Content-Type': 'text/plain; charset=utf-8' },
             });
         }
+
+        // 记录下载成功
+        pgInsert('bdpan_action_logs', {
+            username: user.username,
+            action_type: `下载${isPreview ? ' - 预览' : ''} - 成功`,
+            action_item: `${path} (${formatBytes(fileSize)})`,
+            ip: clientIp, location: '未知定位',
+            log_text: `${user.username} 下载成功: ${path}, ${formatBytes(fileSize)}`,
+        }).catch(() => {});
 
         const responseHeaders = new Headers();
         responseHeaders.set('Content-Disposition', `${isPreview ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(filename)}`);

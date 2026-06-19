@@ -1,6 +1,7 @@
 // PostgREST 轻量适配器 — 替代 @supabase/supabase-js
 
 const PG_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
+const PG_TOKEN = process.env.PG_DB_TOKEN || '';
 
 interface QueryResult<T = any> {
     data: T[] | null;
@@ -19,6 +20,7 @@ export async function pgFetch<T = any>(
         const url = new URL(`${PG_URL}/${path}`);
         if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
         const headers: Record<string, string> = {};
+        if (PG_TOKEN) headers['X-DB-Token'] = PG_TOKEN;
         if (body) headers['Content-Type'] = 'application/json';
         const res = await fetch(url.toString(), { method, headers, body: body ? JSON.stringify(body) : undefined });
         if (!res.ok && res.status !== 204) {
@@ -86,6 +88,7 @@ export async function pgUpsert(table: string, data: { key: string; value: any })
             'Content-Type': 'application/json',
             'Prefer': 'resolution=merge-duplicates,return=representation',
         };
+        if (PG_TOKEN) headers['X-DB-Token'] = PG_TOKEN;
         const res = await fetch(url.toString(), {
             method: 'POST',
             headers,
