@@ -1,4 +1,4 @@
-﻿import { createClient } from '@supabase/supabase-js';
+﻿import { pgClient, pgUpsert, pgInsert, pgDelete, pgUpdate, pgFetch } from './pg-adapter';
 
 export type Role = 'admin' | 'manager' | 'guest';
 
@@ -62,14 +62,7 @@ export interface GlobalSettings {
 
 export type UserWithPermissions = Omit<User, 'password'> & { permissions: UserPermissions };
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-if (!supabaseUrl || !supabaseKey) {
-    console.warn('[users] 缺少 Supabase 环境变量，部分功能将不可用');
-}
-
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+const db = pgClient();
 
 function normalizePath(path: string | undefined): string {
     const raw = (path || '/').trim();
@@ -134,17 +127,12 @@ export async function getSettings(): Promise<GlobalSettings> {
         },
     };
 
-    if (!supabase) return defaults;
+    if (!db) return defaults;
 
-    const { data, error } = await supabase
-        .from('bdpan_settings')
-        .select('value')
-        .eq('key', 'global')
-        .single();
+    const { data: rows, error } = await pgFetch<{ value: any }>('GET', 'bdpan_settings?select=value&key=eq.global&limit=1');
+    if (error || !rows || rows.length === 0) return defaults;
 
-    if (error || !data) return defaults;
-
-    const val = (data.value || {}) as Record<string, unknown>;
+    const val = (rows[0].value || {}) as Record<string, unknown>;
     const legacyDisableThird = typeof val.disableThirdDownload === 'boolean' ? val.disableThirdDownload : false;
     const dlModes = (val.downloadModes || {}) as Partial<Record<keyof NonNullable<GlobalSettings['downloadModes']>, DownloadModeState>>;
 
@@ -171,10 +159,10 @@ export async function getSettings(): Promise<GlobalSettings> {
 }
 
 export async function updateSettings(patch: Partial<GlobalSettings>): Promise<void> {
-    if (!supabase) return;
+    if (!db) return;
     const current = await getSettings();
     const merged = { ...current, ...patch };
-    await supabase.from('bdpan_settings').upsert({ key: 'global', value: merged });
+    await pgUpsert('bdpan_settings', { key: 'global', value: merged });
 }
 
 export async function getUserPermissions(username: string, role: Role): Promise<UserPermissions> {
@@ -236,22 +224,13 @@ export async function getUserPermissions(username: string, role: Role): Promise<
 }
 
 export async function getUsers(): Promise<UserWithPermissions[]> {
-    if (!supabase) return [];
+    if (!db) return [];
 
-    const { data, error } = await supabase
-        .from('bdpan_users')
-        .select('username, role')
-        .order('id', { ascending: true });
-
-    if (error) {
-        console.error('[users] getUsers error:', error);
-        return [];
-    }
-
-    const users = (data || []) as Omit<User, 'password'>[];
+    const { data: users, error } = await pgFetch<Omit<User, 'password'>>('GET', 'bdpan_users?select=username,role&order=id.asc');
+    if (error) { console.error('[users] getUsers error:', error); return []; }
     const result: UserWithPermissions[] = [];
 
-    for (const user of users) {
+    for (const user of (users || [])) {
         result.push({
             ...user,
             permissions: await getUserPermissions(user.username, user.role),
@@ -268,79 +247,55 @@ export async function getUsers(): Promise<UserWithPermissions[]> {
 }
 
 export async function findUser(username: string, password: string): Promise<Omit<User, 'password'> | null> {
-    if (!supabase) return null;
+    if (!db) return null;
 
-    const { data, error } = await supabase
-        .from('bdpan_users')
-        .select('username, role')
-        .eq('username', username)
-        .eq('password', password)
-        .single();
-
-    if (error || !data) return null;
-    return data as Omit<User, 'password'>;
+    const enc = encodeURIComponent;
+    const { data: rows, error } = await pgFetch<Omit<User, 'password'>>('GET', `bdpan_users?select=username,role&username=eq.${enc(username)}&password=eq.${enc(password)}&limit=1`);
+    if (error || !rows || rows.length === 0) return null;
+    return rows[0];
 }
 
 export async function addUser(username: string, password: string, role: Role): Promise<{ ok: boolean; error?: string }> {
-    if (!supabase) return { ok: false, error: 'Supabase 未配置' };
+    if (!db) return { ok: false, error: 'Supabase 未配置' };
     if (!username || !password) return { ok: false, error: '用户名和密码不能为空' };
 
-    const { data: existing } = await supabase
-        .from('bdpan_users')
-        .select('username')
-        .eq('username', username)
-        .single();
+    const { data: existing } = await pgFetch('GET', `bdpan_users?select=username&username=eq.${encodeURIComponent(username)}&limit=1`);
+    if (existing && existing.length > 0) return { ok: false, error: '用户名已存在' };
 
-    if (existing) return { ok: false, error: '用户名已存在' };
-
-    const { error } = await supabase.from('bdpan_users').insert({ username, password, role });
+    const { error } = await pgInsert('bdpan_users', { username, password, role });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
 }
 
 export async function removeUser(username: string): Promise<{ ok: boolean; error?: string }> {
-    if (!supabase) return { ok: false, error: 'Supabase 未配置' };
+    if (!db) return { ok: false, error: 'Supabase 未配置' };
     if (username === 'admin' || username === 'guest') {
         return { ok: false, error: `不能删除内置账号：${username}` };
     }
 
-    const { error, count } = await supabase
-        .from('bdpan_users')
-        .delete({ count: 'exact' })
-        .eq('username', username);
+    const { error } = await pgDelete('bdpan_users', 'username', username);
 
     if (error) return { ok: false, error: error.message };
-    if (count === 0) return { ok: false, error: '用户不存在' };
     return { ok: true };
 }
 
 export async function updateUserRole(username: string, role: Role): Promise<{ ok: boolean; error?: string }> {
-    if (!supabase) return { ok: false, error: 'Supabase 未配置' };
+    if (!db) return { ok: false, error: 'Supabase 未配置' };
     if (username === 'admin' || username === 'guest') {
         return { ok: false, error: `不能修改内置账号角色：${username}` };
     }
 
-    const { error, count } = await supabase
-        .from('bdpan_users')
-        .update({ role })
-        .eq('username', username);
-
+    const { error } = await pgUpdate('bdpan_users', 'username', username, { role });
     if (error) return { ok: false, error: error.message };
-    if (count === 0) return { ok: false, error: '用户不存在' };
     return { ok: true };
 }
 
 export async function updateAdminPassword(newPassword: string): Promise<{ ok: boolean; error?: string }> {
-    if (!supabase) return { ok: false, error: 'Supabase 未配置' };
+    if (!db) return { ok: false, error: 'PG_URL 未配置' };
     if (!newPassword) return { ok: false, error: '密码不能为空' };
 
-    const { error, count } = await supabase
-        .from('bdpan_users')
-        .update({ password: newPassword })
-        .eq('username', 'admin');
-
+    const { error } = await pgUpdate('bdpan_users', 'username', 'admin', { password: newPassword });
     if (error) return { ok: false, error: error.message };
-    if (count === 0) return { ok: false, error: '未找到管理员账号' };
     return { ok: true };
 }
 
