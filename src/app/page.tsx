@@ -50,6 +50,7 @@ type AlistItem = {
   path?: string;
   parent?: string;
   provider?: string;
+  thumb?: string;
 };
 
 export interface GlobalSettings {
@@ -115,6 +116,8 @@ export default function Home() {
   const [alistCopyLinkModal, setAlistCopyLinkModal] = useState<{ url: string; fileName: string } | null>(null);
   const [nodeLatencies, setNodeLatencies] = useState<Record<string, number | null>>({});
   const [isCompressing, setIsCompressing] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: any; filePath: string } | null>(null);
   const [batchModeModal, setBatchModeModal] = useState<{ folders: Array<{ name: string; filePath: string }>; files: Array<{ name: string; file: any; filePath: string }> } | null>(null);
   const [t2Progress, setT2Progress] = useState<{ current: number; total: number; msg: string } | null>(null);
   // 文件预览
@@ -3244,6 +3247,14 @@ export default function Home() {
                 <button onClick={() => alistListDir(alistPath)} className="hover:opacity-100 opacity-60 transition-opacity" title="刷新">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 </button>
+                <button
+                  onClick={() => setViewMode(v => v === 'list' ? 'grid' : 'list')}
+                  className="text-[10px] px-1.5 py-0.5 rounded transition-opacity hover:opacity-80"
+                  style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+                  title={viewMode === 'list' ? '切换为图标视图' : '切换为列表视图'}
+                >
+                  {viewMode === 'list' ? '🖼️' : '📋'}
+                </button>
               </div>
             </div>
 
@@ -3468,18 +3479,14 @@ export default function Home() {
                     </button>
                   )}
 
-                  {alistFiles.map((file: any, idx: number) => {
+                  {viewMode === 'list' ? (
+                    alistFiles.map((file: any, idx: number) => {
                     const filePath = `${alistPath.replace(/\/+$/, '')}/${file.name}`;
                     return (
                       <div key={idx} className="flex items-center gap-2 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors group">
-                        {/* 复选框 - 支持文件和文件夹 */}
                         <input type="checkbox" checked={alistSelected.has(file.name)} onChange={() => alistToggleSelect(file.name)}
                           className="w-3 h-3 accent-pink-500 shrink-0 cursor-pointer" title={file.is_dir ? '选择文件夹' : '选择文件'} />
-
-                        {/* 图标 */}
                         <span className="text-base shrink-0">{getFileIcon(file)}</span>
-
-                        {/* 重命名 */}
                         {alistRenaming === filePath ? (
                           <div className="flex-1 flex items-center gap-2">
                             <input value={alistNewName} onChange={e => setAlistNewName(e.target.value)}
@@ -3490,33 +3497,23 @@ export default function Home() {
                           </div>
                         ) : (
                           <>
-                            {/* 文件名 */}
                             <button onClick={() => alistNavigate(file)} style={{ color: 'var(--text-primary)' }}
                               className="flex-1 text-left text-[11px] font-mono hover:opacity-70 transition-opacity truncate">
                               {file.name}
                             </button>
-
-                            {/* 文件大小 — 手机端也显示 */}
                             {!file.is_dir && (
                               <span className="text-[10px] shrink-0 font-bold" style={{ color: 'var(--text-secondary)' }}>
                                 {formatSize(file.size || 0)}
                               </span>
                             )}
-
-                            {/* 修改时间 */}
                             <span className="text-[10px] shrink-0 ml-2" style={{ color: 'var(--text-muted)' }}>
                               {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
                             </span>
-
-                            {/* 管理操作 */}
                             {(canRename || canDelete || canControlFile) && (
                               <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
                                 {canControlFile && (
-                                  <button
-                                    onClick={() => openFilePermissionPanel(filePath, file.is_dir ? 'dir' : 'file')}
-                                    className="text-zinc-600 hover:text-amber-400 transition-colors p-0.5"
-                                    title="File permissions"
-                                  >
+                                  <button onClick={() => openFilePermissionPanel(filePath, file.is_dir ? 'dir' : 'file')}
+                                    className="text-zinc-600 hover:text-amber-400 transition-colors p-0.5" title="File permissions">
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2h-1V9a5 5 0 10-10 0v2H6a2 2 0 00-2 2v6a2 2 0 002 2zm3-10V9a3 3 0 116 0v2H9z" /></svg>
                                   </button>
                                 )}
@@ -3538,7 +3535,36 @@ export default function Home() {
                         )}
                       </div>
                     );
-                  })}
+                  })
+                  ) : (
+                    /* 图标视图 */
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 px-4 py-3">
+                      {alistFiles.map((file: any, idx: number) => {
+                        const filePath = `${alistPath.replace(/\/+$/, '')}/${file.name}`;
+                        const showThumb = !file.is_dir && file.thumb;
+                        return (
+                          <div key={idx}
+                            onClick={() => alistNavigate(file)}
+                            onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, item: file, filePath }); }}
+                            className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer group"
+                          >
+                            <input type="checkbox" checked={alistSelected.has(file.name)} onChange={() => alistToggleSelect(file.name)}
+                              className="w-3 h-3 accent-pink-500 shrink-0 cursor-pointer self-start" title={file.is_dir ? '选择文件夹' : '选择文件'}
+                              onClick={e => e.stopPropagation()} />
+                            {showThumb ? (
+                              <img src={file.thumb} className="w-16 h-16 object-cover rounded" alt={file.name} loading="lazy" decoding="async" />
+                            ) : (
+                              <span className="text-4xl">{getFileIcon(file)}</span>
+                            )}
+                            <span className="text-[10px] font-mono text-center truncate w-full leading-tight"
+                              style={{ color: 'var(--text-primary)' }} title={file.name}>
+                              {file.name}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -3902,6 +3928,42 @@ export default function Home() {
         <div>© {new Date().getFullYear()} 成都七中科学技术协会 (STA)</div>
         <div className="mt-1 opacity-80">本网站由25级网络部搭建运营。</div>
       </footer>
+
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div className="fixed z-[101] rounded-lg p-1.5 shadow-2xl min-w-[120px] animate-in"
+            style={{ left: Math.min(contextMenu.x, window.innerWidth - 130), top: Math.min(contextMenu.y, window.innerHeight - 200),
+              background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <button onClick={() => { alistNavigate(contextMenu.item); setContextMenu(null); }}
+              className="w-full text-left px-3 py-1.5 rounded text-[11px] hover:bg-zinc-700/50 transition-colors flex items-center gap-2"
+              style={{ color: 'var(--text-primary)' }}>
+              👁️ {contextMenu.item.is_dir ? '打开' : '预览'}
+            </button>
+            {!contextMenu.item.is_dir && canDownload && (contextMenu.item.perms ? contextMenu.item.perms.download !== false : true) && (
+              <button onClick={() => { openAlistItem(contextMenu.item, alistPath, alistProvider); setContextMenu(null); }}
+                className="w-full text-left px-3 py-1.5 rounded text-[11px] hover:bg-zinc-700/50 transition-colors flex items-center gap-2"
+                style={{ color: 'var(--text-muted)' }}>
+                ⬇️ 下载
+              </button>
+            )}
+            {canRename && (contextMenu.item.perms ? contextMenu.item.perms.rename : true) && (
+              <button onClick={() => { setAlistRenaming(contextMenu.filePath); setAlistNewName(contextMenu.item.name); setContextMenu(null); }}
+                className="w-full text-left px-3 py-1.5 rounded text-[11px] hover:bg-zinc-700/50 transition-colors flex items-center gap-2"
+                style={{ color: 'var(--text-muted)' }}>
+                📝 重命名
+              </button>
+            )}
+            {canDelete && (contextMenu.item.perms ? contextMenu.item.perms.delete : true) && (
+              <button onClick={() => { alistRemove(contextMenu.item); setContextMenu(null); }}
+                className="w-full text-left px-3 py-1.5 rounded text-[11px] hover:bg-zinc-700/50 transition-colors flex items-center gap-2 text-red-400">
+                🗑 删除
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
