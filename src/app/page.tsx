@@ -120,6 +120,9 @@ export default function Home() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: any; filePath: string } | null>(null);
   const [batchModeModal, setBatchModeModal] = useState<{ folders: Array<{ name: string; filePath: string }>; files: Array<{ name: string; file: any; filePath: string }> } | null>(null);
   const [t2Progress, setT2Progress] = useState<{ current: number; total: number; msg: string } | null>(null);
+  const [onlineUserModal, setOnlineUserModal] = useState<Array<{ username: string; lastActive: string; sessionId: string; fingerprint: string }> | null>(null);
+  const [logTimeFilter, setLogTimeFilter] = useState<string>('all');
+  const [logUserFilter, setLogUserFilter] = useState<string>('all');
   // 文件预览
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office'; filePath: string; sign?: string; size?: number } | null>(null);
   const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' | 'unknown'; perms?: { download?: boolean; preview?: boolean } } | null>(null);
@@ -365,13 +368,17 @@ export default function Home() {
   const logUserAction = async (action_type: string, action_item: string, status: 'success' | 'blocked' | 'failed' = 'success', customUsername?: string) => {
     try {
       const suffix = status === 'blocked' ? ' - 被拦截' : status === 'failed' ? ' - 失败' : '';
+      const sessionId = typeof window !== 'undefined' ? localStorage.getItem('BDPAN_SESSION') || '' : '';
+      const fingerprint = typeof window !== 'undefined' ? localStorage.getItem('BDPAN_FINGERPRINT') || '' : '';
       await fetch('/api/log-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: customUsername || username || '游客',
           action_type: action_type + suffix,
-          action_item
+          action_item,
+          session_id: sessionId,
+          fingerprint,
         })
       });
     } catch { }
@@ -559,6 +566,11 @@ export default function Home() {
         window.localStorage.setItem('BDPAN_ROLE', data.role);
         window.localStorage.setItem('BDPAN_USERNAME', data.username);
         if (data.permissions) window.localStorage.setItem('BDPAN_PERMS', JSON.stringify(data.permissions));
+        if (data.sessionId) window.localStorage.setItem('BDPAN_SESSION', data.sessionId);
+        // 游客指纹：login时无指纹则生成
+        if (!window.localStorage.getItem('BDPAN_FINGERPRINT')) {
+          window.localStorage.setItem('BDPAN_FINGERPRINT', `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`);
+        }
       }
       setLoginUsername('');
       setLoginPassword('');
@@ -587,6 +599,10 @@ export default function Home() {
         window.localStorage.setItem('BDPAN_ROLE', data.role);
         window.localStorage.setItem('BDPAN_USERNAME', data.username);
         if (data.permissions) window.localStorage.setItem('BDPAN_PERMS', JSON.stringify(data.permissions));
+        if (data.sessionId) window.localStorage.setItem('BDPAN_SESSION', data.sessionId);
+        if (!window.localStorage.getItem('BDPAN_FINGERPRINT')) {
+          window.localStorage.setItem('BDPAN_FINGERPRINT', `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`);
+        }
       }
       logUserAction('登录 - 游客', 'guest', 'success', 'guest');
     } catch { logUserAction('登录 - 游客', '接口异常', 'failed', 'guest'); setAuthError('登录接口异常'); }
@@ -594,6 +610,7 @@ export default function Home() {
   };
 
   const handleLogout = () => {
+    logUserAction('登出', username || '');
     setUserToken(null);
     setUserRole(null);
     setUsername(null);
@@ -1307,6 +1324,7 @@ export default function Home() {
             if (uploadData.code === 200) {
               directSuccess = true;
               successCount++;
+              logUserAction('上传', relativePath);
             } else {
               throw new Error(uploadData.message);
             }
@@ -1356,6 +1374,7 @@ export default function Home() {
         }
       } catch (e: any) {
          failCount++;
+         logUserAction('上传', `${alistPath}/${file.name}`, 'failed');
          lastError = e.message;
       }
     }
@@ -1429,6 +1448,10 @@ export default function Home() {
         if (data.settings.downloadModes) {
           setGlobalDownloadModes(data.settings.downloadModes);
         }
+      }
+      // 设置变更日志
+      if (action === 'updateSettings') {
+        logUserAction('设置变更', JSON.stringify(body.settings || {}).substring(0, 200));
       }
       setAdminMsg('✅ 操作成功');
     } catch { setAdminMsg('❌ 接口异常'); }
@@ -1741,7 +1764,13 @@ export default function Home() {
                 <span className="text-lg">{isAdmin ? '👑' : '📊'}</span>
                 <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{isAdmin ? '管理面板' : '日志面板'}</h3>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
+                {adminStats?.onlineUsers?.length > 0 && (
+                  <button onClick={() => setOnlineUserModal(adminStats.onlineUsers)}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 transition-colors">
+                    🟢 在线: {adminStats.onlineUsers.length} 人
+                  </button>
+                )}
                 <button onClick={() => { setAdminMsg(null); fetchAdminData(); }} className="text-sm hover:opacity-100 opacity-50 transition-opacity p-1" title="刷新数据">🔄</button>
                 <button onClick={() => setShowAdminPanel(false)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
               </div>
@@ -1864,8 +1893,8 @@ export default function Home() {
                           const banExpiry = isBanned ? new Date(adminSettings.bannedIps![log.ip_address]).toLocaleString() : '';
                           return (
                             <tr key={idx} className="border-t border-zinc-800/30">
-                              <td className="py-1.5 w-[120px] truncate" title={`${log.ip_address} - ${location}`}>
-                                <div className="font-mono text-zinc-300">{log.ip_address}</div>
+                              <td className={`py-1.5 w-[120px] truncate ${isBanned ? 'bg-red-500/10' : ''}`} title={`${log.ip_address} - ${location}${isBanned ? ' ⛔已封禁' : ''}`}>
+                                <div className="font-mono text-zinc-300">{isBanned && '🚫 '}{log.ip_address}</div>
                                 <div className="text-[9px] text-zinc-500">{location}</div>
                               </td>
                               <td className="py-1.5 w-[120px] truncate text-zinc-400" title={new Date(log.visit_time).toLocaleString()}>
@@ -1904,9 +1933,9 @@ export default function Home() {
                           const isBanned = adminSettings?.bannedIps?.[ipHit.ip] && adminSettings.bannedIps[ipHit.ip] > Date.now();
                           const banExpiry = isBanned ? new Date(adminSettings.bannedIps![ipHit.ip]).toLocaleString() : '';
                           return (
-                            <tr key={ipHit.ip} className="border-t border-zinc-800/30">
-                              <td className="py-1.5 w-[120px] truncate" title={`${ipHit.ip} - ${ipHit.location}`}>
-                                <div className="font-mono text-zinc-300">{ipHit.ip}</div>
+                            <tr key={ipHit.ip} className={`border-t ${isBanned ? 'bg-red-500/10' : 'border-zinc-800/30'}`}>
+                              <td className="py-1.5 w-[120px] truncate" title={`${ipHit.ip} - ${ipHit.location}${isBanned ? ' ⛔已封禁' : ''}`}>
+                                <div className="font-mono text-zinc-300">{isBanned && '🚫 '}{ipHit.ip}</div>
                                 <div className="text-[9px] text-zinc-500">{ipHit.location || '未知定位'}</div>
                               </td>
                               <td className="py-1.5 text-center">
@@ -1952,12 +1981,28 @@ export default function Home() {
             {adminStats && (isAdmin || userPerms?.viewActionLogs) && adminStats.recentActions && adminStats.recentActions.length > 0 && (
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="flex items-center justify-between">
-                  <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>操作日志 (最近)</div>
-                  <div className="flex gap-2">
+                  <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: 'var(--text-muted)' }}>操作日志</div>
+                  <div className="flex gap-1 flex-wrap">
+                    <select value={logTimeFilter} onChange={(e) => setLogTimeFilter(e.target.value)}
+                      className="rounded px-1 py-0.5 text-[10px] outline-none"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                      <option value="all">全部时间</option>
+                      <option value="today">今天</option>
+                      <option value="7d">最近7天</option>
+                      <option value="30d">最近30天</option>
+                    </select>
+                    <select value={logUserFilter} onChange={(e) => setLogUserFilter(e.target.value)}
+                      className="rounded px-1 py-0.5 text-[10px] outline-none"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                      <option value="all">全部用户</option>
+                      {(adminStats.recentActions || []).map((a: any) => a.username).filter((v: string, i: number, arr: string[]) => arr.indexOf(v) === i).slice(0, 20).map((u: string) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
                     <select
                       value={logFilter}
                       onChange={(e) => setLogFilter(e.target.value)}
-                      className="rounded px-1.5 py-0.5 text-[10px] outline-none transition-all"
+                      className="rounded px-1.5 py-0.5 text-[10px] outline-none"
                       style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                     >
                       <option value="全部">全部</option>
@@ -1971,7 +2016,7 @@ export default function Home() {
                     <select
                       value={riskLimit}
                       onChange={(e) => setRiskLimit(Number(e.target.value))}
-                      className="rounded px-1.5 py-0.5 text-[10px] outline-none transition-all"
+                      className="rounded px-1 py-0.5 text-[10px] outline-none transition-all"
                       style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                     >
                       <option value={10}>10 条</option>
@@ -1979,6 +2024,22 @@ export default function Home() {
                       <option value={200}>200 条</option>
                       <option value={99999}>全部</option>
                     </select>
+                    <button
+                      onClick={() => {
+                        const filtered = adminStats.recentActions.filter((log: any) => {
+                          if (logFilter !== '全部' && !log.action.includes(logFilter)) return false;
+                          if (logUserFilter !== 'all' && log.username !== logUserFilter) return false;
+                          return true;
+                        });
+                        const csv = '时间,用户,动作,对象,IP,定位\n' + filtered.map((l: any) =>
+                          `"${l.time}","${l.username}","${l.action}","${l.item}","${l.ip}","${l.location}"`).join('\n');
+                        const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+                        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = '操作日志.csv';
+                        a.click(); URL.revokeObjectURL(a.href);
+                      }}
+                      className="rounded px-1.5 py-0.5 text-[10px] font-bold transition-colors hover:bg-zinc-700"
+                      style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+                    >📥 CSV</button>
                   </div>
                 </div>
                 <div className="max-h-64 overflow-y-auto pr-2 custom-scrollbar">
@@ -1994,6 +2055,17 @@ export default function Home() {
                     </thead>
                     <tbody>
                       {adminStats.recentActions
+                        .filter((log: any) => {
+                          // 时间筛选
+                          if (logTimeFilter === 'today') return new Date(log.time) >= new Date(Date.now() - 24*3600*1000);
+                          if (logTimeFilter === '7d') return new Date(log.time) >= new Date(Date.now() - 7*24*3600*1000);
+                          if (logTimeFilter === '30d') return new Date(log.time) >= new Date(Date.now() - 30*24*3600*1000);
+                          return true;
+                        })
+                        .filter((log: any) => {
+                          if (logUserFilter === 'all') return true;
+                          return log.username === logUserFilter;
+                        })
                         .filter((log: any) => {
                           if (logFilter === '全部') return true;
                           return log.action.includes(logFilter);
@@ -2152,6 +2224,7 @@ export default function Home() {
                       const content = adminSettings.announcement || '';
                       adminAction('updateSettings', { settings: { announcement: content } });
                       setGlobalAnnouncement(content);
+                      logUserAction('公告发布', content.substring(0, 100));
                       setAlistMsg('✅ 公告已成功发布');
                     }}
                     className="px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-100 text-[10px] font-bold rounded-lg transition-all shadow-md active:scale-95"
@@ -2323,6 +2396,39 @@ export default function Home() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 在线用户弹窗 */}
+      {onlineUserModal && (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setOnlineUserModal(null)}>
+          <div className="w-full max-w-sm glass-strong rounded-2xl p-5 mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>🟢 在线用户 ({onlineUserModal.length})</h3>
+              <button onClick={() => setOnlineUserModal(null)} className="text-lg opacity-60 hover:opacity-100">✕</button>
+            </div>
+            <div className="max-h-64 overflow-y-auto space-y-1">
+              {onlineUserModal.map((u, i) => (
+                <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded bg-black/20 text-[11px]">
+                  <div>
+                    <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{u.username}</span>
+                    <span className="ml-2 text-zinc-500">{u.lastActive ? new Date(u.lastActive).toLocaleTimeString() : ''}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => {
+                      // 强制登出：写入登出日志
+                      fetch('/api/log-action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: u.username, action_type: '登出 - 强制', action_item: u.username, session_id: u.sessionId, fingerprint: u.fingerprint }),
+                      }).catch(() => {});
+                      setOnlineUserModal(prev => prev ? prev.filter(x => x.username !== u.username) : null);
+                    }} className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20">登出</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
