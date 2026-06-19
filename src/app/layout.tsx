@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "../lib/server-log"; // 劫持 console.log/warn/error 到内存缓冲
 import "./globals.css";
 
 export const metadata: Metadata = {
