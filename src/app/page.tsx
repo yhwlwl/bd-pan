@@ -2303,6 +2303,26 @@ export default function Home() {
               </div>
             </div>
             )}
+
+            {/* 服务端日志（仅 admin） */}
+            {isAdmin && (
+              <div className="mt-4 rounded-xl p-4" style={{ background: '#0a0a0a', border: '1px solid #333' }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-zinc-500">🖥️ 服务端日志 (最近100条)</span>
+                  <button onClick={async () => {
+                    try {
+                      const res = await fetch('/api/debug-logs?limit=100', { headers: { Authorization: `Bearer ${userToken}` } });
+                      const data = await res.json();
+                      const logs = data.logs || [];
+                      const w = window.open('', '_blank', 'width=900,height=600');
+                      if (w) {
+                        w.document.write(`<pre style="background:#111;color:#0f0;padding:12px;font:11px monospace;white-space:pre-wrap">${logs.map((l:any) => `[${new Date(l.time).toLocaleTimeString()}] ${l.msg}`).join('\n')}</pre>`);
+                      }
+                    } catch {}
+                  }} className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 hover:text-white transition-colors">📋 在新窗口打开</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
