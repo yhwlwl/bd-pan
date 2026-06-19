@@ -224,7 +224,12 @@ export async function POST(request: Request) {
                     console.log(`[alist] list fetched ${result.data.content.length} items, time=${Date.now() - startTime}ms`);
                     const filtered = [];
                     for (const item of result.data.content) {
-                        const itemPath = item?.path || `${scopedPath.replace(/\/+$/, '')}/${item?.name || ''}`;
+                        // alist 某些驱动返回的 item.path 可能不带挂载前缀，补齐
+                        let itemPath = item?.path;
+                        if (itemPath && !itemPath.startsWith(scopedPath) && itemPath !== scopedPath) {
+                            itemPath = `${scopedPath.replace(/\/+$/, '')}/${itemPath.replace(/^\//, '')}`;
+                        }
+                        itemPath = itemPath || `${scopedPath.replace(/\/+$/, '')}/${item?.name || ''}`;
                         const itemPerms = getEffectivePermissionsForPathCached(itemPath);
                         if (!itemPerms.view && !itemPerms.download && !itemPerms.preview) continue;
                         filtered.push({
@@ -276,7 +281,10 @@ export async function POST(request: Request) {
                 if (Array.isArray(result?.data?.content)) {
                     const filtered = [];
                     for (const item of result.data.content) {
-                        const itemPath = item?.path || item?.obj_path || item?.full_path || item?.parent;
+                        let itemPath = item?.path || item?.obj_path || item?.full_path || item?.parent;
+                        if (itemPath && scopedParent && !itemPath.startsWith(scopedParent) && itemPath !== scopedParent) {
+                            itemPath = `${scopedParent.replace(/\/+$/, '')}/${itemPath.replace(/^\//, '')}`;
+                        }
                         const itemPerms = getEffectivePermissionsForPathCached(itemPath);
                         if (!itemPerms.view && !itemPerms.download && !itemPerms.preview) continue;
                         filtered.push({
