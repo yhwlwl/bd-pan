@@ -161,6 +161,7 @@ export async function GET(request: Request) {
             const errText = await fileRes.text().catch(() => '');
             // 记录下载失败
             pgInsert('bdpan_action_logs', {
+                created_at: new Date().toISOString(),
                 username: user.username,
                 action_type: `下载${isPreview ? ' - 预览' : ''} - 失败`,
                 action_item: `${path} (${formatBytes(fileSize)})`,
@@ -175,6 +176,7 @@ export async function GET(request: Request) {
 
         // 记录下载成功
         pgInsert('bdpan_action_logs', {
+            created_at: new Date().toISOString(),
             username: user.username,
             action_type: `下载${isPreview ? ' - 预览' : ''} - 成功`,
             action_item: `${path} (${formatBytes(fileSize)})`,

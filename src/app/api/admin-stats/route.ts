@@ -79,9 +79,31 @@ export async function GET(request: Request) {
         const topIps = Object.entries(ipStats).map(([ip, data]) => ({ ip, ...data })).sort((a, b) => b.count - a.count).slice(0, 30);
         const totalPanVisits = (viewLogs || []).filter((l: any) => l.page_source === 'pan').length;
 
+        // 在线用户：1h 内有登录且无登出的
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const loginMap = new Map<string, { time: string; role: string; sessionId: string; fingerprint: string }>();
+        const logoutMap = new Map<string, string>();
+        (logs || []).forEach((l: any) => {
+            const t = new Date(l.created_at);
+            if (l.action_type === '登录' && t >= oneHourAgo) {
+                if (!loginMap.has(l.username)) loginMap.set(l.username, { time: l.created_at, role: '', sessionId: l.session_id || '', fingerprint: l.fingerprint || '' });
+            }
+            if (l.action_type === '登出' && t >= oneHourAgo) {
+                const prev = logoutMap.get(l.username);
+                if (!prev || t > new Date(prev)) logoutMap.set(l.username, l.created_at);
+            }
+        });
+        const onlineUsers: Array<{ username: string; lastActive: string; sessionId: string; fingerprint: string }> = [];
+        loginMap.forEach((v, username) => {
+            const lgOut = logoutMap.get(username);
+            if (!lgOut || new Date(v.time) > new Date(lgOut)) {
+                onlineUsers.push({ username, lastActive: v.time, sessionId: v.sessionId, fingerprint: v.fingerprint });
+            }
+        });
+
         return NextResponse.json({
             code: 200,
-            data: { totalPanVisits, past24hDownloads, totalDownloads, channelStats, recentActions, topIps, allDownloadLogs, viewLogs: viewLogs || [] },
+            data: { totalPanVisits, past24hDownloads, totalDownloads, channelStats, recentActions, topIps, allDownloadLogs, viewLogs: viewLogs || [], onlineUsers },
         });
     } catch (e: any) {
         console.error('[stats] error:', e);

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { signToken } from '../_auth';
 import { findUser, getSettings, getUserPermissions, checkIpBanned } from '../../../lib/users';
 
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
             const token = signToken('guest', 'guest', durationHours);
             if (!token) return NextResponse.json({ error: '服务端配置异常' }, { status: 500 });
             const permissions = await getUserPermissions('guest', 'guest');
-            return NextResponse.json({ token, role: 'guest', username: 'guest', permissions });
+            const sessionId = crypto.randomUUID();
+            return NextResponse.json({ token, role: 'guest', username: 'guest', permissions, sessionId });
         }
 
         // 用户名密码登录
@@ -40,7 +42,8 @@ export async function POST(request: Request) {
         if (!token) return NextResponse.json({ error: '服务端配置异常' }, { status: 500 });
 
         const permissions = await getUserPermissions(user.username, user.role);
-        return NextResponse.json({ token, role: user.role, username: user.username, permissions });
+        const sessionId = crypto.randomUUID();
+        return NextResponse.json({ token, role: user.role, username: user.username, permissions, sessionId });
     } catch {
         return NextResponse.json({ error: '登录接口异常' }, { status: 500 });
     }

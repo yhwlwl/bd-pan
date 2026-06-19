@@ -25,6 +25,7 @@ export async function pgFetch<T = any>(
         const res = await fetch(url.toString(), { method, headers, body: body ? JSON.stringify(body) : undefined });
         if (!res.ok && res.status !== 204) {
             const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+            console.error(`[pg-adapter] ${method} ${PG_URL}/${path} → ${res.status}:`, err.message || err);
             return { data: null, error: { message: err.message || `HTTP ${res.status}` } };
         }
         const text = await res.text();
