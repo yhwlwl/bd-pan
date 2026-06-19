@@ -308,10 +308,20 @@ export default function Home() {
         return false;
       }
 
-      let previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}&preview=1`;
-      if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
-      const ccObj = getCustomConfig();
-      if (ccObj) previewUrl += `&c=${btoa(JSON.stringify(ccObj))}`;
+      let previewUrl: string;
+
+      // 视频：走 alist /p/ 直链，支持原生 Range（边下边播）
+      if (type === 'video') {
+        const sign = data.data?.sign || '';
+        previewUrl = sign
+          ? `${getAlistBase()}/p${filePath}?sign=${sign}`
+          : `${getAlistBase()}/p${filePath}`;
+      } else {
+        previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}&preview=1`;
+        if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
+        const ccObj = getCustomConfig();
+        if (ccObj) previewUrl += `&c=${btoa(JSON.stringify(ccObj))}`;
+      }
 
       // 接入微软 Office 在线预览服务
       if (type === 'office') {
@@ -1726,7 +1736,10 @@ export default function Home() {
                 <span className="text-lg">{isAdmin ? '👑' : '📊'}</span>
                 <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{isAdmin ? '管理面板' : '日志面板'}</h3>
               </div>
-              <button onClick={() => setShowAdminPanel(false)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => { setAdminMsg(null); fetchAdminData(); }} className="text-sm hover:opacity-100 opacity-50 transition-opacity p-1" title="刷新数据">🔄</button>
+                <button onClick={() => setShowAdminPanel(false)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
+              </div>
             </div>
 
             {adminMsg && (
