@@ -32,33 +32,7 @@ async function getAlistToken(url: string, user: string, pass: string): Promise<s
     return token;
 }
 
-function normalizeVisiblePath(path: string): string {
-    return path.replace(/\/+/g, '/').replace(/\/$/, '') || '/';
-}
-
-async function getAllFilesInDir(
-    aListUrl: string, aListToken: string, dirPath: string,
-    maxDepth = 100, currentDepth = 0,
-): Promise<Array<{ path: string; size: number; name: string; sign?: string }>> {
-    if (currentDepth >= maxDepth) return [];
-    const res = await fetch(`${aListUrl}/api/fs/list`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: aListToken },
-        body: JSON.stringify({ path: dirPath }),
-    });
-    const data = await res.json();
-    if (data.code !== 200) return [];
-    const items = data.data?.content || [];
-    const allFiles: Array<{ path: string; size: number; name: string; sign?: string }> = [];
-    for (const item of items) {
-        const itemPath = `${normalizeVisiblePath(dirPath)}/${item.name}`.replace(/\/+/g, '/');
-        if (item.is_dir) {
-            allFiles.push(...(await getAllFilesInDir(aListUrl, aListToken, itemPath, maxDepth, currentDepth + 1)));
-        } else {
-            allFiles.push({ path: itemPath, size: item.size || 0, name: item.name, sign: item.sign || undefined });
-        }
-    }
-    return allFiles;
-}
+import { getAllFilesInDir } from '../../../lib/alist-utils';
 
 export async function GET(request: Request) {
     try {

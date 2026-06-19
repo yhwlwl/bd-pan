@@ -263,13 +263,6 @@ export async function POST(request: Request) {
             case 'list_archive':
                 result = await alistFetch('/api/fs/other', { path: scopedPath, method: 'list_archive' }, config);
                 break;
-            case 'archive':
-                result = await alistFetch('/api/fs/other', {
-                    method: 'archive',
-                    paths: JSON.parse((body as any).paths || '[]'),
-                    name: ((body as any).name || 'download') + '.zip',
-                }, config);
-                break;
             case 'search':
                 result = await alistFetch('/api/fs/search', {
                     parent: scopedParent,

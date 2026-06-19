@@ -313,12 +313,14 @@ export default function Home() {
 
       let previewUrl: string;
 
-      // 视频：走 alist /p/ 直链，支持原生 Range（边下边播）
-      if (type === 'video') {
+      // 视频/PDF：走 ECS 直连（秒加载 + Range 支持）
+      if (type === 'video' || type === 'pdf') {
         const sign = data.data?.sign || '';
+        const base = type === 'pdf' ? getAlistBase().replace(/:5245$/, '') : getAlistBase();
+        const pathPrefix = type === 'pdf' ? '/pdf-preview' : '/p';
         previewUrl = sign
-          ? `${getAlistBase()}/p${filePath}?sign=${sign}`
-          : `${getAlistBase()}/p${filePath}`;
+          ? `${base}${pathPrefix}${filePath}?sign=${sign}`
+          : `${base}${pathPrefix}${filePath}`;
       } else {
         previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}&preview=1`;
         if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
