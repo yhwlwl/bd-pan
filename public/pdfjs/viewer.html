@@ -22,8 +22,8 @@ canvas{display:block;margin:0 auto}
 import { getDocument, GlobalWorkerOptions } from './pdf.min.mjs';
 GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
 const s=document.getElementById('status'),view=document.getElementById('view');
-const key=(new URL(location.href)).searchParams.get('key')||'';
-const url=sessionStorage.getItem(key)||'';if(key)sessionStorage.removeItem(key);
+const file=(new URL(location.href)).searchParams.get('file')||'';
+const url=decodeURIComponent(file);
 document.title=url.split('/').pop()||'PDF';
 try{
   const task=getDocument({url,disableRange:true,disableStream:false});

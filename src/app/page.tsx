@@ -328,10 +328,7 @@ export default function Home() {
           : `${base}${pathPrefix}${filePath}`;
         // PDF：统一用 PDF.js（桌面+手机）
         if (type === 'pdf') {
-          // 用 sessionStorage 传 URL，不暴露在地址栏
-          const key = 'pdf_preview_' + Date.now();
-          sessionStorage.setItem(key, previewUrl);
-          const pdfJsUrl = `${API_BASE}/pdfjs/viewer.html?key=${key}`;
+          const pdfJsUrl = `${API_BASE}/pdfjs/viewer.html?file=${encodeURIComponent(previewUrl)}`;
           setPreviewFile({ name, url: pdfJsUrl, type, filePath, sign, size });
           setPreviewLoading(false);
           return true;
