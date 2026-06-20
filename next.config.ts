@@ -8,10 +8,14 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const turbopackRoot = fileURLToPath(new URL(".", import.meta.url));
 
 const nextConfig: NextConfig = {
-  /* config options here */
   reactCompiler: true,
   turbopack: {
     root: turbopackRoot,
+  },
+  async headers() {
+    return [
+      { source: '/pdfjs/:path*.mjs', headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }] },
+    ];
   },
 };
 
