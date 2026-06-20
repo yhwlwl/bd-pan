@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>403 Forbidden — STA-PAN</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { height: 100%; }
+
+    body {
+      font-family: "SF Mono", "Cascadia Code", "Fira Code", "Consolas", "JetBrains Mono",
+                   "Source Code Pro", "Menlo", monospace;
+      background: #0b0e14;
+      color: #cdd6f4;
+      min-height: 100%;
+      display: flex;
+      align-items: safe center;
+      justify-content: safe center;
+      overflow-y: auto;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.15) 2px,
+        rgba(0, 0, 0, 0.15) 4px
+      );
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    .container {
+      position: relative;
+      max-width: 780px;
+      width: 100%;
+      padding: 48px 40px 32px;
+      z-index: 1;
+      margin: auto;
+    }
+
+    .container::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: linear-gradient(180deg,
+        #f38ba8 0%,
+        #f38ba8 30%,
+        #fab387 30%,
+        #fab387 60%,
+        #a6e3a1 60%,
+        #a6e3a1 100%
+      );
+      border-radius: 2px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 28px;
+      padding-left: 24px;
+    }
+
+    .code {
+      font-size: 72px;
+      font-weight: 900;
+      color: #f38ba8;
+      text-shadow: 0 0 40px rgba(243, 139, 168, 0.5), 0 0 80px rgba(243, 139, 168, 0.2);
+      line-height: 1;
+    }
+
+    .divider {
+      width: 2px;
+      height: 56px;
+      background: #313244;
+      border-radius: 1px;
+    }
+
+    .title-block { display: flex; flex-direction: column; gap: 2px; }
+
+    .title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #f38ba8;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: #585b70;
+      letter-spacing: 2px;
+    }
+
+    .terminal {
+      background: rgba(30, 32, 41, 0.85);
+      border: 1px solid #313244;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-left: 24px;
+    }
+
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: #181a20;
+      border-bottom: 1px solid #313244;
+    }
+
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.red    { background: #f38ba8; }
+    .dot.yellow { background: #f9e2af; }
+    .dot.green  { background: #a6e3a1; }
+
+    .terminal-title {
+      margin-left: 8px;
+      font-size: 11px;
+      color: #585b70;
+      letter-spacing: 0.5px;
+    }
+
+    .terminal-body {
+      padding: 20px 24px;
+    }
+
+    .line {
+      font-size: 13px;
+      line-height: 1.9;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .line .prompt { color: #a6e3a1; }
+    .line .cmd    { color: #cdd6f4; }
+    .line .err    { color: #f38ba8; }
+    .line .warn   { color: #fab387; }
+    .line .dim    { color: #585b70; }
+
+    .info-panel {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #313244;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .info-row {
+      display: flex;
+      align-items: baseline;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    .info-row .key {
+      color: #585b70;
+      min-width: 52px;
+      text-align: right;
+      margin-right: 14px;
+      flex-shrink: 0;
+    }
+    .info-row .val {
+      color: #bac2de;
+      word-break: break-all;
+    }
+    .info-row .val.em    { color: #f38ba8; font-weight: 700; }
+    .info-row .val.warn  { color: #fab387; }
+    .info-row .val.good  { color: #a6e3a1; }
+
+    .geo-bar {
+      margin-top: 10px;
+      padding: 8px 14px;
+      background: rgba(243, 139, 168, 0.06);
+      border: 1px solid rgba(243, 139, 168, 0.18);
+      border-radius: 4px;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .geo-bar.loaded { display: flex; }
+    .geo-bar .flag  { font-size: 18px; flex-shrink: 0; }
+    .geo-bar .loc   { color: #f38ba8; font-weight: 600; }
+    .geo-bar .isp   { color: #bac2de; }
+    .geo-bar .coord { color: #a6e3a1; font-size: 11px; }
+    .geo-bar .sep   { color: #45475a; }
+
+    .footer {
+      margin-top: 28px;
+      margin-left: 24px;
+      font-size: 11px;
+      color: #45475a;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+
+    <div class="header">
+      <span class="code">403</span>
+      <div class="divider"></div>
+      <div class="title-block">
+        <span class="title">Access Denied 喵~不给看</span>
+        <span class="subtitle">DATABASE GATEWAY · STA-PAN</span>
+      </div>
+    </div>
+
+    <div class="terminal">
+      <div class="terminal-bar">
+        <span class="dot red"></span>
+        <span class="dot yellow"></span>
+        <span class="dot green"></span>
+        <span class="terminal-title">
+          sta-pan — db-gateway — __HOST__
+        </span>
+      </div>
+      <div class="terminal-body">
+        <div class="line">
+<span class="prompt">gateway $</span> <span class="cmd">curl -H "X-Db-Token: ****" /db/</span>
+        </div>
+        <div class="line">
+<span class="err">[ERROR] 喵？！token 不对喵！小登想干嘛？</span>
+        </div>
+        <div class="line" style="margin-top: 8px;">
+<span class="prompt">gateway $</span> <span class="cmd">logread | tail -1</span>
+        </div>
+        <div class="line">
+<span class="warn">[WARN] 拦截了一次非法数据库探访喵~ 事件已写入安全日志。</span>
+        </div>
+        <div class="line">
+<span class="dim">├─ 小登信息已加入监控列表了喵</span>
+        </div>
+        <div class="line">
+<span class="dim">└─ 再来的话……就不客气了哦！（自动封禁预警）</span>
+        </div>
+
+        <div class="info-panel">
+          <div class="info-row">
+            <span class="key">TIME</span>
+            <span class="val" id="info-time">__TIME_LOCAL__</span>
+          </div>
+          <div class="info-row">
+            <span class="key">HOST</span>
+            <span class="val" id="info-host">__HOST__</span>
+          </div>
+          <div class="info-row">
+            <span class="key">SRC IP</span>
+            <span class="val em" id="info-ip">__REMOTE_ADDR__</span>
+          </div>
+          <div class="info-row" id="row-isp" style="display:none">
+            <span class="key">ISP</span>
+            <span class="val" id="info-isp">—</span>
+          </div>
+          <div class="info-row" id="row-loc" style="display:none">
+            <span class="key">LOC</span>
+            <span class="val warn" id="info-loc">—</span>
+          </div>
+          <div class="info-row" id="row-coord" style="display:none">
+            <span class="key">COORD</span>
+            <span class="val good" id="info-coord">—</span>
+          </div>
+          <div class="info-row">
+            <span class="key">UA</span>
+            <span class="val" id="info-ua">__HTTP_USER_AGENT__</span>
+          </div>
+          <div class="info-row">
+            <span class="key">STATUS</span>
+            <span class="val em">REJECTED</span>
+          </div>
+          <div class="info-row">
+            <span class="key">EVENT</span>
+            <span class="val dim" id="info-evt">—</span>
+          </div>
+        </div>
+
+        <div class="geo-bar" id="geo-bar">
+          <span class="flag" id="geo-flag">🌐</span>
+          <span class="loc" id="geo-loc-text">查询中…</span>
+          <span class="sep">|</span>
+          <span class="isp" id="geo-isp-text"></span>
+          <span class="sep" id="geo-coord-sep" style="display:none">|</span>
+          <span class="coord" id="geo-coord-text"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      STA-PAN Database Gateway &copy; 成都七中科学技术协会
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    // ── 生成事件 ID ──
+    var evtId = 'EVT-' + Date.now().toString(36).toUpperCase() +
+                '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+    var elEvt = document.getElementById('info-evt');
+    if (elEvt && elEvt.textContent.trim() === '—') elEvt.textContent = evtId;
+
+    // ── 读取服务端注入的值（sub_filter 替换占位符后的结果）──
+    function getServerVal(id, placeholder) {
+      var node = document.getElementById(id);
+      if (!node) return null;
+      var t = node.textContent.trim();
+      // 如果还是占位符原文，说明 sub_filter 没生效
+      if (!t || t === placeholder || t === '—') return null;
+      return t;
+    }
+
+    var srvIP   = getServerVal('info-ip',   '__REMOTE_ADDR__');
+    var srvTime = getServerVal('info-time', '__TIME_LOCAL__');
+    var srvHost = getServerVal('info-host', '__HOST__');
+    var srvUA   = getServerVal('info-ua',   '__HTTP_USER_AGENT__');
+
+    // ── 格式化时间 ──
+    if (srvTime) {
+      try {
+        var m = srvTime.match(/(\d{2})\/(\w{3})\/(\d{4}):(\d{2}:\d{2}:\d{2})\s*([+-]\d{4})?/);
+        if (m) {
+          var months = { Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
+                         Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12' };
+          document.getElementById('info-time').textContent =
+            m[3] + '-' + (months[m[2]] || m[2]) + '-' + m[1] + ' ' + m[4] + ' ' + (m[5] || '');
+        }
+      } catch(e) {}
+    } else {
+      var now = new Date();
+      document.getElementById('info-time').textContent =
+        now.getFullYear() + '-' +
+        String(now.getMonth() + 1).padStart(2, '0') + '-' +
+        String(now.getDate()).padStart(2, '0') + ' ' +
+        String(now.getHours()).padStart(2, '0') + ':' +
+        String(now.getMinutes()).padStart(2, '0') + ':' +
+        String(now.getSeconds()).padStart(2, '0') +
+        ' (local)';
+    }
+
+    // ── UA 回退 ──
+    if (!srvUA) {
+      document.getElementById('info-ua').textContent = navigator.userAgent || '—';
+    }
+
+    // ── 地理查询（通过服务端代理，避免浏览器 Mixed Content 拦截）──
+    var geoBar     = document.getElementById('geo-bar');
+    var geoFlag    = document.getElementById('geo-flag');
+    var geoLocText = document.getElementById('geo-loc-text');
+    var geoIspText = document.getElementById('geo-isp-text');
+    var infoIsp    = document.getElementById('info-isp');
+    var infoLoc    = document.getElementById('info-loc');
+    var rowIsp     = document.getElementById('row-isp');
+    var rowLoc     = document.getElementById('row-loc');
+
+    function countryFlag(code) {
+      if (!code || code.length !== 2) return '🌐';
+      code = code.toUpperCase();
+      return String.fromCodePoint(0x1F1E6 + code.charCodeAt(0) - 65,
+                                   0x1F1E6 + code.charCodeAt(1) - 65);
+    }
+
+    var infoCoord  = document.getElementById('info-coord');
+    var rowCoord   = document.getElementById('row-coord');
+    var geoCoordSep  = document.getElementById('geo-coord-sep');
+    var geoCoordText = document.getElementById('geo-coord-text');
+
+    function applyGeo(data) {
+      if (!data || data.status !== 'success') {
+        geoLocText.textContent = '无法获取位置信息';
+        geoBar.classList.add('loaded');
+        return;
+      }
+
+      var ip      = data.query      || '';
+      var country = data.country    || '';
+      var code    = data.countryCode|| '';
+      var region  = data.regionName || '';
+      var city    = data.city       || '';
+      var isp     = data.isp        || data.org || '';
+      var lat     = data.lat        || '';
+      var lon     = data.lon        || '';
+
+      var locStr = [country, region, city].filter(Boolean).join(' · ');
+
+      if (!srvIP && ip) {
+        var ipEl = document.getElementById('info-ip');
+        ipEl.textContent = ip;
+        ipEl.className = 'val em';
+      }
+
+      if (locStr) {
+        infoLoc.textContent = locStr;
+        infoLoc.className = 'val warn';
+        rowLoc.style.display = 'flex';
+        geoLocText.textContent = locStr;
+      }
+
+      if (isp) {
+        infoIsp.textContent = isp;
+        infoIsp.className = 'val';
+        rowIsp.style.display = 'flex';
+        geoIspText.textContent = isp;
+      }
+
+      if (lat && lon) {
+        infoCoord.textContent = lat + ', ' + lon;
+        infoCoord.className = 'val good';
+        rowCoord.style.display = 'flex';
+        geoCoordText.textContent = lat + ', ' + lon;
+        geoCoordSep.style.display = '';
+      }
+
+      if (code) geoFlag.textContent = countryFlag(code);
+      geoBar.classList.add('loaded');
+    }
+
+    function geoFail(msg) {
+      geoLocText.textContent = msg;
+      geoBar.classList.add('loaded');
+    }
+
+    // 通过同源 nginx 代理请求 ip-api，规避 HTTPS 页面不能请求 HTTP 的限制
+    function geoQuery(ip) {
+      var url = '/geo-lookup';
+      if (ip) url += '?ip=' + encodeURIComponent(ip);
+      var xhr = new XMLHttpRequest();
+      xhr.timeout = 5000;
+      xhr.open('GET', url, true);
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          try { applyGeo(JSON.parse(xhr.responseText)); } catch(e) { geoFail('geo 解析失败'); }
+        } else {
+          geoFail('geo 查询失败 (' + xhr.status + ')');
+        }
+      };
+      xhr.ontimeout = function() { geoFail('geo 查询超时'); };
+      xhr.onerror   = function() { geoFail('geo 查询失败'); };
+      xhr.send();
+    }
+
+    // 用服务端注入的 IP 查询（更准确）
+    if (srvIP) {
+      geoQuery(srvIP);
+    } else {
+      // 不传 ip，nginx 代理到 ip-api 自动用客户端公网 IP
+      geoQuery();
+    }
+  })();
+  </script>
+</body>
+</html>

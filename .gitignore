@@ -39,3 +39,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local data exports
+data1/
+
+# e2e test results
+test-results/
+
+# PDF.js binaries (auto-copied by postinstall)
+public/pdfjs/pdf.min.mjs
+public/pdfjs/pdf.worker.min.mjs
+public/pdfjs/pdf_viewer.mjs
+public/pdfjs/pdf_viewer.mjs.map
+public/pdfjs/pdf_viewer.d.mts
+public/pdfjs/pdf_viewer.css
+public/pdfjs/images/

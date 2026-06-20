@@ -13,31 +13,29 @@ interface QueryResult<T = any> {
     count?: number;
 }
 
-export async function pgFetch<T = any>(
-    method: string,
-    path: string,
-    body?: any,
-    params?: Record<string, string>,
-): Promise<QueryResult<T>> {
+export async function pgFetch<T = any>(method: string, path: string, body?: any, params?: Record<string, string>): Promise<QueryResult<T>> {
     if (!ECS_URL) return { data: null, error: { message: 'ECS_URL 未配置' } };
-    try {
-        const url = new URL(`${ECS_URL}/${path}`);
-        if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-        const headers: Record<string, string> = {};
-        if (PG_TOKEN) headers['X-DB-Token'] = PG_TOKEN;
-        if (body) headers['Content-Type'] = 'application/json';
-        const res = await fetch(url.toString(), { method, headers, body: body ? JSON.stringify(body) : undefined });
-        if (!res.ok && res.status !== 204) {
-            const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
-            console.error(`[pg-adapter] ${method} ${ECS_URL}/${path} → ${res.status}:`, err.message || err);
-            return { data: null, error: { message: err.message || `HTTP ${res.status}` } };
-        }
-        const text = await res.text();
-        const data = text ? JSON.parse(text) : [];
-        return { data: Array.isArray(data) ? data : [data], error: null };
-    } catch (e: any) {
-        return { data: null, error: { message: e.message || '网络错误' } };
+    const url = new URL(`${ECS_URL}/${path}`);
+    if (params) {
+        const sp = url.searchParams;
+        Object.entries(params).forEach(([k, v]) => { sp.set(k, v); });
     }
+    const headers: Record<string, string> = {};
+    if (PG_TOKEN) headers['X-DB-Token'] = PG_TOKEN;
+    if (body) headers['Content-Type'] = 'application/json';
+    const res = await fetch(url.toString(), { method, headers, body: body ? JSON.stringify(body) : undefined }).catch(e => null as Response | null);
+    if (!res) return { data: null, error: { message: '网络错误' } };
+    if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+        console.error(`[pg-adapter] ${method} ${ECS_URL}/${path} → ${res.status}:`, err.message || err);
+        return { data: null, error: { message: err.message || `HTTP ${res.status}` } };
+    }
+    let data: any[] = [];
+    try {
+        const text = await res.text();
+        data = text ? JSON.parse(text) : [];
+    } catch { data = []; }
+    return { data: Array.isArray(data) ? data : [data], error: null };
 }
 
 // 模拟 supabase-js 的链式查询接口（只实现我们用到的）
