@@ -1,4 +1,5 @@
 // PostgREST 轻量适配器 — 替代 @supabase/supabase-js
+import './server-log'; // 服务端日志捕获
 
 const ECS_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const PG_TOKEN = process.env.PG_DB_TOKEN || '';
@@ -115,7 +116,6 @@ async function backupWrite(method: string, path: string, body?: any) {
     try {
         const url = `${BACKUP_URL}/rest/v1/${path}`;
         const headers: Record<string, string> = BACKUP_KEY ? { apikey: BACKUP_KEY, Authorization: `Bearer ${BACKUP_KEY}` } : {};
-        // 去掉 Supabase 没有的列
         let cleanBody = body;
         if (body) {
             cleanBody = { ...body };
@@ -124,8 +124,11 @@ async function backupWrite(method: string, path: string, body?: any) {
             delete cleanBody.blocked;
         }
         if (cleanBody && Object.keys(cleanBody).length > 0) headers['Content-Type'] = 'application/json';
-        await fetch(url, { method, headers, body: cleanBody ? JSON.stringify(cleanBody) : undefined });
-    } catch {}
+        const res = await fetch(url, { method, headers, body: cleanBody ? JSON.stringify(cleanBody) : undefined });
+        if (!res.ok) console.warn(`[pg-adapter:backup] ${method} ${url} → ${res.status}`);
+    } catch (e: any) {
+        console.warn(`[pg-adapter:backup] 备份失败: ${e.message}`);
+    }
 }
 
 // 直接 insert

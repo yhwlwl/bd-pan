@@ -7,9 +7,23 @@ const BACKUP_URL = (process.env.SUPABASE_BACKUP_URL || '').replace(/\/+$/, '');
 const BACKUP_KEY = process.env.SUPABASE_BACKUP_KEY || '';
 
 async function supabaseFetch(method: string, path: string): Promise<any> {
-    const url = `${BACKUP_URL}/rest/v1/${path}`;
-    const res = await fetch(url, { method, headers: { apikey: BACKUP_KEY, Authorization: `Bearer ${BACKUP_KEY}` } });
-    return res.json();
+    if (!BACKUP_URL) return [];
+    const basePath = path.split('?')[0];
+    const queryStr = path.includes('?') ? path.split('?')[1] : '';
+    const headers: Record<string, string> = { apikey: BACKUP_KEY, Authorization: `Bearer ${BACKUP_KEY}` };
+    const all: any[] = [];
+    let offset = 0;
+    while (true) {
+        const q = queryStr ? `${queryStr}&offset=${offset}&limit=1000` : `offset=${offset}&limit=1000`;
+        const url = `${BACKUP_URL}/rest/v1/${basePath}?${q}`;
+        const res = await fetch(url, { method, headers });
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) break;
+        all.push(...data);
+        if (data.length < 1000) break;
+        offset += 1000;
+    }
+    return all;
 }
 
 export async function GET(request: Request) {
@@ -32,11 +46,11 @@ export async function GET(request: Request) {
         // 并行拉取两张表
         const [actionRes, viewRes] = await Promise.all([
             isSupabase
-                ? supabaseFetch('GET', 'bdpan_action_logs?order=created_at.desc&limit=50000')
-                : pgFetch<any>('GET', 'bdpan_action_logs?order=created_at.desc&limit=50000'),
+                ? supabaseFetch('GET', 'bdpan_action_logs?order=created_at.desc&limit=100000')
+                : pgFetch<any>('GET', 'bdpan_action_logs?order=created_at.desc&limit=100000'),
             isSupabase
-                ? supabaseFetch('GET', 'view_logs?order=visit_time.desc&limit=50000')
-                : pgFetch<any>('GET', 'view_logs?order=visit_time.desc&limit=50000'),
+                ? supabaseFetch('GET', 'view_logs?page_source=eq.pan&order=visit_time.desc&limit=100000')
+                : pgFetch<any>('GET', 'view_logs?page_source=eq.pan&order=visit_time.desc&limit=100000'),
         ]);
         const logs = isSupabase ? (Array.isArray(actionRes) ? actionRes : []) : (actionRes.data || []);
         const viewLogs = isSupabase ? (Array.isArray(viewRes) ? viewRes : []) : (viewRes.data || []);
@@ -94,7 +108,7 @@ export async function GET(request: Request) {
         });
 
         const topIps = Object.entries(ipStats).map(([ip, data]) => ({ ip, ...data })).sort((a, b) => b.count - a.count).slice(0, 30);
-        const totalPanVisits = (viewLogs || []).filter((l: any) => l.page_source === 'pan').length;
+        const totalPanVisits = (viewLogs || []).length;
 
         // 在线用户：1h 内有登录且无登出的
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
