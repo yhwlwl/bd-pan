@@ -17,8 +17,8 @@ canvas{display:block;margin:60px auto 20px}
 </div>
 <div id="status">⏳ 加载中...</div>
 <script type="module">
-import { getDocument, GlobalWorkerOptions } from '/pdfjs/pdf.min.mjs';
-GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.mjs';
+import { getDocument, GlobalWorkerOptions } from './pdf.min.mjs';
+GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
 const s=document.getElementById('status');
 const file=(new URL(location.href)).searchParams.get('file')||'';
 const url=decodeURIComponent(file);
