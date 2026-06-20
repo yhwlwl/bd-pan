@@ -1,7 +1,10 @@
 // PostgREST 轻量适配器 — 替代 @supabase/supabase-js
 
-const PG_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
+const ECS_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
 const PG_TOKEN = process.env.PG_DB_TOKEN || '';
+// 双写备份：写入也同步到 Supabase（仅写入，读取只用 ECS）
+const BACKUP_URL = (process.env.SUPABASE_BACKUP_URL || '').replace(/\/+$/, '');
+const BACKUP_KEY = process.env.SUPABASE_BACKUP_KEY || '';
 
 interface QueryResult<T = any> {
     data: T[] | null;
@@ -15,9 +18,9 @@ export async function pgFetch<T = any>(
     body?: any,
     params?: Record<string, string>,
 ): Promise<QueryResult<T>> {
-    if (!PG_URL) return { data: null, error: { message: 'PG_URL 未配置' } };
+    if (!ECS_URL) return { data: null, error: { message: 'ECS_URL 未配置' } };
     try {
-        const url = new URL(`${PG_URL}/${path}`);
+        const url = new URL(`${ECS_URL}/${path}`);
         if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
         const headers: Record<string, string> = {};
         if (PG_TOKEN) headers['X-DB-Token'] = PG_TOKEN;
@@ -25,7 +28,7 @@ export async function pgFetch<T = any>(
         const res = await fetch(url.toString(), { method, headers, body: body ? JSON.stringify(body) : undefined });
         if (!res.ok && res.status !== 204) {
             const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
-            console.error(`[pg-adapter] ${method} ${PG_URL}/${path} → ${res.status}:`, err.message || err);
+            console.error(`[pg-adapter] ${method} ${ECS_URL}/${path} → ${res.status}:`, err.message || err);
             return { data: null, error: { message: err.message || `HTTP ${res.status}` } };
         }
         const text = await res.text();
@@ -38,7 +41,7 @@ export async function pgFetch<T = any>(
 
 // 模拟 supabase-js 的链式查询接口（只实现我们用到的）
 export function pgClient() {
-    if (!PG_URL) return null;
+    if (!ECS_URL) return null;
 
     function from(table: string) {
         let _select = '*';
@@ -84,7 +87,7 @@ export function pgClient() {
 export async function pgUpsert(table: string, data: { key: string; value: any }): Promise<QueryResult> {
     // PostgREST upsert: POST with Prefer: resolution=merge-duplicates
     try {
-        const url = new URL(`${PG_URL}/${table}`);
+        const url = new URL(`${ECS_URL}/${table}`);
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
             'Prefer': 'resolution=merge-duplicates,return=representation',
@@ -99,23 +102,49 @@ export async function pgUpsert(table: string, data: { key: string; value: any })
             const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
             return { data: null, error: { message: err.message || `HTTP ${res.status}` } };
         }
+        backupWrite('POST', table, data);
         return { data: null, error: null };
     } catch (e: any) {
         return { data: null, error: { message: e.message } };
     }
 }
 
+// 双写备份：写入 ECS 同时异步写到 Supabase（不等待，失败不影响主流程）
+async function backupWrite(method: string, path: string, body?: any) {
+    if (!BACKUP_URL) return;
+    try {
+        const url = `${BACKUP_URL}/rest/v1/${path}`;
+        const headers: Record<string, string> = BACKUP_KEY ? { apikey: BACKUP_KEY, Authorization: `Bearer ${BACKUP_KEY}` } : {};
+        // 去掉 Supabase 没有的列
+        let cleanBody = body;
+        if (body) {
+            cleanBody = { ...body };
+            delete cleanBody.session_id;
+            delete cleanBody.fingerprint;
+            delete cleanBody.blocked;
+        }
+        if (cleanBody && Object.keys(cleanBody).length > 0) headers['Content-Type'] = 'application/json';
+        await fetch(url, { method, headers, body: cleanBody ? JSON.stringify(cleanBody) : undefined });
+    } catch {}
+}
+
 // 直接 insert
 export async function pgInsert(table: string, data: any): Promise<QueryResult> {
-    return pgFetch('POST', table, data);
+    const r = await pgFetch('POST', table, data);
+    backupWrite('POST', table, data); // 不 await，异步备份
+    return r;
 }
 
 // 直接 update
 export async function pgUpdate(table: string, filterCol: string, filterVal: string, data: any): Promise<QueryResult> {
-    return pgFetch('PATCH', `${table}?${filterCol}=eq.${encodeURIComponent(filterVal)}`, data);
+    const r = await pgFetch('PATCH', `${table}?${filterCol}=eq.${encodeURIComponent(filterVal)}`, data);
+    backupWrite('PATCH', `${table}?${filterCol}=eq.${encodeURIComponent(filterVal)}`, data);
+    return r;
 }
 
 // 直接 delete
 export async function pgDelete(table: string, filterCol: string, filterVal: string): Promise<QueryResult> {
-    return pgFetch('DELETE', `${table}?${filterCol}=eq.${encodeURIComponent(filterVal)}`);
+    const r = await pgFetch('DELETE', `${table}?${filterCol}=eq.${encodeURIComponent(filterVal)}`);
+    backupWrite('DELETE', `${table}?${filterCol}=eq.${encodeURIComponent(filterVal)}`);
+    return r;
 }

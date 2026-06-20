@@ -3,6 +3,15 @@ import { verifyToken } from '../_auth';
 import { getUserPermissions } from '../../../lib/users';
 import { pgFetch } from '../../../lib/pg-adapter';
 
+const BACKUP_URL = (process.env.SUPABASE_BACKUP_URL || '').replace(/\/+$/, '');
+const BACKUP_KEY = process.env.SUPABASE_BACKUP_KEY || '';
+
+async function supabaseFetch(method: string, path: string): Promise<any> {
+    const url = `${BACKUP_URL}/rest/v1/${path}`;
+    const res = await fetch(url, { method, headers: { apikey: BACKUP_KEY, Authorization: `Bearer ${BACKUP_KEY}` } });
+    return res.json();
+}
+
 export async function GET(request: Request) {
     try {
         const authHeader = request.headers.get('authorization') || undefined;
@@ -15,14 +24,22 @@ export async function GET(request: Request) {
             }
         }
 
+        // 数据源
+        const { searchParams } = new URL(request.url);
+        const source = searchParams.get('source') || 'ecs';
+        const isSupabase = source === 'supabase' && BACKUP_URL;
+
         // 并行拉取两张表
         const [actionRes, viewRes] = await Promise.all([
-            pgFetch<any>('GET', 'bdpan_action_logs?order=created_at.desc&limit=50000'),
-            pgFetch<any>('GET', 'view_logs?order=visit_time.desc&limit=50000'),
+            isSupabase
+                ? supabaseFetch('GET', 'bdpan_action_logs?order=created_at.desc&limit=50000')
+                : pgFetch<any>('GET', 'bdpan_action_logs?order=created_at.desc&limit=50000'),
+            isSupabase
+                ? supabaseFetch('GET', 'view_logs?order=visit_time.desc&limit=50000')
+                : pgFetch<any>('GET', 'view_logs?order=visit_time.desc&limit=50000'),
         ]);
-
-        const logs = actionRes.data || [];
-        const viewLogs = viewRes.data || [];
+        const logs = isSupabase ? (Array.isArray(actionRes) ? actionRes : []) : (actionRes.data || []);
+        const viewLogs = isSupabase ? (Array.isArray(viewRes) ? viewRes : []) : (viewRes.data || []);
 
         const channelStats: Record<string, { past24h: number; total: number; logs: any[] }> = {
             ecs: { past24h: 0, total: 0, logs: [] },
