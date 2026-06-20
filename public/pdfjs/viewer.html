@@ -5,41 +5,64 @@
 #controls{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,.8);color:#fff;font:13px sans-serif}
 #controls button{background:#555;border:none;color:#fff;padding:6px 12px;border-radius:4px;font-size:13px}
 #controls span{opacity:.7}
-canvas{display:block;margin:60px auto 20px}
+#view{display:flex;justify-content:center;padding-top:60px}
+canvas{display:block;margin:0 auto}
 #status{position:fixed;top:56px;left:10px;right:10px;padding:12px;background:rgba(0,0,0,.85);color:#fff;font:12px monospace;border-radius:8px;z-index:20;text-align:center}
 </style></head><body>
 <div id="controls">
   <button id="prev">◀</button><span id="pageInfo"></span><button id="next">▶</button>
-  <input id="pageInput" type="number" min="1" value="1" style="width:40px;background:#555;border:none;color:#fff;padding:4px;border-radius:4px;font-size:12px;text-align:center" title="跳转到页">
+  <input id="pageInput" type="number" min="1" value="1" style="width:40px;background:#555;border:none;color:#fff;padding:4px;border-radius:4px;font-size:12px;text-align:center">
   <span id="total" style="opacity:.5"></span>
   <input type="range" id="zoom" min="50" max="300" value="100" style="width:80px">
   <span id="zoomVal">100%</span>
 </div>
+<div id="view"></div>
 <div id="status">⏳ 加载中...</div>
 <script type="module">
 import { getDocument, GlobalWorkerOptions } from './pdf.min.mjs';
 GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
-const s=document.getElementById('status');
+const s=document.getElementById('status'),view=document.getElementById('view');
 const file=(new URL(location.href)).searchParams.get('file')||'';
 const url=decodeURIComponent(file);
 document.title=url.split('/').pop()||'PDF';
 try{
-  const task=getDocument({url,disableRange:false,disableStream:false});
-  task.onProgress=p=>{if(p.total)s.textContent='⏳ '+Math.round(100*p.loaded/p.total)+'% (索引加载中...)'};
+  const task=getDocument({url,disableRange:true,disableStream:false});
+  task.onProgress=p=>{if(p.total)s.textContent='⏳ '+Math.round(100*p.loaded/p.total)+'% (索引...)'};
   const pdf=await task.promise;
-  s.style.display='none';
-  let pageNum=1,scale=1,pr=false,pn=null;
-  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
-  document.body.appendChild(canvas);
+  s.style.display='none';view.innerHTML='';
   document.getElementById('total').textContent='共 '+pdf.numPages+' 页';
-  let fitWidth=true;
-  function renderPage(num){pr=true;document.getElementById('pageInfo').textContent='第 '+num+' 页';document.getElementById('pageInput').value=num;pdf.getPage(num).then(p=>{if(fitWidth){scale=1.0*(window.innerWidth-20)/p.getViewport({scale:1}).width;document.getElementById('zoomVal').textContent=Math.round(scale*100)+'%';document.getElementById('zoom').value=Math.round(scale*100)}const vp=p.getViewport({scale});canvas.height=vp.height;canvas.width=vp.width;p.render({canvasContext:ctx,viewport:vp}).promise.then(()=>{pr=false;if(pn!==null){renderPage(pn);pn=null}})});}
+  let pageNum=1,scale=1,pr=false,pn=null,fitWidth=true;
+  // 页缓存（最多5页）
+  const cache=new Map();
+  function showPage(num){
+    document.getElementById('pageInfo').textContent='第 '+num+' 页';
+    document.getElementById('pageInput').value=num;
+    view.innerHTML='';
+    if(cache.has(num)){
+      view.appendChild(cache.get(num));onRenderDone();
+    }else{
+      const c=document.createElement('canvas');
+      view.appendChild(c);
+      pdf.getPage(num).then(p=>{
+        if(fitWidth){scale=1.0*(window.innerWidth-20)/p.getViewport({scale:1}).width;document.getElementById('zoomVal').textContent=Math.round(scale*100)+'%';document.getElementById('zoom').value=Math.round(scale*100)}
+        const vp=p.getViewport({scale});c.height=vp.height;c.width=vp.width;
+        const ctx=c.getContext('2d');
+        p.render({canvasContext:ctx,viewport:vp}).promise.then(()=>{
+          cache.set(num,c);if(cache.size>12){const[[k]]=cache;cache.delete(k)};onRenderDone();
+          // 后台预渲染后续5页
+          setTimeout(()=>{for(let i=1;i<=5;i++){const n=pageNum+i;if(n<=pdf.numPages&&!cache.has(n)){pdf.getPage(n).then(pp=>{const cc=document.createElement('canvas');const vv=pp.getViewport({scale});cc.height=vv.height;cc.width=vv.width;pp.render({canvasContext:cc.getContext('2d'),viewport:vv}).promise.then(()=>{if(cache.size<12){cache.set(n,cc)}})})}}},500);
+        });
+      });
+    }
+  }
+  function renderPage(num){pr=true;showPage(num)}
+  function onRenderDone(){pr=false;if(pn!==null){const n=pn;pn=null;pageNum=n;renderPage(n)}}
   function qr(num){if(pr){pn=num}else{renderPage(num)}}
   document.getElementById('prev').onclick=()=>{if(pageNum>1){pageNum--;qr(pageNum)}};
   document.getElementById('next').onclick=()=>{if(pageNum<pdf.numPages){pageNum++;qr(pageNum)}};
   const pageInput=document.getElementById('pageInput');pageInput.max=pdf.numPages;
   pageInput.onchange=function(){let v=parseInt(this.value,10);if(v>=1&&v<=pdf.numPages){pageNum=v;qr(pageNum)}else{this.value=pageNum}};
-  document.getElementById('zoom').oninput=function(){fitWidth=false;scale=this.value/100;document.getElementById('zoomVal').textContent=this.value+'%';qr(pageNum)};
+  document.getElementById('zoom').oninput=function(){fitWidth=false;scale=this.value/100;cache.clear();document.getElementById('zoomVal').textContent=this.value+'%';qr(pageNum)};
   qr(1);
 }catch(e){s.textContent='❌ '+e.message}
 </script></body></html>
