@@ -322,15 +322,14 @@ export default function Home() {
         const sign = data.data?.sign || '';
         const base = type === 'pdf' ? getAlistBase().replace(/:5245$/, '') : getAlistBase();
         const pathPrefix = type === 'pdf' ? '/pdf-preview' : '/p';
-        const suffix = type === 'pdf' ? '#view=Fit' : '';
         previewUrl = sign
-          ? `${base}${pathPrefix}${filePath}?sign=${sign}${suffix}`
-          : `${base}${pathPrefix}${filePath}${suffix}`;
-        // 手机端 PDF：直接打开系统查看器（iOS Safari 内置支持）
-        if (type === 'pdf' && /iPhone|iPad|Android/i.test(navigator.userAgent)) {
-          setPreviewFile({ name, url: previewUrl, type, filePath, sign, size });
+          ? `${base}${pathPrefix}${filePath}?sign=${sign}`
+          : `${base}${pathPrefix}${filePath}`;
+        // PDF：统一用 PDF.js（桌面+手机）
+        if (type === 'pdf') {
+          const pdfJsUrl = `/pdfjs/viewer.html?file=${encodeURIComponent(previewUrl)}`;
+          setPreviewFile({ name, url: pdfJsUrl, type, filePath, sign, size });
           setPreviewLoading(false);
-          window.open(previewUrl, '_blank');
           return true;
         }
       } else {
@@ -3342,10 +3341,10 @@ export default function Home() {
                 <span className="text-[10px] font-black tracking-widest uppercase italic" style={{ color: 'var(--text-muted)' }}>Cloud_Drive</span>
                 <span className="text-[10px] hidden sm:inline" style={{ color: 'var(--text-faint)' }}>· AList</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
                 {canSearch && (
                   <>
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>搜索</span>
+                    <span className="text-[10px] font-bold hidden sm:inline" style={{ color: 'var(--text-muted)' }}>搜索</span>
                     <input
                       value={alistSearchKeyword}
                       onChange={e => setAlistSearchKeyword(e.target.value)}

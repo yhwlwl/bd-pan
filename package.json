@@ -4,18 +4,23 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "postinstall": "mkdir -p public/pdfjs && cp node_modules/pdfjs-dist/build/pdf.min.mjs node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdfjs/",
     "build": "next build",
     "start": "next start",
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test --ui",
     "lint": "eslint"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
     "archiver": "^7.0.1",
     "next": "16.1.6",
+    "pdfjs-dist": "^4.10.38",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/archiver": "^7.0.0",
     "@types/node": "^20",
