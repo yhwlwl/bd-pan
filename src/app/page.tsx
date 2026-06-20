@@ -328,7 +328,7 @@ export default function Home() {
           : `${base}${pathPrefix}${filePath}`;
         // PDF：统一用 PDF.js（桌面+手机）
         if (type === 'pdf') {
-          const pdfJsUrl = `/pdfjs/viewer.html?file=${encodeURIComponent(previewUrl)}`;
+          const pdfJsUrl = `${API_BASE}/pdfjs/viewer.html?file=${encodeURIComponent(previewUrl)}`;
           setPreviewFile({ name, url: pdfJsUrl, type, filePath, sign, size });
           setPreviewLoading(false);
           return true;
