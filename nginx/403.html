@@ -202,6 +202,22 @@
       color: #45475a;
       letter-spacing: 0.5px;
     }
+
+    .genshin-hint {
+      margin-top: 14px;
+      margin-left: 24px;
+      font-size: 12px;
+      color: #585b70;
+      cursor: pointer;
+      transition: color 0.2s;
+      user-select: none;
+    }
+    .genshin-hint:hover { color: #f9e2af; }
+
+    .line .progress-text  { color: #a6e3a1; }
+    .line .progress-bar   { color: #89b4fa; }
+    .line .dl-complete    { color: #a6e3a1; font-weight: 700; }
+    .line .dl-err         { color: #f38ba8; }
   </style>
 </head>
 <body>
@@ -212,8 +228,8 @@
       <span class="code">403</span>
       <div class="divider"></div>
       <div class="title-block">
-        <span class="title">Access Denied 喵~不给看</span>
-        <span class="subtitle">DATABASE GATEWAY · STA-PAN</span>
+        <span class="title">Access Denied 喵~不给看 (ฅ•ω•ฅ)</span>
+        <span class="subtitle">DATABASE GATEWAY · STA-PAN ～ 喵 ~</span>
       </div>
     </div>
 
@@ -227,23 +243,104 @@
         </span>
       </div>
       <div class="terminal-body">
-        <div class="line">
+        <div class="line" id="sl1">
 <span class="prompt">gateway $</span> <span class="cmd">curl -H "X-Db-Token: ****" /db/</span>
         </div>
-        <div class="line">
-<span class="err">[ERROR] 喵？！token 不对喵！小登想干嘛？</span>
+        <div class="line" id="sl2">
+<span class="err">[ERROR] 喵呜？！token 不对喵！主人想对数据库做什么呀 (｡>﹏<)</span>
         </div>
-        <div class="line" style="margin-top: 8px;">
-<span class="prompt">gateway $</span> <span class="cmd">logread | tail -1</span>
+        <div class="line" id="sl3">
+<span class="err">[FATAL] 检测到主人未下载原神，本猫拒绝访问了喵！(๑•̀ㅁ•́ฅ)</span>
         </div>
-        <div class="line">
-<span class="warn">[WARN] 拦截了一次非法数据库探访喵~ 事件已写入安全日志。</span>
+        <div class="line" style="margin-top: 8px;" id="sl4">
+<span class="prompt">gateway $</span> <span class="cmd">logread | tail -3</span>
         </div>
-        <div class="line">
-<span class="dim">├─ 小登信息已加入监控列表了喵</span>
+        <div class="line" id="sl5">
+<span class="warn">[WARN] 拦截了一次非法数据库探访喵~ 事件已经写入安全日志了哦 (๑¯◡¯๑)</span>
         </div>
-        <div class="line">
-<span class="dim">└─ 再来的话……就不客气了哦！（自动封禁预警）</span>
+        <div class="line" id="sl6">
+<span class="dim">├─ 主人的信息已经加入监控列表了喵~</span>
+        </div>
+        <div class="line" id="sl7">
+<span class="dim">├─ 检测到主人未安装原神，建议主人快来下载！ฅ(•ω•ฅ)</span>
+        </div>
+        <div class="line" id="sl8">
+<span class="dim">└─ 再来一次的话……本猫真的要不客气了喵！(๑•̀ㅁ•́ฅ)（自动封禁预警 + 强制启动原神启动器）</span>
+        </div>
+        <div class="line" style="margin-top: 10px;" id="sl9">
+<span class="prompt">gateway $</span> <span class="cmd">systemctl status genshin-impact</span>
+        </div>
+        <div class="line" id="sl10">
+<span class="err">● genshin-impact.service — 原神启动器喵~</span>
+        </div>
+        <div class="line" id="sl11">
+<span class="err">   Loaded: not-found (Reason: 都没下载你加载个啥喵(。-ω-))</span>
+        </div>
+        <div class="line" id="sl12">
+<span class="warn">   Active: 都进不来active个啥喵 (since 你猜)</span>
+        </div>
+        <div class="line" style="margin-top: 10px;" id="sl13">
+<span class="prompt">gateway $</span> <span class="cmd">sudo apt install genshin-impact 2>&1 | tail -4</span>
+        </div>
+        <div class="line" id="sl14">
+<span class="dim">正在分析依赖关系喵…</span>
+        </div>
+        <div class="line" id="sl15">
+<span class="dim">正在读取状态信息喵…</span>
+        </div>
+        <div class="line" id="sl16">
+<span class="warn">E: 无法定位软件包 genshin-impact 喵 (；′⌒`)</span>
+        </div>
+        <div class="line" id="sl17">
+<span class="warn">W: 建议主人去官网下载喵</span>
+        </div>
+
+        <div id="genshin-output" style="display:none;">
+          <div class="line" id="gl-cmd" style="display:none;">
+<span class="prompt">gateway $</span> <span class="cmd">wget https://genshin.hoyoverse.com/download/GenshinImpact_installer.exe --progress=dot 2>&1</span>
+          </div>
+          <div class="line" id="gl-resolving" style="display:none;">
+<span class="dim">--2026-06-20 12:00:00--  https://genshin.hoyoverse.com/download/GenshinImpact_installer.exe</span>
+          </div>
+          <div class="line" id="gl-conn" style="display:none;">
+<span class="dim">正在解析主机 genshin.hoyoverse.com (genshin.hoyoverse.com)… 42.42.42.42</span>
+          </div>
+          <div class="line" id="gl-connecting" style="display:none;">
+<span class="dim">正在连接 genshin.hoyoverse.com (genshin.hoyoverse.com)|42.42.42.42|:443… 已连接。</span>
+          </div>
+          <div class="line" id="gl-http" style="display:none;">
+<span class="dim">已发出 HTTP 请求，正在等待回应… 403 Forbidden</span>
+          </div>
+          <div class="line" id="gl-blocked" style="display:none;">
+<span class="err">[!] 服务器拒绝了主人的下载请求呢（原因：主人没资格喵~）(｡•́︿•̀｡)</span>
+          </div>
+          <div class="line" id="gl-retry" style="display:none;">
+<span class="warn">[!] 检测到拦截了喵，尝试绕过中… --header=&quot;X-Genshin-Token: 小登&quot;</span>
+          </div>
+          <div class="line" id="gl-retry2" style="display:none;">
+<span class="dim">--2026-06-20 12:00:01--  (重试 #1) https://genshin.hoyoverse.com/download/GenshinImpact_installer.exe</span>
+          </div>
+          <div class="line" id="gl-retry3" style="display:none;">
+<span class="warn">[!] 服务器再次拒绝了主人的下载请求（原因：主人真的是小登喵）(๑•́ ₃ •̀๑)</span>
+          </div>
+          <div class="line" id="gl-giving-up" style="display:none;">
+<span class="err">[!] 重试次数耗尽喵，下载失败了啦 (ﾉД`)</span>
+          </div>
+          <div class="line" id="gl-fallback" style="display:none;">
+<span class="prompt">gateway $</span> <span class="cmd">curl -L -o /dev/null https://bbs.mihoyo.com/ys/ 2>&1 | grep -E &quot;进度|速率|ETA&quot;</span>
+          </div>
+          <div class="line" id="gl-pbar" style="display:none;">
+<span class="progress-text">  % 总大小   已接收  传输速度  ETA</span>
+          </div>
+          <div class="line" id="gl-pbar2" style="display:none;">
+<span id="gl-bar-text" style="color: #89b4fa;">  0%  --.---M  0.00KB  0.00KB/s  00:00:00</span>
+          </div>
+          <div class="line" id="gl-meme" style="display:none;">
+<span class="dim"># 主人别等了喵，这进度条不存在的喵 (ฅ´ω`ฅ)</span>
+          </div>
+          <div class="line" id="gl-final" style="display:none;">
+<span class="dl-err">curl: (403) 服务器拒绝了主人的请求 —— 主人被拦截了喵嘻嘻 (ฅ•ω•ฅ)</span>
+          </div>
         </div>
 
         <div class="info-panel">
@@ -296,13 +393,40 @@
       </div>
     </div>
 
+    <div class="genshin-hint" id="genshin-hint">
+      💡 点击这里帮主人下载原神以解除封禁喵~ (ฅ•ω•ฅ)
+    </div>
+
     <div class="footer">
-      STA-PAN Database Gateway &copy; 成都七中科学技术协会
+      STA-PAN Database Gateway &copy; 成都七中科学技术协会 ～ 喵 ~
     </div>
   </div>
 
   <script>
   (function() {
+    // ── 终端逐行打印动画 ──
+    (function() {
+      var ids = ['sl1','sl2','sl3','sl4','sl5','sl6','sl7','sl8',
+                 'sl9','sl10','sl11','sl12','sl13','sl14','sl15','sl16','sl17'];
+      var idx = 0;
+      // 先全部隐藏
+      ids.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+      function showNextLine() {
+        if (idx >= ids.length) return;
+        var el = document.getElementById(ids[idx]);
+        if (el) el.style.display = '';
+        idx++;
+        // 每条时间随机 180~700ms，模拟真实敲命令的手速
+        var delay = 180 + Math.random() * 520;
+        setTimeout(showNextLine, delay);
+      }
+      // 页面加载后等 400ms 开始打印
+      setTimeout(showNextLine, 400);
+    })();
+
     // ── 生成事件 ID ──
     var evtId = 'EVT-' + Date.now().toString(36).toUpperCase() +
                 '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -455,6 +579,88 @@
       // 不传 ip，nginx 代理到 ip-api 自动用客户端公网 IP
       geoQuery();
     }
+    // ── 原神下载（纯整活·终端风格输出）──
+    (function() {
+      var hint = document.getElementById('genshin-hint');
+      var container = document.getElementById('genshin-output');
+      if (!hint || !container) return;
+
+      // 按顺序显示的 line id 列表
+      var lines = [
+        'gl-cmd', 'gl-resolving', 'gl-conn', 'gl-connecting',
+        'gl-http', 'gl-blocked', 'gl-retry', 'gl-retry2', 'gl-retry3',
+        'gl-giving-up', 'gl-fallback', 'gl-pbar', 'gl-pbar2', 'gl-meme', 'gl-final'
+      ];
+      var idx = 0;
+      var timer = null;
+      var started = false;
+
+      // curl 进度模拟
+      var curlStep = 0;
+      var curlPcts = [
+        '  3%  158.2M  4.75MB  1.23MB/s  00:02:03',
+        '  7%  158.2M  11.1MB  1.18MB/s  00:01:58',
+        ' 12%  158.2M  19.0MB  1.31MB/s  00:01:47',
+        ' 16%  158.2M  25.3MB  1.09MB/s  00:01:55',
+        ' 21%  158.2M  33.2MB  1.42MB/s  00:01:36',
+        ' 25%  158.2M  39.6MB  1.27MB/s  00:01:33',
+        ' 28%  158.2M  44.3MB  0.87MB/s  00:02:07',
+        ' 28%  158.2M  44.3MB  0.00KB/s  00:03:24   ⚠ 连接变慢',
+        ' 28%  158.2M  44.3MB  0.00KB/s  00:05:41   ⚠ 检测到小登网络',
+        ' 29%  158.2M  45.9MB  0.02MB/s  00:68:12   😅 建议放弃',
+        ' 29%  158.2M  45.9MB  0.00KB/s  怠惰了，不想下了',
+      ];
+      var curlTimer = null;
+      var curlIdx = 0;
+
+      function showNext() {
+        if (idx >= lines.length) {
+          if (timer) { clearInterval(timer); timer = null; }
+          return;
+        }
+        var el = document.getElementById(lines[idx]);
+        if (el) {
+          el.style.display = '';
+          // 滚动到可见区域
+          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+        idx++;
+
+        // 如果显示到 curl 进度条，启动进度动画
+        if (lines[idx - 1] === 'gl-pbar2') {
+          startCurlProgress();
+        }
+      }
+
+      function startCurlProgress() {
+        if (curlTimer) return;
+        var barText = document.getElementById('gl-bar-text');
+        curlTimer = setInterval(function() {
+          if (curlIdx >= curlPcts.length) {
+            if (curlTimer) { clearInterval(curlTimer); curlTimer = null; }
+            // 继续显示后续行
+            return;
+          }
+          if (barText) barText.textContent = curlPcts[curlIdx];
+          curlIdx++;
+        }, 1800 + Math.random() * 1200);
+      }
+
+      hint.addEventListener('click', function() {
+        if (started) return;
+        started = true;
+        container.style.display = '';
+        hint.textContent = '⏳ 正在启动原神下载器…（你永远下不完的）';
+        hint.style.cursor = 'default';
+        hint.style.color = '#45475a';
+
+        // 逐行输出，模拟终端
+        showNext();
+        timer = setInterval(function() {
+          showNext();
+        }, 700 + Math.random() * 600);
+      });
+    })();
   })();
   </script>
 </body>
