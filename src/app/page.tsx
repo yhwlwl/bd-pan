@@ -1406,12 +1406,13 @@ export default function Home() {
   };
 
   // === 管理面板操作 ===
-  const fetchAdminData = async () => {
+  const fetchAdminData = async (sourceOverride?: string) => {
     if (!userToken) return;
+    const source = sourceOverride || adminDataSource;
     try {
       // 非 admin 只拉统计数据（操作日志等）
       if (userRole !== 'admin') {
-        const statsRes = await fetch(`/api/admin-stats?source=${adminDataSource}`, { headers: { 'Authorization': `Bearer ${userToken}` } });
+        const statsRes = await fetch(`/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } });
         const sData = await statsRes.json();
         if (sData.code === 200 && sData.data) setAdminStats(sData.data);
         return;
@@ -1419,7 +1420,7 @@ export default function Home() {
       // admin 拉全部
       const [usrRes, statsRes] = await Promise.all([
         fetch('/api/users', { headers: { 'Authorization': `Bearer ${userToken}` } }),
-        fetch(`/api/admin-stats?source=${adminDataSource}`, { headers: { 'Authorization': `Bearer ${userToken}` } })
+        fetch(`/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } })
       ]);
       const data = await usrRes.json();
       const sData = await statsRes.json();
@@ -1776,7 +1777,7 @@ export default function Home() {
                   <button
                     onClick={() => {
                       const next = adminDataSource === 'ecs' ? 'supabase' : 'ecs';
-                      setAdminDataSource(next); setAdminMsg(null); fetchAdminData();
+                      setAdminDataSource(next); setAdminMsg(null); fetchAdminData(next);
                     }}
                     className={`text-[9px] px-1.5 py-0.5 rounded border ${adminDataSource === 'ecs' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}
                     title="切换数据源">{adminDataSource === 'ecs' ? '📡 ECS' : '☁️ Supabase'}</button>
