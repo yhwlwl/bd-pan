@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import CHANGELOG_DATA from '../data/changelog.json';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '');
 
 type Role = 'admin' | 'manager' | 'guest';
 type Theme = 'light' | 'dark';
@@ -378,7 +379,7 @@ export default function Home() {
       const suffix = status === 'blocked' ? ' - 被拦截' : status === 'failed' ? ' - 失败' : '';
       const sessionId = typeof window !== 'undefined' ? localStorage.getItem('BDPAN_SESSION') || '' : '';
       const fingerprint = typeof window !== 'undefined' ? localStorage.getItem('BDPAN_FINGERPRINT') || '' : '';
-      await fetch('/api/log-action', {
+      await fetch(`${API_BASE}/api/log-action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -409,7 +410,7 @@ export default function Home() {
       if (cc.pass) headers['x-alist-password'] = cc.pass;
     }
 
-    return fetch('/api/alist', {
+    return fetch(`${API_BASE}/api/alist`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -451,7 +452,7 @@ export default function Home() {
       fetch('https://ipapi.co/json/')
         .then(res => res.json())
         .then(data => {
-          fetch('/api/track', {
+          fetch(`${API_BASE}/api/track`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -467,7 +468,7 @@ export default function Home() {
           }).catch(() => { });
         })
         .catch(() => {
-          fetch('/api/track', {
+          fetch(`${API_BASE}/api/track`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: trackedUsername, time: new Date().toISOString(), device: navigator.userAgent, source: 'pan' })
@@ -476,7 +477,7 @@ export default function Home() {
     }
 
     // 获取公共设置
-    fetch('/api/global-settings', { cache: 'no-store' })
+    fetch(`${API_BASE}/api/global-settings`, { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         if (data) {
@@ -558,7 +559,7 @@ export default function Home() {
     setAuthLoading(true);
     setAuthError(null);
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: uname, password: pwd }),
@@ -591,7 +592,7 @@ export default function Home() {
     setAuthLoading(true);
     setAuthError(null);
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ guest: true }),
@@ -1086,7 +1087,7 @@ export default function Home() {
     setT2Progress({ current: 0, total: 0, msg: '⏳ 正在获取文件列表...' });
 
     try {
-      const res = await fetch(`/api/alist-batch-list?${params.toString()}`, { headers });
+      const res = await fetch(`${API_BASE}/api/alist-batch-list?${params.toString()}`, { headers });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
@@ -1152,7 +1153,7 @@ export default function Home() {
     if (userToken) headers['Authorization'] = `Bearer ${userToken}`;
 
     // 先预览（获取目录信息）
-    fetch(`/api/alist-zip-preview?${params.toString()}`, { headers })
+    fetch(`${API_BASE}/api/alist-zip-preview?${params.toString()}`, { headers })
       .then(async res => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `权限不足 (${res.status})`);
@@ -1164,7 +1165,7 @@ export default function Home() {
           setAlistMsg(`[ZIP] ${data.dirs.length} 个目录，共 ${totalFiles} 个文件`);
           console.log(`[批量下载:T1] 目录数=${data.dirs.length}, 文件数=${totalFiles}`);
         }
-        fetch(`/api/alist-zip-download?${params.toString()}`, headers)
+        fetch(`${API_BASE}/api/alist-zip-download?${params.toString()}`, headers)
           .then(async r => {
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const skipped = parseInt(r.headers.get('X-Skipped-Files') || '0', 10);
@@ -1281,7 +1282,7 @@ export default function Home() {
     let cachedTokenData: any = null;
     const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     try {
-      const tokenRes = await fetch('/api/alist-token', {
+      const tokenRes = await fetch(`${API_BASE}/api/alist-token`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${userToken}` },
       });
@@ -1411,15 +1412,15 @@ export default function Home() {
     try {
       // 非 admin 只拉统计数据（操作日志等）
       if (userRole !== 'admin') {
-        const statsRes = await fetch(`/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } });
+        const statsRes = await fetch(`${API_BASE}/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } });
         const sData = await statsRes.json();
         if (sData.code === 200 && sData.data) setAdminStats(sData.data);
         return;
       }
       // admin 拉全部
       const [usrRes, statsRes] = await Promise.all([
-        fetch('/api/users', { headers: { 'Authorization': `Bearer ${userToken}` } }),
-        fetch(`/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } })
+        fetch(`${API_BASE}/api/users`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+        fetch(`${API_BASE}/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } })
       ]);
       const data = await usrRes.json();
       const sData = await statsRes.json();
@@ -1444,7 +1445,7 @@ export default function Home() {
     if (!userToken) return;
     setAdminMsg(null);
     try {
-      const res = await fetch('/api/users', {
+      const res = await fetch(`${API_BASE}/api/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
         body: JSON.stringify({ action, ...body }),
@@ -1495,7 +1496,7 @@ export default function Home() {
   const fetchFilePermissionsData = async () => {
     if (!userToken || !canControlFile) return;
     try {
-      const res = await fetch('/api/file-permissions', {
+      const res = await fetch(`${API_BASE}/api/file-permissions`, {
         headers: { Authorization: `Bearer ${userToken}` },
       });
       const data = await res.json();
@@ -1514,7 +1515,7 @@ export default function Home() {
     if (!userToken) return false;
     setFilePermMsg(null);
     try {
-      const res = await fetch('/api/file-permissions', {
+      const res = await fetch(`${API_BASE}/api/file-permissions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
         body: JSON.stringify({ rules }),
@@ -2402,7 +2403,7 @@ export default function Home() {
                   <span className="text-[10px] font-bold text-zinc-500">🖥️ 服务端日志 (最近100条)</span>
                   <button onClick={async () => {
                     try {
-                      const res = await fetch('/api/debug-logs?limit=100', { headers: { Authorization: `Bearer ${userToken}` } });
+                      const res = await fetch(`${API_BASE}/api/debug-logs?limit=100`, { headers: { Authorization: `Bearer ${userToken}` } });
                       const data = await res.json();
                       const logs = data.logs || [];
                       const w = window.open('', '_blank', 'width=900,height=600');
@@ -2436,7 +2437,7 @@ export default function Home() {
                   <div className="flex gap-1">
                     <button onClick={() => {
                       // 强制登出：写入登出日志
-                      fetch('/api/log-action', {
+                      fetch(`${API_BASE}/api/log-action`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ username: u.username, action_type: '登出 - 强制', action_item: u.username, session_id: u.sessionId, fingerprint: u.fingerprint }),
@@ -3786,7 +3787,7 @@ export default function Home() {
                           setRegexPreview({ loading: true, total: 0, files: [], truncated: false });
                           setFilePermMsg(null);
                           try {
-                            const res = await fetch('/api/file-permissions', {
+                            const res = await fetch(`${API_BASE}/api/file-permissions`, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
                               body: JSON.stringify({
