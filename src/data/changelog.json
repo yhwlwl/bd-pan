@@ -2,7 +2,7 @@
   {
     "version": "4.0.0",
     "date": "2026-06-21 12:00:00",
-    "message": "[重大] 核心架构升级：API 迁移至 ECS (成都) 极速响应、自部署 PDF.js 阅读器 (渐进加载+缩略图+页缓存+Referer防盗)、视图切换 (列表/图标)+右键菜单、数据库迁移 PostgreSQL+PostgREST+Supabase双写备份、操作日志全面增强 (sessionId+指纹+在线用户+强制登出+时间/用户筛选+CSV导出)、管理面板数据源切换 (ECS/Supabase)、文件权限正则匹配+页面预览+ZIP打包权限修复、下载T2自动逐个直链、登录时长可配置、IP封禁标记、服务端日志内存捕获、CORS+Nginx安全加固",
+    "message": "[重大] 核心架构升级：API 迁移至 ECS 响应、自部署 PDF.js 阅读器 。",
     "hash": "92a2b5a"
   },
   {

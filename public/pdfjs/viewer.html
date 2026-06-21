@@ -1,51 +1,56 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PDF</title>
-<link rel="stylesheet" href="./pdf_viewer.css" />
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=no"><title>PDF</title>
 <style>
-html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#404040}
-#viewerContainer{position:absolute;top:32px;left:0;right:0;bottom:0;overflow:auto}
-.toolbar{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:4px;padding:4px 8px;background:rgba(0,0,0,.85);color:#fff;font:12px sans-serif;height:24px}
-.toolbar button{background:#555;border:none;color:#fff;padding:2px 8px;border-radius:3px;font-size:11px;cursor:pointer}
-.toolbar button:hover{background:#777}
-.toolbar input{background:#555;border:none;color:#fff;padding:2px 4px;border-radius:3px;font-size:11px;width:40px;text-align:center}
-.toolbar select{background:#555;border:none;color:#fff;padding:2px 4px;border-radius:3px;font-size:11px}
-.toolbar label{font-size:10px;opacity:.7}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#2a2a2a;touch-action:manipulation}
+#toolbar{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:4px;padding:4px 8px;background:rgba(0,0,0,.85);color:#fff;font:12px sans-serif;height:28px;box-sizing:border-box}
+#toolbar button{background:#555;border:none;color:#fff;padding:2px 8px;border-radius:3px;font-size:11px;cursor:pointer;white-space:nowrap}
+#toolbar button:hover{background:#777}
+#toolbar input{background:#555;border:none;color:#fff;padding:2px 4px;border-radius:3px;font-size:11px;width:36px;text-align:center}
+#toolbar select{background:#555;border:none;color:#fff;padding:2px 4px;border-radius:3px;font-size:11px;max-width:70px}
+#toolbar label{font-size:10px;opacity:.7;white-space:nowrap}
+#viewerContainer{position:absolute;top:28px;left:0;right:0;bottom:0;overflow:hidden}
+#wrapper{transform-origin:0 0}
+canvas{display:block;box-shadow:0 2px 12px rgba(0,0,0,.5)}
 </style></head><body>
-<div class="toolbar" id="toolbar">
-  <button id="prev" title="上一页">◀</button>
-  <span id="pageInfo"></span>/<span id="totalPages">?</span>
-  <button id="next" title="下一页">▶</button>
+<div id="toolbar">
+  <button id="prev">◀</button>
+  <span id="pageInfo">-</span>/<span id="totalPages">-</span>
+  <button id="next">▶</button>
   <input id="pageInput" type="number" min="1" value="1">
-  <button id="zoomOut" title="缩小">−</button>
+  <button id="zoomOut">−</button>
   <select id="scaleSelect">
-    <option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option>
-    <option value="page-width">适应宽度</option><option value="page-fit">适应页面</option>
+    <option value="page-width" selected>适应宽度</option>
+    <option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option>
   </select>
-  <button id="zoomIn" title="放大">＋</button>
-  <label id="loading"></label>
+  <button id="zoomIn">＋</button>
+  <span id="loading" style="font-size:10px;opacity:.7;margin-left:auto"></span>
 </div>
-<div id="viewerContainer"><div id="viewer"></div></div>
+<div id="viewerContainer"><div id="wrapper"></div></div>
 <script type="module">
 import { getDocument, GlobalWorkerOptions } from './pdf.min.mjs';
 GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
 
-const file=(new URL(location.href)).searchParams.get('key')?'':(new URL(location.href)).searchParams.get('file')||'';
-const pdfUrl=file?decodeURIComponent(file):sessionStorage.getItem((new URL(location.href)).searchParams.get('key')||'')||'';
-if(!pdfUrl){document.body.innerHTML='<div style="color:#fff;text-align:center;padding:40px">无法加载 PDF</div>';throw new Error('no pdf')}
+const key=(new URL(location.href)).searchParams.get('key')||'';
+const file=(new URL(location.href)).searchParams.get('file')||'';
+const pdfUrl=key?sessionStorage.getItem(key)||'':decodeURIComponent(file||'');
+if(!pdfUrl){document.body.innerHTML='<div style="color:#fff;text-align:center;padding:40px">无法加载PDF</div>';throw new Error('no pdf')}
+if(key)sessionStorage.removeItem(key);
 document.title=decodeURIComponent(pdfUrl.split('/').pop()||'PDF');
 
 const container=document.getElementById('viewerContainer'),
-      viewer=document.getElementById('viewer'),
+      wrapper=document.getElementById('wrapper'),
       loading=document.getElementById('loading'),
       pageInput=document.getElementById('pageInput'),
       scaleSelect=document.getElementById('scaleSelect');
 
-let pdf=null,scale=1,pageNum=1,total=0,rendering=false,queue=null;
+let pdf=null,scale=1,pageNum=1,total=0,physScale=1,fitWidth=true;
 const cache=new Map();
 
 async function loadPdf(){
-  loading.textContent='加载中...';
-  pdf=await getDocument({url:pdfUrl,disableRange:true,disableStream:false}).promise;
+  loading.textContent='⏳';
+  const task=getDocument({url:pdfUrl,disableRange:true,disableStream:false});
+  task.onProgress=p=>{if(p.total)loading.textContent=Math.round(100*p.loaded/p.total)+'%'};
+  pdf=await task.promise;
   total=pdf.numPages;
   document.getElementById('totalPages').textContent=total;
   pageInput.max=total;
@@ -53,37 +58,80 @@ async function loadPdf(){
   renderPage(1);
 }
 async function renderPage(num){
-  if(cache.has(num)){
-    viewer.innerHTML='';viewer.appendChild(cache.get(num));updateInfo(num);return;
-  }
-  viewer.innerHTML='';
+  if(cache.has(num)){showCached(num);updateUI(num);return}
+  wrapper.innerHTML='';
   const page=await pdf.getPage(num);
   let vpScale=scale;
   if(scaleSelect.value==='page-width'){vpScale=(container.clientWidth-20)/page.getViewport({scale:1}).width}
-  else if(scaleSelect.value==='page-fit'){vpScale=Math.min((container.clientWidth-20)/page.getViewport({scale:1}).width,(container.clientHeight-10)/page.getViewport({scale:1}).height)}
+  else if(scaleSelect.value==='page-fit'){vpScale=Math.min((container.clientWidth-20)/page.getViewport({scale:1}).width,(container.clientHeight-40)/page.getViewport({scale:1}).height)}
+  scale=vpScale;
   const vp=page.getViewport({scale:vpScale});
   const canvas=document.createElement('canvas');
-  canvas.height=vp.height;canvas.width=vp.width;canvas.style.display='block';canvas.style.margin='0 auto';
-  viewer.appendChild(canvas);
+  canvas.height=vp.height;canvas.width=vp.width;
+  wrapper.appendChild(canvas);
+  wrapper.style.width=vp.width+'px';wrapper.style.height=vp.height+'px';
   await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
   cache.set(num,canvas);if(cache.size>12){const[[k]]=cache;cache.delete(k)}
-  updateInfo(num);
-  // 预渲染后续页
-  setTimeout(()=>{for(let i=1;i<=4;i++){const n=num+i;if(n<=total&&!cache.has(n)){pdf.getPage(n).then(pp=>{const vv=pp.getViewport({scale:vpScale});const cc=document.createElement('canvas');cc.height=vv.height;cc.width=vv.width;pp.render({canvasContext:cc.getContext('2d'),viewport:vv}).promise.then(()=>{if(cache.size<12)cache.set(n,cc)})})}}},300);
+  updateUI(num);
+  setTimeout(()=>{for(let i=1;i<=4;i++){const n=num+i;if(n<=total&&!cache.has(n)){pdf.getPage(n).then(pp=>{const vv=pp.getViewport({scale});const cc=document.createElement('canvas');cc.height=vv.height;cc.width=vv.width;pp.render({canvasContext:cc.getContext('2d'),viewport:vv}).promise.then(()=>{if(cache.size<12)cache.set(n,cc)})})}}},300);
 }
-function updateInfo(num){pageNum=num;document.getElementById('pageInfo').textContent=num;pageInput.value=num}
+function showCached(num){wrapper.innerHTML='';wrapper.appendChild(cache.get(num));wrapper.style.width=cache.get(num).width+'px';wrapper.style.height=cache.get(num).height+'px'}
+function updateUI(num){pageNum=num;document.getElementById('pageInfo').textContent=num;pageInput.value=num}
 function goPage(n){if(n<1||n>total)return;pageNum=n;renderPage(n)}
-function changeScale(){
-  if(scaleSelect.value!=='page-width'&&scaleSelect.value!=='page-fit'){scale=parseFloat(scaleSelect.value)}
-  cache.clear();renderPage(pageNum);
+function applyScale(s){
+  scale=s;cache.clear();physScale=1;wrapper.style.transform='';container.scrollTop=0;
+  scaleSelect.value=s;renderPage(pageNum);
 }
+
+// ======== 触摸手势：双指缩放 + 滑动翻页 ========
+let touchStart=null,lastPinchDist=0,swipeStart=null;
+container.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){
+    lastPinchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  }else if(e.touches.length===1){
+    swipeStart={x:e.touches[0].clientX,y:e.touches[0].clientY,time:Date.now()};
+  }
+},{passive:false});
+container.addEventListener('touchmove',e=>{
+  if(e.touches.length===2){
+    e.preventDefault();
+    const dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    if(lastPinchDist>0){physScale*=dist/lastPinchDist;physScale=Math.max(0.3,Math.min(5,physScale));wrapper.style.transform=`scale(${physScale})`}
+    lastPinchDist=dist;
+  }
+},{passive:false});
+container.addEventListener('touchend',e=>{
+  if(e.touches.length===0&&swipeStart){
+    const end=e.changedTouches[0];
+    const dx=end.clientX-swipeStart.x,dy=end.clientY-swipeStart.y;
+    const dt=Date.now()-swipeStart.time;
+    if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)&&dt<500){
+      if(dx>0)goPage(pageNum-1);else goPage(pageNum+1);
+    }
+    swipeStart=null;
+  }
+  if(e.touches.length<2&&physScale!==1){
+    physScale=1;wrapper.style.transform='';
+  }
+});
+
+// ======== 键盘快捷键 ========
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(e.key==='ArrowRight'||e.key==='ArrowDown')goPage(pageNum+1);
+  else if(e.key==='ArrowLeft'||e.key==='ArrowUp')goPage(pageNum-1);
+  else if(e.key==='+'||e.key==='='){scale=Math.min(4,scale*1.25);scaleSelect.value=scale;applyScale(scale)}
+  else if(e.key==='-'){scale=Math.max(0.25,scale/1.25);scaleSelect.value=scale;applyScale(scale)}
+  else if(e.key==='f'&&!e.ctrlKey&&!e.metaKey){document.getElementById('toolbar').style.display=document.getElementById('toolbar').style.display==='none'?'flex':'none'}
+  else if(e.key==='Escape'){if(document.getElementById('toolbar').style.display==='none')document.getElementById('toolbar').style.display='flex'}
+});
 
 document.getElementById('prev').onclick=()=>goPage(pageNum-1);
 document.getElementById('next').onclick=()=>goPage(pageNum+1);
-pageInput.onchange=()=>goPage(parseInt(pageInput.value,10));
-document.getElementById('zoomIn').onclick=()=>{scale=Math.min(4,scale+0.25);scaleSelect.value=scale;changeScale()}
-document.getElementById('zoomOut').onclick=()=>{scale=Math.max(0.25,scale-0.25);scaleSelect.value=scale;changeScale()}
-scaleSelect.onchange=changeScale;
-container.onscroll=()=>{};
-loadPdf().catch(e=>{viewer.innerHTML=`<div style="color:#f66;text-align:center;padding:40px">加载失败: ${e.message}</div>`});
+pageInput.onchange=()=>goPage(parseInt(pageInput.value,10)||1);
+document.getElementById('zoomIn').onclick=()=>{applyScale(Math.min(4,scale*1.25))}
+document.getElementById('zoomOut').onclick=()=>{applyScale(Math.max(0.25,scale/1.25))}
+scaleSelect.onchange=()=>{const v=scaleSelect.value;if(v==='page-width'){fitWidth=true;goPage(pageNum)}else if(v==='page-fit'){goPage(pageNum)}else{fitWidth=false;applyScale(parseFloat(v))}}
+
+loadPdf().catch(e=>{wrapper.innerHTML=`<div style="color:#f66;text-align:center;padding:40px">加载失败: ${e.message}</div>`});
 </script></body></html>
