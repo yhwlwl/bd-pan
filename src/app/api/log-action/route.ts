@@ -9,6 +9,8 @@ export async function POST(req: Request) {
     const forwardedFor = req.headers.get('x-forwarded-for');
     const realIp = req.headers.get('x-real-ip');
     let ip = forwardedFor ? forwardedFor.split(',')[0].trim() : (realIp || '未知IP');
+    // 去除 IPv4-mapped IPv6 前缀（::ffff:x.x.x.x → x.x.x.x）
+    if (ip.startsWith('::ffff:')) ip = ip.slice(7);
 
     // IP 定位优先用 Vercel headers（更快），fallback ip-api.com
     let location = '未知定位';

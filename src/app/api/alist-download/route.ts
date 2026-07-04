@@ -51,7 +51,8 @@ function formatBytes(bytes: number): string {
 
 export async function GET(request: Request) {
     try {
-        const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+        const clientIpRaw = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+        const clientIp = clientIpRaw.startsWith('::ffff:') ? clientIpRaw.slice(7) : clientIpRaw;
         if (await checkIpBanned(clientIp)) {
             return new Response('您的 IP 已被禁止访问', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
         }

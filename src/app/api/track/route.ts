@@ -8,7 +8,8 @@ export async function POST(req: Request) {
     try {
         const body = await req.json();
         const headers = req.headers;
-        const ip = headers.get('x-forwarded-for') || headers.get('x-real-ip') || '127.0.0.1';
+        const ipRaw = headers.get('x-forwarded-for') || headers.get('x-real-ip') || '127.0.0.1';
+        const ip = ipRaw.startsWith('::ffff:') ? ipRaw.slice(7) : ipRaw;
         const city = headers.get('x-vercel-ip-city') || body.city || 'Unknown';
         const country = headers.get('x-vercel-ip-country') || body.country || 'Unknown';
         const region = headers.get('x-vercel-ip-country-region') || body.region || 'Unknown';

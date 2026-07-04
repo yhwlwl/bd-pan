@@ -238,8 +238,8 @@
         <span class="dot red"></span>
         <span class="dot yellow"></span>
         <span class="dot green"></span>
-        <span class="terminal-title">
-          sta-pan — db-gateway — __HOST__
+        <span class="terminal-title" id="terminal-title">
+          sta-pan — db-gateway — deny.tantantan.tech
         </span>
       </div>
       <div class="terminal-body">
@@ -346,15 +346,15 @@
         <div class="info-panel">
           <div class="info-row">
             <span class="key">TIME</span>
-            <span class="val" id="info-time">__TIME_LOCAL__</span>
+            <span class="val" id="info-time">—</span>
           </div>
           <div class="info-row">
-            <span class="key">HOST</span>
-            <span class="val" id="info-host">__HOST__</span>
+            <span class="key">FROM</span>
+            <span class="val" id="info-from">—</span>
           </div>
           <div class="info-row">
             <span class="key">SRC IP</span>
-            <span class="val em" id="info-ip">__REMOTE_ADDR__</span>
+            <span class="val em" id="info-ip">—</span>
           </div>
           <div class="info-row" id="row-isp" style="display:none">
             <span class="key">ISP</span>
@@ -370,7 +370,7 @@
           </div>
           <div class="info-row">
             <span class="key">UA</span>
-            <span class="val" id="info-ua">__HTTP_USER_AGENT__</span>
+            <span class="val" id="info-ua">—</span>
           </div>
           <div class="info-row">
             <span class="key">STATUS</span>
@@ -404,12 +404,23 @@
 
   <script>
   (function() {
+    // ── 从 URL query params 读取 Nginx 302 传来的数据 ──
+    var params = new URLSearchParams(window.location.search);
+    var srvIP   = params.get('ip')   || null;
+    var srvTime = params.get('time') || null;
+    var srvFrom = params.get('from') || null;
+    var srvUA   = params.get('ua')   || null;
+
+    // URL 解码（nginx $time_local 含空格/冒号）
+    if (srvTime) srvTime = decodeURIComponent(srvTime);
+    if (srvFrom) srvFrom = decodeURIComponent(srvFrom);
+    if (srvUA)   srvUA   = decodeURIComponent(srvUA);
+
     // ── 终端逐行打印动画 ──
     (function() {
       var ids = ['sl1','sl2','sl3','sl4','sl5','sl6','sl7','sl8',
                  'sl9','sl10','sl11','sl12','sl13','sl14','sl15','sl16','sl17'];
       var idx = 0;
-      // 先全部隐藏
       ids.forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.style.display = 'none';
@@ -419,11 +430,9 @@
         var el = document.getElementById(ids[idx]);
         if (el) el.style.display = '';
         idx++;
-        // 每条时间随机 180~700ms，模拟真实敲命令的手速
         var delay = 180 + Math.random() * 520;
         setTimeout(showNextLine, delay);
       }
-      // 页面加载后等 400ms 开始打印
       setTimeout(showNextLine, 400);
     })();
 
@@ -431,24 +440,15 @@
     var evtId = 'EVT-' + Date.now().toString(36).toUpperCase() +
                 '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
     var elEvt = document.getElementById('info-evt');
-    if (elEvt && elEvt.textContent.trim() === '—') elEvt.textContent = evtId;
+    if (elEvt) elEvt.textContent = evtId;
 
-    // ── 读取服务端注入的值（sub_filter 替换占位符后的结果）──
-    function getServerVal(id, placeholder) {
-      var node = document.getElementById(id);
-      if (!node) return null;
-      var t = node.textContent.trim();
-      // 如果还是占位符原文，说明 sub_filter 没生效
-      if (!t || t === placeholder || t === '—') return null;
-      return t;
+    // ── 填充信息面板 ──
+    // IP
+    if (srvIP) {
+      document.getElementById('info-ip').textContent = srvIP;
     }
 
-    var srvIP   = getServerVal('info-ip',   '__REMOTE_ADDR__');
-    var srvTime = getServerVal('info-time', '__TIME_LOCAL__');
-    var srvHost = getServerVal('info-host', '__HOST__');
-    var srvUA   = getServerVal('info-ua',   '__HTTP_USER_AGENT__');
-
-    // ── 格式化时间 ──
+    // Time — 解析 nginx time_local 格式: DD/Mon/YYYY:HH:MM:SS +TZ
     if (srvTime) {
       try {
         var m = srvTime.match(/(\d{2})\/(\w{3})\/(\d{4}):(\d{2}:\d{2}:\d{2})\s*([+-]\d{4})?/);
@@ -457,8 +457,12 @@
                          Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12' };
           document.getElementById('info-time').textContent =
             m[3] + '-' + (months[m[2]] || m[2]) + '-' + m[1] + ' ' + m[4] + ' ' + (m[5] || '');
+        } else {
+          document.getElementById('info-time').textContent = srvTime;
         }
-      } catch(e) {}
+      } catch(e) {
+        document.getElementById('info-time').textContent = srvTime;
+      }
     } else {
       var now = new Date();
       document.getElementById('info-time').textContent =
@@ -471,12 +475,19 @@
         ' (local)';
     }
 
-    // ── UA 回退 ──
-    if (!srvUA) {
+    // From（原始请求路径）
+    if (srvFrom) {
+      document.getElementById('info-from').textContent = srvFrom;
+    }
+
+    // UA
+    if (srvUA) {
+      document.getElementById('info-ua').textContent = srvUA;
+    } else {
       document.getElementById('info-ua').textContent = navigator.userAgent || '—';
     }
 
-    // ── 地理查询（通过服务端代理，避免浏览器 Mixed Content 拦截）──
+    // ── 地理查询（通过 ip-api.com JSONP 方式，规避 Mixed Content）──
     var geoBar     = document.getElementById('geo-bar');
     var geoFlag    = document.getElementById('geo-flag');
     var geoLocText = document.getElementById('geo-loc-text');
@@ -553,39 +564,42 @@
       geoBar.classList.add('loaded');
     }
 
-    // 通过同源 nginx 代理请求 ip-api，规避 HTTPS 页面不能请求 HTTP 的限制
-    function geoQuery(ip) {
-      var url = '/geo-lookup';
-      if (ip) url += '?ip=' + encodeURIComponent(ip);
-      var xhr = new XMLHttpRequest();
-      xhr.timeout = 5000;
-      xhr.open('GET', url, true);
-      xhr.onload = function() {
-        if (xhr.status === 200) {
-          try { applyGeo(JSON.parse(xhr.responseText)); } catch(e) { geoFail('geo 解析失败'); }
-        } else {
-          geoFail('geo 查询失败 (' + xhr.status + ')');
-        }
-      };
-      xhr.ontimeout = function() { geoFail('geo 查询超时'); };
-      xhr.onerror   = function() { geoFail('geo 查询失败'); };
-      xhr.send();
+    // 用 URL 参数传入的 IP 查询地理位置
+    // ipapi.co 免费支持 HTTPS，无需 API key（1000 req/day）
+    if (srvIP) {
+      var geoUrl = 'https://ipapi.co/' + encodeURIComponent(srvIP) + '/json/';
+      fetch(geoUrl, { signal: AbortSignal.timeout(5000) })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          // 转换 ipapi.co 格式 → 统一格式
+          if (data && !data.error) {
+            applyGeo({
+              status: 'success',
+              query: data.ip,
+              country: data.country_name,
+              countryCode: data.country_code,
+              regionName: data.region,
+              city: data.city,
+              isp: data.org,
+              lat: data.latitude,
+              lon: data.longitude
+            });
+          } else {
+            geoFail(data.reason || 'geo 查询失败');
+          }
+        })
+        .catch(function() { geoFail('geo 查询失败'); });
+    } else {
+      // 没有 IP 参数则不查询
+      geoFail('无 IP 信息');
     }
 
-    // 用服务端注入的 IP 查询（更准确）
-    if (srvIP) {
-      geoQuery(srvIP);
-    } else {
-      // 不传 ip，nginx 代理到 ip-api 自动用客户端公网 IP
-      geoQuery();
-    }
     // ── 原神下载（纯整活·终端风格输出）──
     (function() {
       var hint = document.getElementById('genshin-hint');
       var container = document.getElementById('genshin-output');
       if (!hint || !container) return;
 
-      // 按顺序显示的 line id 列表
       var lines = [
         'gl-cmd', 'gl-resolving', 'gl-conn', 'gl-connecting',
         'gl-http', 'gl-blocked', 'gl-retry', 'gl-retry2', 'gl-retry3',
@@ -595,7 +609,6 @@
       var timer = null;
       var started = false;
 
-      // curl 进度模拟
       var curlStep = 0;
       var curlPcts = [
         '  3%  158.2M  4.75MB  1.23MB/s  00:02:03',
@@ -621,12 +634,10 @@
         var el = document.getElementById(lines[idx]);
         if (el) {
           el.style.display = '';
-          // 滚动到可见区域
           el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
         idx++;
 
-        // 如果显示到 curl 进度条，启动进度动画
         if (lines[idx - 1] === 'gl-pbar2') {
           startCurlProgress();
         }
@@ -638,7 +649,6 @@
         curlTimer = setInterval(function() {
           if (curlIdx >= curlPcts.length) {
             if (curlTimer) { clearInterval(curlTimer); curlTimer = null; }
-            // 继续显示后续行
             return;
           }
           if (barText) barText.textContent = curlPcts[curlIdx];
@@ -654,7 +664,6 @@
         hint.style.cursor = 'default';
         hint.style.color = '#45475a';
 
-        // 逐行输出，模拟终端
         showNext();
         timer = setInterval(function() {
           showNext();
