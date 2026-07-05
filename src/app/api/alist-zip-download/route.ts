@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { verifyToken } from '../_auth';
+import { verifyTokenWithLog } from '../_auth';
+import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 import {
     applyBasePathForPermissions,
-    checkIpBanned,
     getEffectivePermissionsForPath,
     getSettings,
     getUserPermissions,
@@ -43,9 +44,11 @@ import { getAllFilesInDir } from '../../../lib/alist-utils';
 
 export async function GET(request: Request) {
     try {
-        const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
-        if (await checkIpBanned(clientIp)) {
-            return new Response('IP banned', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+        const ctx = getRequestContext(request);
+        const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
+        const { banned, reason: banReason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
+        if (banned) {
+            return NextResponse.json({ code: 403, message: `您的${banReason === 'device' ? '设备' : 'IP'}已被禁止访问` }, { status: 403 });
         }
 
         const { searchParams } = new URL(request.url);
@@ -66,7 +69,7 @@ export async function GET(request: Request) {
 
         // Verify user
         const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
-        const user = verifyToken(authHeader);
+        const user = verifyTokenWithLog(authHeader, ctx);
         if (!user) {
             return NextResponse.json({ error: '请先登录' }, { status: 401 });
         }

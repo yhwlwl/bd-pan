@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyToken } from '../_auth';
+import { verifyToken, verifyTokenWithLog, type AuthContext } from '../_auth';
 import {
     applyBasePathForPermissions,
     checkIpBanned,
@@ -11,6 +11,8 @@ import {
     ruleMatchesTarget,
     UserPermissions,
 } from '../../../lib/users';
+import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
@@ -67,9 +69,6 @@ export async function POST(request: Request) {
     const startTime = Date.now();
     try {
         const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
-        if (await checkIpBanned(clientIp)) {
-            return NextResponse.json({ code: 403, message: '您的 IP 已被禁止访问' }, { status: 403 });
-        }
 
         const body = await request.json().catch(() => ({}));
         const { action, path, name, names, newName, dir_name, parent, keywords, scope } = body as {
@@ -84,7 +83,16 @@ export async function POST(request: Request) {
             scope?: number;
         };
 
-        const user = verifyToken(request.headers.get('authorization') || undefined);
+        const ctx = getRequestContext(request);
+        const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
+
+        // 双重封禁检查（IP + 设备码）
+        const { banned, reason: banReason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
+        if (banned) {
+            return NextResponse.json({ code: 403, message: `您的${banReason === 'device' ? '设备' : 'IP'}已被禁止访问` }, { status: 403 });
+        }
+
+        const user = verifyTokenWithLog(request.headers.get('authorization') || undefined, ctx);
         if (!user) {
             return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
         }
@@ -169,26 +177,26 @@ export async function POST(request: Request) {
             if (!isRoot) {
                 const targetPerms = await getScopedPerms(path);
                 if (!targetPerms.view && !targetPerms.download && !targetPerms.preview) {
-                    return NextResponse.json({ code: 403, message: '该路径已被限制访问' }, { status: 403 });
+                    return denyAndLog(request, 'api_file_rule_denied', 403, '该路径已被限制访问');
                 }
             }
         }
         if (action === 'search') {
             const targetPerms = await getScopedPerms(parent);
             if (!targetPerms.search) {
-                return NextResponse.json({ code: 403, message: '无权搜索文件' }, { status: 403 });
+                return denyAndLog(request, 'api_permission_denied', 403, '无权搜索文件');
             }
         }
         if (action === 'mkdir') {
             const targetPerms = await getScopedPerms(path);
             if (!targetPerms.upload) {
-                return NextResponse.json({ code: 403, message: '无权创建文件夹' }, { status: 403 });
+                return denyAndLog(request, 'api_permission_denied', 403, '无权创建文件夹');
             }
         }
         if (action === 'remove') {
             const parentPerms = await getScopedPerms(path);
             if (!parentPerms.delete) {
-                return NextResponse.json({ code: 403, message: '无权删除文件' }, { status: 403 });
+                return denyAndLog(request, 'api_permission_denied', 403, '无权删除文件');
             }
             // 额外检查每一个具体项，防止绕过特定路径记录的禁止删除规则
             const items = names || (name ? [name] : []);
@@ -196,14 +204,14 @@ export async function POST(request: Request) {
                 const fullItemPath = `${(path || '').replace(/\/+$/, '')}/${n}`;
                 const itemPerms = await getScopedPerms(fullItemPath);
                 if (!itemPerms.delete) {
-                    return NextResponse.json({ code: 403, message: `您没有删除该项的权限: ${n}` }, { status: 403 });
+                    return denyAndLog(request, 'api_permission_denied', 403, `您没有删除该项的权限: ${n}`);
                 }
             }
         }
         if (action === 'rename') {
             const itemPerms = await getScopedPerms(path);
             if (!itemPerms.rename) {
-                return NextResponse.json({ code: 403, message: '无权重命名该项' }, { status: 403 });
+                return denyAndLog(request, 'api_permission_denied', 403, '无权重命名该项');
             }
         }
 

@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
-import { requireRole } from '../_auth';
+import { requireRole, requireRoleWithLog, type AuthContext } from '../_auth';
 import { getUsers, addUser, removeUser, updateUserRole, getSettings, updateSettings, updateAdminPassword } from '../../../lib/users';
 import type { FilePermissionRule, Role, UserPermissions } from '../../../lib/users';
+import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 
 // GET: 获取用户列表和全局设置（仅 admin）
 export async function GET(request: Request) {
-    const auth = requireRole(request.headers.get('authorization') || undefined, 'admin');
+    const ctx = getRequestContext(request);
+    const auth = requireRoleWithLog(request.headers.get('authorization') || undefined, ctx, 'admin');
     if (!auth) {
-        return NextResponse.json({ error: '权限不足，无法访问核心组件' }, { status: 401 });
+        return NextResponse.json({ error: '权限不足' }, { status: 401 });
     }
 
     return NextResponse.json({
@@ -18,9 +21,10 @@ export async function GET(request: Request) {
 
 // POST: 管理操作（仅 admin）
 export async function POST(request: Request) {
-    const auth = requireRole(request.headers.get('authorization') || undefined, 'admin');
+    const ctx = getRequestContext(request);
+    const auth = requireRoleWithLog(request.headers.get('authorization') || undefined, ctx, 'admin');
     if (!auth) {
-        return NextResponse.json({ error: '权限不足，申请被拦截' }, { status: 401 });
+        return NextResponse.json({ error: '权限不足' }, { status: 401 });
     }
 
     try {

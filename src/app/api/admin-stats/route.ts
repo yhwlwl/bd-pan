@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
-import { verifyToken } from '../_auth';
+import { verifyToken, verifyTokenWithLog } from '../_auth';
 import { getUserPermissions } from '../../../lib/users';
 import { pgFetch } from '../../../lib/pg-adapter';
+import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 
 const BACKUP_URL = (process.env.SUPABASE_BACKUP_URL || '').replace(/\/+$/, '');
 const BACKUP_KEY = process.env.SUPABASE_BACKUP_KEY || '';
@@ -28,13 +30,14 @@ async function supabaseFetch(method: string, path: string): Promise<any> {
 
 export async function GET(request: Request) {
     try {
+        const ctx = getRequestContext(request);
         const authHeader = request.headers.get('authorization') || undefined;
-        const user = verifyToken(authHeader);
+        const user = verifyTokenWithLog(authHeader, ctx);
         if (!user) return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
         if (user.role !== 'admin') {
             const perms = await getUserPermissions(user.username, user.role);
             if (!(perms.viewStats || perms.viewActionLogs || perms.viewIpStats || perms.viewDownloadLogs)) {
-                return NextResponse.json({ code: 401, message: '无权限访问统计信息' }, { status: 401 });
+                return denyAndLog(request, 'api_role_denied', 401, '无权限访问统计信息');
             }
         }
 

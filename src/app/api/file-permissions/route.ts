@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyToken } from '../_auth';
+import { verifyToken, verifyTokenWithLog, type AuthContext } from '../_auth';
 import {
     canAssignFilePermissionTarget,
     canManageFilePermissions,
@@ -9,6 +9,8 @@ import {
     updateSettings,
 } from '../../../lib/users';
 import type { FilePermissionRule } from '../../../lib/users';
+import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
@@ -38,8 +40,9 @@ async function getAlistToken(url: string, user: string, pass: string): Promise<s
 }
 
 async function authorize(request: Request) {
+    const ctx = getRequestContext(request);
     const authHeader = request.headers.get('authorization') || undefined;
-    const user = verifyToken(authHeader);
+    const user = verifyTokenWithLog(authHeader, ctx);
     if (!user) return null;
     const allowed = await canManageFilePermissions(user.username, user.role);
     if (!allowed) return null;

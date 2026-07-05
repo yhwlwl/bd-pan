@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { verifyToken } from '../_auth';
+import { verifyTokenWithLog } from '../_auth';
 import { getUserPermissions, getSettings } from '../../../lib/users';
+import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 
 // ECS 成都节点 (主)
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
@@ -14,8 +16,9 @@ const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 const tokenCache = new Map<string, { token: string; expiry: number }>();
 
 export async function POST(request: Request) {
+    const ctx = getRequestContext(request);
     const authHeader = request.headers.get('authorization') || undefined;
-    const user = verifyToken(authHeader);
+    const user = verifyTokenWithLog(authHeader, ctx);
     if (!user) {
         return NextResponse.json({ error: '请先登录' }, { status: 401 });
     }

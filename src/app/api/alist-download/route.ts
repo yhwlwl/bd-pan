@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { verifyToken } from '../_auth';
+import { verifyTokenWithLog, type AuthContext } from '../_auth';
+import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 import {
     applyBasePathForPermissions,
-    checkIpBanned,
     getEffectivePermissionsForPath,
     getSettings,
     getUserPermissions,
@@ -51,10 +52,11 @@ function formatBytes(bytes: number): string {
 
 export async function GET(request: Request) {
     try {
-        const clientIpRaw = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
-        const clientIp = clientIpRaw.startsWith('::ffff:') ? clientIpRaw.slice(7) : clientIpRaw;
-        if (await checkIpBanned(clientIp)) {
-            return new Response('您的 IP 已被禁止访问', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+        const ctx = getRequestContext(request);
+        const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
+        const { banned, reason: banReason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
+        if (banned) {
+            return NextResponse.json({ code: 403, message: `您的${banReason === 'device' ? '设备' : 'IP'}已被禁止访问` }, { status: 403 });
         }
 
         const { searchParams } = new URL(request.url);
@@ -66,7 +68,7 @@ export async function GET(request: Request) {
         }
 
         const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
-        const user = verifyToken(authHeader);
+        const user = verifyTokenWithLog(authHeader, ctx);
         if (!user) {
             return new Response('请先登录', { status: 401, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
         }
@@ -166,7 +168,7 @@ export async function GET(request: Request) {
                 username: user.username,
                 action_type: `下载${isPreview ? ' - 预览' : ''} - 失败`,
                 action_item: `${path} (${formatBytes(fileSize)})`,
-                ip: clientIp, location: '未知定位',
+                ip: ctx.ip, location: '未知定位',
                 log_text: `${user.username} 下载失败: ${path} HTTP${fileRes.status}`,
             }).catch(() => {});
             return new Response(`下载失败 (${fileRes.status}): ${errText.substring(0, 200)}`, {
@@ -181,7 +183,7 @@ export async function GET(request: Request) {
             username: user.username,
             action_type: `下载${isPreview ? ' - 预览' : ''} - 成功`,
             action_item: `${path} (${formatBytes(fileSize)})`,
-            ip: clientIp, location: '未知定位',
+            ip: ctx.ip, location: '未知定位',
             log_text: `${user.username} 下载成功: ${path}, ${formatBytes(fileSize)}`,
         }).catch(() => {});
 

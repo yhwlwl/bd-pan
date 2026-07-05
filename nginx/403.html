@@ -416,6 +416,47 @@
     if (srvFrom) srvFrom = decodeURIComponent(srvFrom);
     if (srvUA)   srvUA   = decodeURIComponent(srvUA);
 
+    // ── 设备码计算（L2 Canvas/WebGL 指纹，与 fingerprint.ts 算法一致）──
+    function computeDeviceCode() {
+      try {
+        var parts = [];
+        // Canvas 指纹
+        try {
+          var c = document.createElement('canvas'); c.width = 200; c.height = 60;
+          var ctx = c.getContext('2d');
+          if (ctx) {
+            ctx.textBaseline = 'top'; ctx.font = '14px Arial';
+            ctx.fillStyle = '#f60'; ctx.fillRect(10, 5, 50, 20);
+            ctx.fillStyle = '#069'; ctx.fillText('Fingerprint!<@', 2, 20);
+            ctx.fillStyle = 'rgba(100, 200, 50, 0.7)'; ctx.fillText('CJK: 喵ฅ', 10, 40);
+            parts.push(c.toDataURL().slice(-200));
+          }
+        } catch(e) {}
+        // WebGL
+        try {
+          var gl = document.createElement('canvas').getContext('webgl');
+          if (gl) {
+            var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            if (dbg) parts.push(gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) + '|' + gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
+          }
+        } catch(e) {}
+        // Screen + Platform + Timezone + Hardware + Languages + UA
+        parts.push(screen.width + 'x' + screen.height + 'x' + screen.colorDepth);
+        parts.push(navigator.platform || '');
+        parts.push(String(new Date().getTimezoneOffset()));
+        parts.push(String(navigator.hardwareConcurrency || 0));
+        parts.push(String(navigator.deviceMemory || 0));
+        parts.push((navigator.languages || [navigator.language]).join(','));
+        parts.push(navigator.userAgent || '');
+        // FNV-1a 64-bit hash (BigInt)
+        var input = parts.join('###');
+        var h = BigInt('0xcbf29ce484222325');
+        for (var i = 0; i < input.length; i++) { h ^= BigInt(input.charCodeAt(i)); h *= BigInt('0x100000001b3'); }
+        return h.toString(16).padStart(16, '0');
+      } catch(e) { return 'fallback_' + Date.now().toString(36); }
+    }
+    var deviceCode = computeDeviceCode();
+
     // ── 终端逐行打印动画 ──
     (function() {
       var ids = ['sl1','sl2','sl3','sl4','sl5','sl6','sl7','sl8',
@@ -669,6 +710,43 @@
           showNext();
         }, 700 + Math.random() * 600);
       });
+    })();
+
+    // ── Deny 事件回调：将 Nginx deny 事件回传给 ECS API ──
+    (function() {
+      var fromPath = srvFrom || '';
+      var reason = 'nginx_unknown';
+      if (fromPath.indexOf('/db/') === 0) reason = 'nginx_db_token';
+      else if (fromPath.indexOf('/pdf-preview/') === 0) reason = 'nginx_pdf_referer';
+      else if (fromPath.match(/\.(env|git|sql|bak|yml|yaml|htaccess)$/i)) reason = 'nginx_sensitive_file';
+      else if (fromPath.indexOf('/.well-known/') !== -1) reason = 'nginx_well_known';
+
+      var dedupKey = 'deny_reported_' + reason;
+      if (!sessionStorage.getItem(dedupKey)) {
+        sessionStorage.setItem(dedupKey, '1');
+        fetch('https://pan.tantantan.tech/pan/api/log-deny-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deny_source: 'nginx',
+            deny_reason: reason,
+            ip: srvIP,
+            device_code: deviceCode,
+            user_agent: srvUA || navigator.userAgent,
+            request_path: srvFrom
+          })
+        }).then(function(r) { return r.json(); }).then(function(data) {
+          if (data && data.warning) {
+            var panel = document.querySelector('.info-panel');
+            if (panel) {
+              var warnBar = document.createElement('div');
+              warnBar.style.cssText = 'margin-bottom:10px;padding:8px 12px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:4px;font-size:11px;color:#fbbf24;';
+              warnBar.textContent = data.warning;
+              panel.parentNode.insertBefore(warnBar, panel);
+            }
+          }
+        }).catch(function() {});
+      }
     })();
   })();
   </script>

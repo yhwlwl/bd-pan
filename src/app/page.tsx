@@ -142,6 +142,7 @@ export default function Home() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
   const [adminStats, setAdminStats] = useState<any>(null);
+  const [denyDashboard, setDenyDashboard] = useState<any>(null);
   const [adminSettings, setAdminSettings] = useState<GlobalSettings>({
     enableGuestMode: true,
     permissions: {},
@@ -379,6 +380,7 @@ export default function Home() {
       const suffix = status === 'blocked' ? ' - 被拦截' : status === 'failed' ? ' - 失败' : '';
       const sessionId = typeof window !== 'undefined' ? localStorage.getItem('BDPAN_SESSION') || '' : '';
       const fingerprint = typeof window !== 'undefined' ? localStorage.getItem('BDPAN_FINGERPRINT') || '' : '';
+      const deviceCode = typeof window !== 'undefined' ? localStorage.getItem('BDPAN_DEVICE_CODE') || '' : '';
       await fetch(`${API_BASE}/api/log-action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -388,6 +390,7 @@ export default function Home() {
           action_item,
           session_id: sessionId,
           fingerprint,
+          device_code: deviceCode,
         })
       });
     } catch { }
@@ -402,6 +405,11 @@ export default function Home() {
   const fetchAlist = async (body: any, customHeaders: Record<string, string> = {}) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...customHeaders };
     if (userToken) headers['Authorization'] = `Bearer ${userToken}`;
+    // 设备码：所有 API 请求自动携带
+    try {
+      const dc = localStorage.getItem('BDPAN_DEVICE_CODE');
+      if (dc) headers['X-Device-Code'] = dc;
+    } catch {}
 
     const cc = getCustomConfig();
     if (cc) {
@@ -410,11 +418,17 @@ export default function Home() {
       if (cc.pass) headers['x-alist-password'] = cc.pass;
     }
 
-    return fetch(`${API_BASE}/api/alist`, {
+    const res = await fetch(`${API_BASE}/api/alist`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
     });
+    // 检测风险警告 header（deny 追踪系统）
+    if (!res.ok) {
+      const warning = res.headers.get('X-Risk-Warning');
+      if (warning) setAlistMsg(warning);
+    }
+    return res;
   };
 
   const toggleTheme = () => {
@@ -424,9 +438,58 @@ export default function Home() {
     localStorage.setItem('BDPAN_THEME', next);
   };
 
+  // ── 设备码计算（L2 Canvas/WebGL 指纹）──
+  const computeDeviceCode = (): string => {
+    try {
+      const components: string[] = [];
+      // Canvas 指纹
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 200; canvas.height = 60;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.textBaseline = 'top'; ctx.font = '14px Arial';
+          ctx.fillStyle = '#f60'; ctx.fillRect(10, 5, 50, 20);
+          ctx.fillStyle = '#069'; ctx.fillText('Fingerprint!<@', 2, 20);
+          ctx.fillStyle = 'rgba(100, 200, 50, 0.7)'; ctx.fillText('CJK: 喵ฅ', 10, 40);
+          components.push(canvas.toDataURL().slice(-200));
+        }
+      } catch {}
+      // WebGL
+      try {
+        const gl = document.createElement('canvas').getContext('webgl') as WebGLRenderingContext | null;
+        if (gl) {
+          const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+          if (dbg) components.push(gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) + '|' + gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
+        }
+      } catch {}
+      // Screen + Platform + Timezone
+      components.push(`${screen.width}x${screen.height}x${screen.colorDepth}`);
+      components.push(navigator.platform || '');
+      components.push(String(new Date().getTimezoneOffset()));
+      // Hardware
+      components.push(String(navigator.hardwareConcurrency || 0));
+      components.push(String((navigator as any).deviceMemory || 0));
+      // Languages
+      components.push((navigator.languages || [navigator.language]).join(','));
+      // UA
+      components.push(navigator.userAgent || '');
+
+      // FNV-1a 64-bit hash
+      const input = components.join('###');
+      let h = BigInt('0xcbf29ce484222325');
+      for (let i = 0; i < input.length; i++) { h ^= BigInt(input.charCodeAt(i)); h *= BigInt('0x100000001b3'); }
+      return h.toString(16).padStart(16, '0');
+    } catch { return 'fallback_' + Date.now().toString(36); }
+  };
+
   useEffect(() => {
     setMounted(true);
     if (typeof window !== 'undefined') {
+      // 设备码：首次计算并持久化
+      if (!localStorage.getItem('BDPAN_DEVICE_CODE')) {
+        try { localStorage.setItem('BDPAN_DEVICE_CODE', computeDeviceCode()); } catch {}
+      }
       // 主题初始化
       const saved = localStorage.getItem('BDPAN_THEME') as Theme | null;
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -1417,10 +1480,11 @@ export default function Home() {
         if (sData.code === 200 && sData.data) setAdminStats(sData.data);
         return;
       }
-      // admin 拉全部
-      const [usrRes, statsRes] = await Promise.all([
+      // admin 拉全部（含 deny 防御态势）
+      const [usrRes, statsRes, denyRes] = await Promise.all([
         fetch(`${API_BASE}/api/users`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-        fetch(`${API_BASE}/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } })
+        fetch(`${API_BASE}/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+        fetch(`${API_BASE}/api/deny-stats`, { headers: { 'Authorization': `Bearer ${userToken}` } }).catch(() => null as any),
       ]);
       const data = await usrRes.json();
       const sData = await statsRes.json();
@@ -1437,6 +1501,11 @@ export default function Home() {
       }
       if (sData.code === 200 && sData.data) {
         setAdminStats(sData.data);
+      }
+      // 防御态势数据
+      if (denyRes && denyRes.ok) {
+        const denyData = await denyRes.json().catch(() => null);
+        if (denyData?.code === 200) setDenyDashboard(denyData);
       }
     } catch { }
   };
@@ -1851,6 +1920,87 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* 防御态势 — Deny 追踪 */}
+            {denyDashboard && isAdmin && (
+              <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: '#f59e0b' }}>🛡️ 防御态势 — Deny 追踪</div>
+                  <button onClick={() => { fetchAdminData(); }} className="text-[10px] px-2 py-0.5 rounded bg-zinc-700/50 text-zinc-400 hover:text-white">🔄 刷新</button>
+                </div>
+                {/* 摘要条 */}
+                <div className="flex gap-4 text-[11px]">
+                  <span className="text-zinc-400">24h Deny: <b className="text-white">{denyDashboard.summary?.total24h || 0}</b></span>
+                  <span className="text-zinc-400">⚠️ 告警: <b className="text-yellow-400">{denyDashboard.summary?.warnCount || 0}</b></span>
+                  <span className="text-zinc-400">🚫 封禁: <b className="text-red-400">{denyDashboard.summary?.bannedCount || 0}</b></span>
+                </div>
+                {/* 风险实体表 */}
+                {denyDashboard.riskEntities?.length > 0 && (
+                  <div className="overflow-x-auto max-h-40">
+                    <table className="w-full text-[10px]">
+                      <thead>
+                        <tr className="text-zinc-500 border-b border-zinc-800">
+                          <th className="text-left py-1 pr-2">实体</th>
+                          <th className="text-right py-1 px-2">分数</th>
+                          <th className="text-right py-1 px-2">事件</th>
+                          <th className="text-left py-1 px-2">最近触发</th>
+                          <th className="text-center py-1 pl-2">状态</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {denyDashboard.riskEntities.slice(0, 15).map((e: any, i: number) => (
+                          <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                            <td className="py-1 pr-2 font-mono text-zinc-400" title={e.entity_value}>
+                              [{e.entity_type === 'ip' ? 'IP' : '设备'}] {e.entity_value.slice(0, 12)}
+                            </td>
+                            <td className="py-1 px-2 text-right font-bold" style={{ color: e.current_score >= 50 ? '#f87171' : e.current_score >= 30 ? '#fbbf24' : '#a3e635' }}>
+                              {Math.round(e.current_score)}
+                            </td>
+                            <td className="py-1 px-2 text-right text-zinc-500">{e.total_events}</td>
+                            <td className="py-1 px-2 text-zinc-500">{e.last_offense_reason || '-'}</td>
+                            <td className="py-1 pl-2 text-center">
+                              {e.is_banned ? <span className="text-red-400 font-bold">🚫 封禁</span>
+                                : e.current_score >= 30 ? <span className="text-yellow-400">⚠️ 告警</span>
+                                : <span className="text-green-400">●</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {/* 最近 deny 事件 */}
+                {denyDashboard.recentEvents?.length > 0 && (
+                  <details className="text-[10px]">
+                    <summary className="text-zinc-500 cursor-pointer hover:text-zinc-300">最近 20 条 Deny 事件</summary>
+                    <div className="overflow-x-auto max-h-32 mt-1">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="text-zinc-600 border-b border-zinc-800">
+                            <th className="text-left py-1">时间</th>
+                            <th className="text-left py-1">来源</th>
+                            <th className="text-left py-1">原因</th>
+                            <th className="text-left py-1">IP</th>
+                            <th className="text-left py-1">路径</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {denyDashboard.recentEvents.slice(0, 20).map((e: any, i: number) => (
+                            <tr key={i} className="border-b border-zinc-800/30">
+                              <td className="py-0.5 text-zinc-500 font-mono">{new Date(e.created_at).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+                              <td className="py-0.5 text-zinc-500">{e.deny_source}</td>
+                              <td className="py-0.5" style={{ color: e.risk_score_added >= 20 ? '#f87171' : '#a1a1aa' }}>{e.deny_reason}</td>
+                              <td className="py-0.5 text-zinc-500 font-mono">{e.ip}</td>
+                              <td className="py-0.5 text-zinc-500 max-w-[200px] truncate">{e.request_path}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                )}
               </div>
             )}
 

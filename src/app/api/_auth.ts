@@ -1,5 +1,13 @@
 import crypto from 'crypto';
 import type { Role } from '../../lib/users';
+import { logDenyEvent } from '../../lib/deny-tracker';
+
+export interface AuthContext {
+  ip: string;
+  deviceCode?: string;
+  path: string;
+  ua: string;
+}
 
 function getSecret() {
     return process.env.ADMIN_TOKEN_SECRET || '***REDACTED***';
@@ -67,4 +75,39 @@ export function requireRole(authHeader: string | undefined, ...allowedRoles: Rol
 // 向后兼容：旧代码引用 verifyAdminToken 的地方 → 只允许 admin/manager
 export function verifyAdminToken(authHeader?: string): boolean {
     return requireRole(authHeader, 'admin', 'manager') !== null;
+}
+
+/** verifyToken 增强版：验证失败时自动记录 deny 日志 */
+export function verifyTokenWithLog(authHeader: string | undefined, ctx?: AuthContext): TokenPayload | null {
+    const payload = verifyToken(authHeader);
+    if (!payload && ctx) {
+        logDenyEvent({
+            denySource: 'api',
+            denyReason: 'api_auth_failed',
+            ip: ctx.ip,
+            deviceCode: ctx.deviceCode,
+            userAgent: ctx.ua,
+            requestPath: ctx.path,
+        }).catch(() => {});
+    }
+    return payload;
+}
+
+/** requireRole 增强版：角色不匹配时自动记录 deny 日志 */
+export function requireRoleWithLog(authHeader: string | undefined, ctx?: AuthContext, ...allowedRoles: Role[]): TokenPayload | null {
+    const payload = requireRole(authHeader, ...allowedRoles);
+    if (!payload && ctx) {
+        // 先判断是 token 问题还是角色问题
+        const tokenPayload = verifyToken(authHeader);
+        logDenyEvent({
+            denySource: 'api',
+            denyReason: tokenPayload ? 'api_role_denied' : 'api_auth_failed',
+            ip: ctx.ip,
+            deviceCode: ctx.deviceCode,
+            userAgent: ctx.ua,
+            requestPath: ctx.path,
+            username: tokenPayload?.username,
+        }).catch(() => {});
+    }
+    return payload;
 }

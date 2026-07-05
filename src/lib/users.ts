@@ -360,3 +360,18 @@ export async function checkIpBanned(ip: string | null): Promise<boolean> {
 
     return true;
 }
+
+/** 检查设备码是否被封禁（从 bdpan_risk_scores 表查询） */
+export async function checkDeviceBanned(deviceCodeHash: string | null | undefined): Promise<boolean> {
+    if (!deviceCodeHash) return false;
+    try {
+        const now = new Date().toISOString();
+        const { data } = await pgFetch<{ id: number }>(
+            'GET',
+            `bdpan_risk_scores?select=id&entity_type=eq.device_code&entity_value=eq.${encodeURIComponent(deviceCodeHash)}&is_banned=eq.true&ban_expiry=gt.${encodeURIComponent(now)}&limit=1`
+        );
+        return !!(data && data.length > 0);
+    } catch {
+        return false;
+    }
+}

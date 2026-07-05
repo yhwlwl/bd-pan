@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { verifyToken } from '../_auth';
+import { verifyToken, verifyTokenWithLog } from '../_auth';
+import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 import {
     applyBasePathForPermissions,
     checkIpBanned,
@@ -16,12 +18,14 @@ const FRP_USER = process.env.ALIST_USERNAME_FALLBACK || '';
 const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 
 export async function PUT(request: Request) {
-    const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
-    if (await checkIpBanned(clientIp)) {
-        return NextResponse.json({ code: 403, message: '您的 IP 已被禁止访问' }, { status: 403 });
+    const ctx = getRequestContext(request);
+    const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
+    const { banned, reason: banReason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
+    if (banned) {
+        return NextResponse.json({ code: 403, message: `您的${banReason === 'device' ? '设备' : 'IP'}已被禁止访问` }, { status: 403 });
     }
 
-    const user = verifyToken(request.headers.get('authorization') || undefined);
+    const user = verifyTokenWithLog(request.headers.get('authorization') || undefined, ctx);
     if (!user) {
         return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
     }

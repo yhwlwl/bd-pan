@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
-import { verifyToken } from '../_auth';
+import { verifyToken, verifyTokenWithLog } from '../_auth';
 import {
     applyBasePathForPermissions,
-    checkIpBanned,
     getEffectivePermissionsForPath,
     getSettings,
     getUserPermissions,
 } from '../../../lib/users';
+import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
@@ -36,9 +37,11 @@ import { getAllFilesInDir } from '../../../lib/alist-utils';
 
 export async function GET(request: Request) {
     try {
-        const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
-        if (await checkIpBanned(clientIp)) {
-            return NextResponse.json({ error: 'IP 已被禁止' }, { status: 403 });
+        const ctx = getRequestContext(request);
+        const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
+        const { banned, reason: banReason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
+        if (banned) {
+            return NextResponse.json({ code: 403, message: `您的${banReason === 'device' ? '设备' : 'IP'}已被禁止访问` }, { status: 403 });
         }
 
         const { searchParams } = new URL(request.url);
@@ -52,7 +55,7 @@ export async function GET(request: Request) {
         }
 
         const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
-        const user = verifyToken(authHeader);
+        const user = verifyTokenWithLog(authHeader, ctx);
         if (!user) return NextResponse.json({ error: '请先登录' }, { status: 401 });
 
         const basePerms = await getUserPermissions(user.username, user.role);

@@ -1,13 +1,19 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { signToken } from '../_auth';
-import { findUser, getSettings, getUserPermissions, checkIpBanned } from '../../../lib/users';
+import { findUser, getSettings, getUserPermissions } from '../../../lib/users';
+import { getRequestContext, checkEntityBanned, denyAndLog } from '../../../lib/deny-tracker';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 
 export async function POST(request: Request) {
     try {
-        const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
-        if (await checkIpBanned(clientIp)) {
-            return NextResponse.json({ error: '您的 IP 环境异常，已被防火墙阻断访问' }, { status: 403 });
+        const ctx = getRequestContext(request);
+
+        // 设备码封禁检查（含 IP + 设备码双维度）
+        const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
+        const { banned, reason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
+        if (banned) {
+            return NextResponse.json({ code: 403, message: `您的${reason === 'device' ? '设备' : 'IP'}已被防火墙阻断访问` }, { status: 403 });
         }
 
         const body = await request.json();
@@ -18,7 +24,7 @@ export async function POST(request: Request) {
         // 游客模式
         if (body.guest === true) {
             if (!settings.enableGuestMode) {
-                return NextResponse.json({ error: '系统已关闭游客访问' }, { status: 403 });
+                return denyAndLog(request, 'api_login_failed', 403, '系统已关闭游客访问');
             }
             const token = signToken('guest', 'guest', durationHours);
             if (!token) return NextResponse.json({ error: '服务端配置异常' }, { status: 500 });
@@ -35,7 +41,7 @@ export async function POST(request: Request) {
 
         const user = await findUser(username, password);
         if (!user) {
-            return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
+            return denyAndLog(request, 'api_login_failed', 401, '用户名或密码错误');
         }
 
         const token = signToken(user.username, user.role, durationHours);
