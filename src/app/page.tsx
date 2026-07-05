@@ -393,6 +393,22 @@ export default function Home() {
           device_code: deviceCode,
         })
       });
+      // 前端拦截：同步通知 deny 追踪系统（fire-and-forget）
+      if (status === 'blocked' && deviceCode) {
+        fetch(`${API_BASE}/api/log-deny-event`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deny_source: 'frontend',
+            deny_reason: 'api_file_rule_denied',
+            ip: '',
+            device_code: deviceCode,
+            user_agent: navigator.userAgent,
+            request_path: action_item,
+            username: customUsername || username || '游客',
+          }),
+        }).catch(() => {});
+      }
     } catch { }
   };
 

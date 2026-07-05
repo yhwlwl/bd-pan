@@ -46,7 +46,7 @@ export async function POST(request: Request): Promise<Response> {
     const {
       deny_source = 'nginx',
       deny_reason = 'nginx_unknown',
-      ip = 'unknown',
+      ip: bodyIp,
       device_code,
       user_agent,
       request_path,
@@ -55,6 +55,12 @@ export async function POST(request: Request): Promise<Response> {
       geo_city,
       geo_region,
     } = body;
+
+    // IP 优先用请求头，前端传空时自动补（保证去重和评分有真实 IP）
+    const ip = (bodyIp && bodyIp !== '') ? bodyIp : (
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') || 'unknown'
+    );
 
     const result = await logDenyEvent({
       denySource: deny_source,
