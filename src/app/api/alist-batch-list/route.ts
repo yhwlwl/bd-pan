@@ -105,7 +105,7 @@ export async function GET(request: Request) {
         }
 
         if (result.length === 0 && skipped > 0) {
-            return NextResponse.json({ error: '所有选定项均被权限策略禁止访问', denied: true }, { status: 403 });
+            return denyAndLog(request, 'api_all_items_denied', 403, '所有选定项均被权限策略禁止访问', user?.username);
         }
 
         return NextResponse.json({ files: result, totalFiles: result.length, totalSize, skipped });

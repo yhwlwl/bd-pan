@@ -177,26 +177,26 @@ export async function POST(request: Request) {
             if (!isRoot) {
                 const targetPerms = await getScopedPerms(path);
                 if (!targetPerms.view && !targetPerms.download && !targetPerms.preview) {
-                    return denyAndLog(request, 'api_file_rule_denied', 403, '该路径已被限制访问');
+                    return denyAndLog(request, 'api_file_rule_denied', 403, '该路径已被限制访问', user.username);
                 }
             }
         }
         if (action === 'search') {
             const targetPerms = await getScopedPerms(parent);
             if (!targetPerms.search) {
-                return denyAndLog(request, 'api_permission_denied', 403, '无权搜索文件');
+                return denyAndLog(request, 'api_permission_denied', 403, '无权搜索文件', user.username);
             }
         }
         if (action === 'mkdir') {
             const targetPerms = await getScopedPerms(path);
             if (!targetPerms.upload) {
-                return denyAndLog(request, 'api_permission_denied', 403, '无权创建文件夹');
+                return denyAndLog(request, 'api_permission_denied', 403, '无权创建文件夹', user.username);
             }
         }
         if (action === 'remove') {
             const parentPerms = await getScopedPerms(path);
             if (!parentPerms.delete) {
-                return denyAndLog(request, 'api_permission_denied', 403, '无权删除文件');
+                return denyAndLog(request, 'api_permission_denied', 403, '无权删除文件', user.username);
             }
             // 额外检查每一个具体项，防止绕过特定路径记录的禁止删除规则
             const items = names || (name ? [name] : []);

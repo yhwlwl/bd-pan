@@ -43,13 +43,14 @@ const IP_POST_BAN_SCORE = 60;       // < 70
 // ============================================================
 
 export interface DenyEventInput {
-  denySource: 'nginx' | 'api';
+  denySource: 'nginx' | 'api' | 'frontend';
   denyReason: string;
   ip: string;
   deviceCode?: string;
   userAgent?: string;
   requestPath?: string;
   username?: string;
+  sessionId?: string;
   geoCountry?: string;
   geoCity?: string;
   geoRegion?: string;
@@ -248,6 +249,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
       user_agent: input.userAgent || '',
       request_path: input.requestPath || '',
       username: input.username || '',
+      session_id: input.sessionId || '',
       risk_score_added: pointValue,
       geo_country: input.geoCountry || '',
       geo_city: input.geoCity || '',
@@ -405,7 +407,8 @@ export async function denyAndLog(
   request: Request,
   denyReason: string,
   statusCode: number,
-  message: string
+  message: string,
+  username?: string
 ): Promise<Response> {
   const ctx = getRequestContext(request);
 
@@ -421,6 +424,7 @@ export async function denyAndLog(
     deviceCode: ctx.deviceCode,
     userAgent: ctx.ua,
     requestPath: ctx.path,
+    username,
     acceptLanguage: request.headers.get('accept-language') || '',
     geoCountry,
     geoCity,

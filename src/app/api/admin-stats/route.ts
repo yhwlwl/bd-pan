@@ -37,7 +37,7 @@ export async function GET(request: Request) {
         if (user.role !== 'admin') {
             const perms = await getUserPermissions(user.username, user.role);
             if (!(perms.viewStats || perms.viewActionLogs || perms.viewIpStats || perms.viewDownloadLogs)) {
-                return denyAndLog(request, 'api_role_denied', 401, '无权限访问统计信息');
+                return denyAndLog(request, 'api_role_denied', 401, '无权限访问统计信息', user.username);
             }
         }
 

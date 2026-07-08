@@ -74,7 +74,7 @@ export async function PUT(request: Request) {
 
         const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, filePath);
         if (!pathPerms.upload) {
-            return NextResponse.json({ code: 403, message: '该目录禁止上传' }, { status: 403 });
+            return denyAndLog(request, 'api_permission_denied', 403, '该目录禁止上传', user.username);
         }
 
         const contentLength = request.headers.get('Content-Length');

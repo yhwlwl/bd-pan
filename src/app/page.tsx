@@ -421,6 +421,7 @@ export default function Home() {
             user_agent: navigator.userAgent,
             request_path: action_item,
             username: customUsername || username || '游客',
+            session_id: sessionId,
           }),
         }).catch(() => {});
       }

@@ -89,7 +89,7 @@ export async function GET(request: Request) {
             }
         }
         if (deniedCount > 0 && deniedCount === paths.length) {
-            return NextResponse.json({ error: '所有选定项均被权限策略禁止访问', denied: true }, { status: 403 });
+            return denyAndLog(request, 'api_all_items_denied', 403, '所有选定项均被权限策略禁止访问', user?.username);
         }
 
         const settings = await getSettings();

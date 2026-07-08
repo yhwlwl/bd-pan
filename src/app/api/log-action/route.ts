@@ -4,7 +4,7 @@ import { pgInsert } from '../../../lib/pg-adapter';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { username = '游客', action_type, action_item, session_id, fingerprint } = body;
+    const { username = '游客', action_type, action_item, session_id, fingerprint, device_code = '' } = body;
 
     const forwardedFor = req.headers.get('x-forwarded-for');
     const realIp = req.headers.get('x-real-ip');
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const dateStr = new Date(new Date().getTime() + 8 * 3600 * 1000).toISOString().split('T')[0];
     const log_text = `${username} (${ip}: ${location}) 于 ${dateStr}, ${action_type}了文件 ${action_item}`;
 
-    const { error: insertErr } = await pgInsert('bdpan_action_logs', { username, action_type, action_item, ip, location, log_text, created_at: new Date().toISOString(), session_id: session_id || '', fingerprint: fingerprint || '' });
+    const { error: insertErr } = await pgInsert('bdpan_action_logs', { username, action_type, action_item, ip, location, log_text, created_at: new Date().toISOString(), session_id: session_id || '', fingerprint: fingerprint || '', device_code: device_code || '' });
     if (insertErr) console.error('[log-action] 写入失败:', insertErr.message);
     return NextResponse.json({ code: insertErr ? 500 : 200 });
   } catch (error: any) {

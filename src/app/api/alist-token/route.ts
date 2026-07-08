@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
     const perms = await getUserPermissions(user.username, user.role);
     if (!perms.upload) {
-        return NextResponse.json({ error: '权限不足，无权上传' }, { status: 403 });
+        return denyAndLog(request, 'api_permission_denied', 403, '权限不足，无权上传', user.username);
     }
 
     try {
