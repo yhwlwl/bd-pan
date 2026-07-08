@@ -1969,7 +1969,7 @@ export default function Home() {
                         {denyDashboard.riskEntities.slice(0, 15).map((e: any, i: number) => (
                           <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
                             <td className="py-1 pr-2 font-mono text-zinc-400" title={e.entity_value}>
-                              [{e.entity_type === 'ip' ? 'IP' : '设备'}] {e.entity_value.slice(0, 12)}
+                              [{e.entity_type === 'ip' ? 'IP' : '设备'}] {e.entity_value.slice(0, 16)}
                             </td>
                             <td className="py-1 px-2 text-right font-bold" style={{ color: e.current_score >= 50 ? '#f87171' : e.current_score >= 30 ? '#fbbf24' : '#a3e635' }}>
                               {Math.round(e.current_score)}
@@ -1999,17 +1999,19 @@ export default function Home() {
                             <th className="text-left py-1">来源</th>
                             <th className="text-left py-1">原因</th>
                             <th className="text-left py-1">IP</th>
+                            <th className="text-left py-1">设备码</th>
                             <th className="text-left py-1">路径</th>
                           </tr>
                         </thead>
                         <tbody>
                           {denyDashboard.recentEvents.slice(0, 20).map((e: any, i: number) => (
                             <tr key={i} className="border-b border-zinc-800/30">
-                              <td className="py-0.5 text-zinc-500 font-mono">{new Date(e.created_at).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+                              <td className="py-0.5 text-zinc-500 font-mono">{new Date(e.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' })}</td>
                               <td className="py-0.5 text-zinc-500">{e.deny_source}</td>
                               <td className="py-0.5" style={{ color: e.risk_score_added >= 20 ? '#f87171' : '#a1a1aa' }}>{e.deny_reason}</td>
                               <td className="py-0.5 text-zinc-500 font-mono">{e.ip}</td>
-                              <td className="py-0.5 text-zinc-500 max-w-[200px] truncate">{e.request_path}</td>
+                              <td className="py-0.5 text-zinc-500 font-mono" title={e.device_code_hash}>{e.device_code_hash?.slice(0, 10) || '-'}</td>
+                              <td className="py-0.5 text-zinc-500 max-w-[150px] truncate">{e.request_path}</td>
                             </tr>
                           ))}
                         </tbody>
