@@ -728,12 +728,14 @@ server {
     error_page 404 /404.html;
 
     # ============================================================
-    # 🚫 全局 403 处理 — 统一 302 重定向到 deny.tantantan.tech
-    # 所有 return 403 的 location 都会走这里，一处维护
+    # 🚫 全局 403 处理 — 代理到 Next.js 记日志后 302 到 deny.tantantan.tech
+    # 先走服务端记录（非浏览器客户端也能被追踪），再跳转 deny 页
     # ============================================================
     error_page 403 @deny;
     location @deny {
-        return 302 https://deny.tantantan.tech/?from=$uri&ip=$remote_addr&time=$time_local&ua=$http_user_agent;
+        proxy_pass http://127.0.0.1:3000/api/deny-redirect?from=$uri&ip=$remote_addr&time=$time_local&ua=$http_user_agent;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 
     # ============================================================
