@@ -95,7 +95,7 @@ export async function GET(request: Request) {
 
             if (log.username === 'admin' && user.role !== 'admin') return;
             const displayName = log.username === 'guest' && log.fingerprint ? `guest(${log.fingerprint.slice(-4)})` : log.username;
-            recentActions.push({ username: displayName, action: log.action_type, item: log.action_item, time: log.created_at, ip: log.ip, location: log.location || '未知定位' });
+            recentActions.push({ username: displayName, action: log.action_type, item: log.action_item, time: log.created_at, ip: log.ip, location: log.location || '未知定位', device_code: log.device_code || '' });
         });
 
         (viewLogs || []).forEach((log: any) => {
