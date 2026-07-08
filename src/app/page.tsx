@@ -143,6 +143,21 @@ export default function Home() {
   const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
   const [adminStats, setAdminStats] = useState<any>(null);
   const [denyDashboard, setDenyDashboard] = useState<any>(null);
+  const denyReasonLabel: Record<string, string> = {
+    nginx_db_token: '数据库 Token 探测',
+    nginx_sensitive_file: '敏感文件探测',
+    nginx_pdf_referer: 'PDF 盗链',
+    nginx_well_known: '安全漏洞探测',
+    nginx_unknown: 'Nginx 拦截',
+    api_ip_banned: '已封禁 IP 尝试',
+    api_auth_failed: 'API 认证失败',
+    api_login_failed: '登录失败',
+    api_role_denied: '越权访问管理接口',
+    api_permission_denied: '无操作权限',
+    api_file_rule_denied: '文件规则拒绝',
+    api_all_items_denied: '批量操作全拒',
+    frontend: '前端拦截',
+  };
   const [adminSettings, setAdminSettings] = useState<GlobalSettings>({
     enableGuestMode: true,
     permissions: {},
@@ -1975,7 +1990,7 @@ export default function Home() {
                               {Math.round(e.current_score)}
                             </td>
                             <td className="py-1 px-2 text-right text-zinc-500">{e.total_events}</td>
-                            <td className="py-1 px-2 text-zinc-500">{e.last_offense_reason || '-'}</td>
+                            <td className="py-1 px-2 text-zinc-500">{denyReasonLabel[e.last_offense_reason] || e.last_offense_reason || '-'}</td>
                             <td className="py-1 pl-2 text-center">
                               {e.is_banned ? <span className="text-red-400 font-bold">🚫 封禁</span>
                                 : e.current_score >= 30 ? <span className="text-yellow-400">⚠️ 告警</span>
@@ -2008,7 +2023,7 @@ export default function Home() {
                             <tr key={i} className="border-b border-zinc-800/30">
                               <td className="py-0.5 text-zinc-500 font-mono">{new Date(e.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' })}</td>
                               <td className="py-0.5 text-zinc-500">{e.deny_source}</td>
-                              <td className="py-0.5" style={{ color: e.risk_score_added >= 20 ? '#f87171' : '#a1a1aa' }}>{e.deny_reason}</td>
+                              <td className="py-0.5" style={{ color: e.risk_score_added >= 20 ? '#f87171' : '#a1a1aa' }}>{denyReasonLabel[e.deny_reason] || e.deny_reason}</td>
                               <td className="py-0.5 text-zinc-500 font-mono">{e.ip}</td>
                               <td className="py-0.5 text-zinc-500 font-mono" title={e.device_code_hash}>{e.device_code_hash?.slice(0, 10) || '-'}</td>
                               <td className="py-0.5 text-zinc-500 max-w-[150px] truncate">{e.request_path}</td>
