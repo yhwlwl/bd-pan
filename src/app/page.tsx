@@ -2018,6 +2018,7 @@ export default function Home() {
                             <th className="text-left py-1">原因</th>
                             <th className="text-left py-1">IP</th>
                             <th className="text-left py-1">设备码</th>
+                            <th className="text-left py-1">用户</th>
                             <th className="text-left py-1">路径</th>
                           </tr>
                         </thead>
@@ -2032,7 +2033,8 @@ export default function Home() {
                               <td className="py-0.5" style={{ color: e.risk_score_added >= 20 ? '#f87171' : '#a1a1aa' }}>{denyReasonLabel[e.deny_reason] || e.deny_reason}</td>
                               <td className="py-0.5 text-zinc-500 font-mono cursor-pointer hover:text-blue-400 hover:underline" onClick={() => { setDenyFilter('ip'); setDenyFilterValue(e.ip); }}>{e.ip}</td>
                               <td className="py-0.5 text-zinc-500 font-mono cursor-pointer hover:text-blue-400 hover:underline" onClick={() => { setDenyFilter('device'); setDenyFilterValue(e.device_code_hash); }} title={e.device_code_hash}>{e.device_code_hash?.slice(0, 10) || '-'}</td>
-                              <td className="py-0.5 text-zinc-500 max-w-[150px] truncate">{e.request_path}</td>
+                              <td className="py-0.5 text-zinc-400 font-bold">{e.username || '-'}</td>
+                              <td className="py-0.5 text-zinc-500 max-w-[120px] truncate">{e.request_path}</td>
                             </tr>
                           ))}
                         </tbody>
