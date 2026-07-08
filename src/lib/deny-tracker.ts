@@ -216,29 +216,13 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
     const pointValue = SCORE_MAP[input.denyReason] ?? 5;
 
     // ── 去重：同一 (IP, path) 5 分钟内只计一次分 ──
-    // 但如果已有记录缺 device_code，PATCH 补全（服务端先记 → 浏览器回调补设备码）
     if (input.requestPath) {
       const dedupTime = new Date(now.getTime() - DEDUP_WINDOW_MINUTES * 60 * 1000).toISOString();
-      const { data: existing } = await pgFetch<{ id: number; device_code_hash: string }>(
+      const { data: existing } = await pgFetch<{ id: number }>(
         'GET',
-        `bdpan_deny_events?select=id,device_code_hash&ip=eq.${encodeURIComponent(input.ip)}&request_path=eq.${encodeURIComponent(input.requestPath)}&created_at=gt.${encodeURIComponent(dedupTime)}&limit=1`
+        `bdpan_deny_events?select=id&ip=eq.${encodeURIComponent(input.ip)}&request_path=eq.${encodeURIComponent(input.requestPath)}&created_at=gt.${encodeURIComponent(dedupTime)}&limit=1`
       );
       if (existing && existing.length > 0) {
-        // 如果已有记录但缺 device_code，补全
-        if (!existing[0].device_code_hash && input.deviceCode) {
-          try {
-            const ECS_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
-            const PG_TOKEN = process.env.PG_DB_TOKEN || '';
-            const dcHash = hashDeviceCode(input.deviceCode) || '';
-            if (dcHash) {
-              await fetch(`${ECS_URL}/bdpan_deny_events?id=eq.${existing[0].id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', ...(PG_TOKEN ? { 'X-DB-Token': PG_TOKEN } : {}) },
-                body: JSON.stringify({ device_code: input.deviceCode, device_code_hash: dcHash }),
-              }).catch(() => {});
-            }
-          } catch {}
-        }
         return { recorded: false, ipScore: 0, dcScore: 0, warning: null };
       }
     }
