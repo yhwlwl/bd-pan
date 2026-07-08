@@ -356,6 +356,10 @@
             <span class="key">SRC IP</span>
             <span class="val em" id="info-ip">—</span>
           </div>
+          <div class="info-row">
+            <span class="key">DEVICE</span>
+            <span class="val dim" id="info-device">—</span>
+          </div>
           <div class="info-row" id="row-isp" style="display:none">
             <span class="key">ISP</span>
             <span class="val" id="info-isp">—</span>
@@ -456,6 +460,8 @@
       } catch(e) { return 'fallback_' + Date.now().toString(36); }
     }
     var deviceCode = computeDeviceCode();
+    var devEl = document.getElementById('info-device');
+    if (devEl && deviceCode) { devEl.textContent = deviceCode.slice(0, 16); devEl.className = 'val dim'; }
 
     // ── 终端逐行打印动画 ──
     (function() {
