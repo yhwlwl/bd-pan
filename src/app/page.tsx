@@ -1514,7 +1514,7 @@ export default function Home() {
         if (sData.code === 200 && sData.data) setAdminStats(sData.data);
         return;
       }
-      // admin 拉全部（含 deny 防御态势）
+      // admin 拉全部（含 deny 风控管理）
       const [usrRes, statsRes, denyRes] = await Promise.all([
         fetch(`${API_BASE}/api/users`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
         fetch(`${API_BASE}/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
@@ -1536,7 +1536,7 @@ export default function Home() {
       if (sData.code === 200 && sData.data) {
         setAdminStats(sData.data);
       }
-      // 防御态势数据
+      // 风控管理数据
       if (denyRes && denyRes.ok) {
         const denyData = await denyRes.json().catch(() => null);
         if (denyData?.code === 200) setDenyDashboard(denyData);
@@ -1957,11 +1957,11 @@ export default function Home() {
               </div>
             )}
 
-            {/* 防御态势 — Deny 追踪 */}
+            {/* 风控管理 — Deny 追踪 */}
             {denyDashboard && isAdmin && (
               <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
                 <div className="flex items-center justify-between">
-                  <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: '#f59e0b' }}>🛡️ 防御态势 — Deny 追踪</div>
+                  <div className="text-[10px] uppercase font-bold tracking-widest" style={{ color: '#f59e0b' }}>🛡️ 风控管理</div>
                   <button onClick={() => { fetchAdminData(); }} className="text-[10px] px-2 py-0.5 rounded bg-zinc-700/50 text-zinc-400 hover:text-white">🔄 刷新</button>
                 </div>
                 {/* 摘要条 */}
