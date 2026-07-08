@@ -145,6 +145,7 @@ export default function Home() {
   const [denyDashboard, setDenyDashboard] = useState<any>(null);
   const [denyFilter, setDenyFilter] = useState<'ip' | 'device' | null>(null);
   const [denyFilterValue, setDenyFilterValue] = useState('');
+  const [riskWarning, setRiskWarning] = useState<string | null>(null);
   const denyReasonLabel: Record<string, string> = {
     nginx_db_token: '数据库 Token 探测',
     nginx_sensitive_file: '敏感文件探测',
@@ -543,6 +544,16 @@ export default function Home() {
         if (savedPerms) {
           try { setUserPerms(JSON.parse(savedPerms)); } catch { }
         }
+      }
+
+      // 风控检查（如果已登录，立即查风险分）
+      if (savedToken && savedRole) {
+        const dc = localStorage.getItem('BDPAN_DEVICE_CODE') || '';
+        fetch(`${API_BASE}/api/check-risk`, {
+          headers: dc ? { 'X-Device-Code': dc } : {},
+        }).then(r => r.json()).then(data => {
+          if (data.warning) setRiskWarning(data.warning);
+        }).catch(() => {});
       }
 
       // 访客追踪
@@ -3711,6 +3722,14 @@ export default function Home() {
                 “包含子目录”表示会连当前目录下面的所有子文件夹一起递归搜索。
               </div>
             </div>
+
+            {/* 风控警告条：分数≥30时页面顶部常驻显示 */}
+            {riskWarning && (
+              <div className="px-4 py-2 text-[12px] font-bold flex items-center gap-2 bg-yellow-500/10 text-yellow-400" style={{ borderBottom: '1px solid rgba(251,191,36,0.2)' }}>
+                <span className="flex-1">{riskWarning}</span>
+                <button onClick={() => setRiskWarning(null)} className="text-zinc-500 hover:text-white text-sm leading-none" title="关闭">✕</button>
+              </div>
+            )}
 
             {(alistMsg || isCompressing) && (
               <div>
