@@ -428,31 +428,6 @@ page.tsx loadPreviewContent()
 | 缓存 | 浏览器强制 no-store |
 | CDN 嗅探 | 响应头 `Content-Disposition: inline`（不在新窗口下载）|
 
-### AList 文件签名（sign）机制
-
-**什么是 sign**：AList 为每个文件生成的 HMAC-SHA256 签名，绑定 `(路径, 时间戳, 百度 OAuth 密钥)`，只有持有有效 sign 才能通过 AList 直链下载或预览文件。
-
-**sign 的生成**：前端调用 `/api/alist {action:'get'}` → Next.js 后端调用 AList `/api/fs/get` → AList 返回 `raw_url`（百度 CDN 直链）和 `sign`（AList 自己的签名路径 `/p/xxx?sign=yyy`）。
-
-**使用方式**：
-
-| 场景 | 使用方式 | 暴露风险 |
-|------|---------|----------|
-| PDF 预览 | `/pdf-preview/path?sign=xxx`（Nginx 代理） | Referer 白名单保护 |
-| ECS 直链下载 | `/api/alist-download` 服务端代理，sign 仅在 ECS 内网使用 | 不暴露到客户端 |
-| 批量 ZIP 打包 | `alist /p/{path}?sign={sign}` 在 ECS 内网抓取 | 不暴露到客户端 |
-| 浏览器端下载（选项⑤⑥） | `window.open()` 携带 sign | 浏览器历史/日志中存留 |
-
-**保护机制**：
-- sign 不暴露在浏览器地址栏（sessionStorage key 传递，用完即删）
-- `/pdf-preview/` 有 Nginx Referer 白名单，外部域名 403
-- AList 5244 端口未暴露公网，即使拿到 sign 也无法从外部访问直链
-- 直链有效期设为 `0` + 忽略参数含 `alist_ts` = 签名永不过期（已知限制，见第 19 章）
-
-**与用户 JWT 的关系**：两者独立。JWT 控制谁能调用网站 API（取 sign），sign 控制谁能访问文件内容。缺一不可——没有 JWT 拿不到 sign，没有 sign 读到文件数据。
-
----
-
 ## 11. 前端架构
 
 `page.tsx`：单文件组件 ~3800 行，50+ `useState`。
@@ -990,6 +965,29 @@ server {
 | `src/app/api/deny-stats/route.ts` | 风控管理面板数据 + 管理操作 |
 | `src/app/api/check-risk/route.ts` | 用户风险评分查询（页面顶部警告条用） |
 | `sql/deny-tables.sql` | 建表 DDL |
+
+### AList 文件签名（sign）安全模型
+
+**什么是 sign**：AList 为每个文件生成的 HMAC-SHA256 签名，绑定 `(路径, 时间戳, 百度 OAuth 密钥)`，只有持有有效 sign 才能通过 AList 直链下载或预览文件。
+
+**生成流程**：`/api/alist {action:'get'}` → Next.js 调 AList `/api/fs/get` → AList 返回 `raw_url`（百度 CDN）和 `sign`。
+
+**使用与暴露面**：
+
+| 场景 | sign 位置 | 风险 |
+|------|----------|------|
+| PDF 预览 | `/pdf-preview/path?sign=xxx` 经 Nginx | Referer 白名单 |
+| ECS 代理下载 | ECS 内网使用，不传客户端 | 无暴露 |
+| ZIP 打包 | ECS 内网 `/p/path?sign=xxx` | 无暴露 |
+| 浏览器直链 | `window.open()` 传递 sign | 浏览器历史存留 |
+
+**保护措施**：
+- 地址栏不暴露（sessionStorage key 用完即删）
+- Nginx `/pdf-preview/` Referer 白名单
+- AList 5244 端口未公网
+- 已知限制：sign 永不过期（见第 19 章第 8 项）
+
+**与用户 JWT 的关系**：两者独立。JWT 控制谁能调 API（拿 sign）→ sign 控制谁能读文件→ 缺一不可。
 
 ---
 
