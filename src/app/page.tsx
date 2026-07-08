@@ -143,6 +143,8 @@ export default function Home() {
   const [adminUsers, setAdminUsers] = useState<{ username: string; role: Role; permissions: UserPermissions }[]>([]);
   const [adminStats, setAdminStats] = useState<any>(null);
   const [denyDashboard, setDenyDashboard] = useState<any>(null);
+  const [denyFilter, setDenyFilter] = useState<'ip' | 'device' | null>(null);
+  const [denyFilterValue, setDenyFilterValue] = useState('');
   const denyReasonLabel: Record<string, string> = {
     nginx_db_token: '数据库 Token 探测',
     nginx_sensitive_file: '敏感文件探测',
@@ -2006,7 +2008,7 @@ export default function Home() {
                 {/* 最近 deny 事件 */}
                 {denyDashboard.recentEvents?.length > 0 && (
                   <details className="text-[10px]">
-                    <summary className="text-zinc-500 cursor-pointer hover:text-zinc-300">最近 20 条 Deny 事件</summary>
+                    <summary className="text-zinc-500 cursor-pointer hover:text-zinc-300">最近 20 条 Deny 事件{denyFilter && <span className="text-blue-400 ml-2">（筛选: {denyFilter === 'ip' ? 'IP' : '设备'}={denyFilterValue.slice(0, 12)} <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDenyFilter(null); setDenyFilterValue(''); }} className="text-zinc-500 hover:text-red-400">✕</button>）</span>}</summary>
                     <div className="overflow-x-auto max-h-32 mt-1">
                       <table className="w-full">
                         <thead>
@@ -2020,13 +2022,16 @@ export default function Home() {
                           </tr>
                         </thead>
                         <tbody>
-                          {denyDashboard.recentEvents.slice(0, 20).map((e: any, i: number) => (
+                          {denyDashboard.recentEvents.filter((e: any) => {
+                            if (!denyFilter) return true;
+                            return denyFilter === 'ip' ? e.ip === denyFilterValue : e.device_code_hash === denyFilterValue;
+                          }).slice(0, 20).map((e: any, i: number) => (
                             <tr key={i} className="border-b border-zinc-800/30">
                               <td className="py-0.5 text-zinc-500 font-mono">{new Date(e.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' })}</td>
                               <td className="py-0.5 text-zinc-500">{e.deny_source}</td>
                               <td className="py-0.5" style={{ color: e.risk_score_added >= 20 ? '#f87171' : '#a1a1aa' }}>{denyReasonLabel[e.deny_reason] || e.deny_reason}</td>
-                              <td className="py-0.5 text-zinc-500 font-mono">{e.ip}</td>
-                              <td className="py-0.5 text-zinc-500 font-mono" title={e.device_code_hash}>{e.device_code_hash?.slice(0, 10) || '-'}</td>
+                              <td className="py-0.5 text-zinc-500 font-mono cursor-pointer hover:text-blue-400 hover:underline" onClick={() => { setDenyFilter('ip'); setDenyFilterValue(e.ip); }}>{e.ip}</td>
+                              <td className="py-0.5 text-zinc-500 font-mono cursor-pointer hover:text-blue-400 hover:underline" onClick={() => { setDenyFilter('device'); setDenyFilterValue(e.device_code_hash); }} title={e.device_code_hash}>{e.device_code_hash?.slice(0, 10) || '-'}</td>
                               <td className="py-0.5 text-zinc-500 max-w-[150px] truncate">{e.request_path}</td>
                             </tr>
                           ))}
@@ -2234,8 +2239,8 @@ export default function Home() {
                           if (logUserFilter !== 'all' && log.username !== logUserFilter) return false;
                           return true;
                         });
-                        const csv = '时间,用户,动作,对象,IP,定位\n' + filtered.map((l: any) =>
-                          `"${l.time}","${l.username}","${l.action}","${l.item}","${l.ip}","${l.location}"`).join('\n');
+                        const csv = '时间,用户,动作,对象,设备码,IP,定位\n' + filtered.map((l: any) =>
+                          `"${l.time}","${l.username}","${l.action}","${l.item}","${l.device_code || '-'}","${l.ip}","${l.location}"`).join('\n');
                         const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
                         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = '操作日志.csv';
                         a.click(); URL.revokeObjectURL(a.href);
@@ -2253,6 +2258,7 @@ export default function Home() {
                         <th className="py-2 text-zinc-400 font-normal w-[45px]">用户</th>
                         <th className="py-2 text-zinc-400 font-normal w-[85px]">动作</th>
                         <th className="py-2 text-zinc-400 font-normal">对象</th>
+                        <th className="py-2 text-zinc-400 font-normal w-[60px]">设备码</th>
                         <th className="py-2 text-zinc-400 font-normal w-[100px]">源 IP/定位</th>
                       </tr>
                     </thead>
@@ -2288,6 +2294,7 @@ export default function Home() {
                           <td className="py-1.5 text-zinc-300 font-bold w-[45px] truncate" title={log.username}>{log.username}</td>
                           <td className={`py-1.5 w-[85px] truncate ${actColor}`} title={log.action}>{log.action}</td>
                           <td className="py-1.5 text-zinc-400 truncate max-w-[120px]" title={log.item}>{log.item}</td>
+                          <td className="py-1.5 w-[60px] truncate font-mono text-zinc-600 text-[10px]" title={log.device_code}>{log.device_code?.slice(0, 10) || '-'}</td>
                           <td className="py-1.5 w-[100px] truncate" title={`${log.ip} - ${log.location}`}>
                             <div className="font-mono text-zinc-500 truncate">{log.ip}</div>
                             <div className="text-[9px] text-zinc-600 truncate">{log.location}</div>
