@@ -89,24 +89,54 @@ export function getRequestContext(request: Request): RequestContext {
   };
 }
 
-/** 通用 upsert（复刻 pgUpsert 模式，支持任意表） */
+/** 通用 upsert：先 GET 查是否存在，存在则 PATCH，不存在则 POST */
 async function generalUpsert(table: string, data: Record<string, unknown>): Promise<void> {
   try {
     const ECS_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
     const PG_TOKEN = process.env.PG_DB_TOKEN || '';
-    const url = new URL(`${ECS_URL}/${table}`);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'Prefer': 'resolution=merge-duplicates,return=representation',
     };
     if (PG_TOKEN) headers['X-DB-Token'] = PG_TOKEN;
-    const res = await fetch(url.toString(), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      console.warn(`[deny-tracker] upsert ${table} failed: HTTP ${res.status}`);
+
+    const entityType = data.entity_type as string;
+    const entityValue = data.entity_value as string;
+    if (!entityType || !entityValue) {
+      console.warn('[deny-tracker] upsert missing entity_type/entity_value');
+      return;
+    }
+
+    // 先查是否存在
+    const url = `${ECS_URL}/${table}?entity_type=eq.${encodeURIComponent(entityType)}&entity_value=eq.${encodeURIComponent(entityValue)}&limit=1`;
+    const getRes = await fetch(url, { headers });
+    if (!getRes.ok) {
+      console.warn(`[deny-tracker] upsert GET ${table} failed: HTTP ${getRes.status}`);
+      return;
+    }
+    const existing = await getRes.json().catch(() => []);
+
+    if (Array.isArray(existing) && existing.length > 0) {
+      // 存在 → PATCH
+      const id = existing[0].id;
+      const patchUrl = `${ECS_URL}/${table}?id=eq.${id}`;
+      const patchRes = await fetch(patchUrl, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!patchRes.ok && patchRes.status !== 204) {
+        console.warn(`[deny-tracker] upsert PATCH ${table} failed: HTTP ${patchRes.status}`);
+      }
+    } else {
+      // 不存在 → POST
+      const postRes = await fetch(`${ECS_URL}/${table}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!postRes.ok) {
+        console.warn(`[deny-tracker] upsert POST ${table} failed: HTTP ${postRes.status}`);
+      }
     }
   } catch (e: any) {
     console.warn(`[deny-tracker] upsert ${table} error: ${e.message}`);
