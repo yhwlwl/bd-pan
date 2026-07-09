@@ -44,16 +44,17 @@ export async function GET(request: Request) {
         // 数据源
         const { searchParams } = new URL(request.url);
         const source = searchParams.get('source') || 'ecs';
+        const pageSource = searchParams.get('page_source') || 'pan';
         const isSupabase = source === 'supabase' && BACKUP_URL;
 
         // 并行拉取两张表
         const [actionRes, viewRes] = await Promise.all([
             isSupabase
-                ? supabaseFetch('GET', 'bdpan_action_logs?order=created_at.desc&limit=100000')
-                : pgFetch<any>('GET', 'bdpan_action_logs?order=created_at.desc&limit=100000'),
+                ? supabaseFetch('GET', `bdpan_action_logs?source=eq.${pageSource}&order=created_at.desc&limit=100000`)
+                : pgFetch<any>('GET', `bdpan_action_logs?source=eq.${encodeURIComponent(pageSource)}&order=created_at.desc&limit=100000`),
             isSupabase
-                ? supabaseFetch('GET', 'view_logs?page_source=eq.pan&order=visit_time.desc&limit=100000')
-                : pgFetch<any>('GET', 'view_logs?page_source=eq.pan&order=visit_time.desc&limit=100000'),
+                ? supabaseFetch('GET', `view_logs?page_source=eq.${pageSource}&order=visit_time.desc&limit=100000`)
+                : pgFetch<any>('GET', `view_logs?page_source=eq.${encodeURIComponent(pageSource)}&order=visit_time.desc&limit=100000`),
         ]);
         const logs = isSupabase ? (Array.isArray(actionRes) ? actionRes : []) : (actionRes.data || []);
         const viewLogs = isSupabase ? (Array.isArray(viewRes) ? viewRes : []) : (viewRes.data || []);

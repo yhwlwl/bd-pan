@@ -13,7 +13,7 @@ export async function POST(request: Request) {
         const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
         const { banned, reason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
         if (banned) {
-            return NextResponse.json({ code: 403, message: `您的${reason === 'device' ? '设备' : 'IP'}已被防火墙阻断访问` }, { status: 403 });
+            return NextResponse.json({ error: `您的${reason === 'device' ? '设备' : 'IP'}已被风控系统自动封禁，请稍后重试或联系管理员` }, { status: 403 });
         }
 
         const body = await request.json();
