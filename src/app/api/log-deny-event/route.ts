@@ -55,6 +55,7 @@ export async function POST(request: Request): Promise<Response> {
       geo_country,
       geo_city,
       geo_region,
+      source = 'pan',
     } = body;
 
     // IP 优先用请求头，前端传空时自动补（保证去重和评分有真实 IP）
@@ -75,6 +76,7 @@ export async function POST(request: Request): Promise<Response> {
       geoCountry: geo_country,
       geoCity: geo_city,
       geoRegion: geo_region,
+      source,
     });
 
     return new Response(JSON.stringify(result), {
