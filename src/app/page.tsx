@@ -431,6 +431,17 @@ export default function Home() {
     } catch { }
   };
 
+  /** 统一错误提取：从 fetch Response 中提取错误信息 */
+  const extractApiError = async (res: Response): Promise<string> => {
+    try {
+      const data = await res.json();
+      return data.error || data.message || `错误 (${res.status})`;
+    } catch {
+      const text = await res.text().catch(() => '');
+      return text?.trim() ? text.slice(0, 200) : `请求失败 (${res.status} ${res.statusText})`;
+    }
+  };
+
   const getAlistBase = () => {
     const cc = getCustomConfig();
     if (cc && cc.url) return cc.url.replace(/\/+$/, '');
@@ -692,7 +703,7 @@ export default function Home() {
       setLoginUsername('');
       setLoginPassword('');
       logUserAction('登录', data.username, 'success', data.username);
-    } catch { logUserAction('登录', uname, 'failed', uname); setAuthError('登录接口异常'); }
+    } catch (e: any) { logUserAction('登录', uname, 'failed', uname); setAuthError('登录接口异常: ' + (e?.message || '网络错误')); }
     finally { setAuthLoading(false); }
   };
 
@@ -722,7 +733,7 @@ export default function Home() {
         }
       }
       logUserAction('登录 - 游客', 'guest', 'success', 'guest');
-    } catch { logUserAction('登录 - 游客', '接口异常', 'failed', 'guest'); setAuthError('登录接口异常'); }
+    } catch { logUserAction('登录 - 游客', '接口异常', 'failed', 'guest'); setAuthError('游客登录失败，可能是 CORS 或网络问题'); }
     finally { setAuthLoading(false); }
   };
 

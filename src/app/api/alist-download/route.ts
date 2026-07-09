@@ -76,6 +76,7 @@ export async function GET(request: Request) {
         const basePerms = await getUserPermissions(user.username, user.role);
         const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
         const isPreview = searchParams.get('preview') === '1';
+        const logSource = searchParams.get('source') || 'pan';
         console.log(`[download] path=${path}, absolutePath=${absolutePath}, user=${user.username}, role=${user.role}, isPreview=${isPreview}`);
         const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
         console.log(`[download] perms: download=${pathPerms.download}, preview=${pathPerms.preview}, view=${pathPerms.view}`);
@@ -170,6 +171,7 @@ export async function GET(request: Request) {
                 action_item: `${path} (${formatBytes(fileSize)})`,
                 ip: ctx.ip, location: '未知定位',
                 log_text: `${user.username} 下载失败: ${path} HTTP${fileRes.status}`,
+                source: logSource,
             }).catch(() => {});
             return new Response(`下载失败 (${fileRes.status}): ${errText.substring(0, 200)}`, {
                 status: fileRes.status,
@@ -185,6 +187,7 @@ export async function GET(request: Request) {
             action_item: `${path} (${formatBytes(fileSize)})`,
             ip: ctx.ip, location: '未知定位',
             log_text: `${user.username} 下载成功: ${path}, ${formatBytes(fileSize)}`,
+            source: logSource,
         }).catch(() => {});
 
         const responseHeaders = new Headers();
