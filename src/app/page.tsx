@@ -146,6 +146,7 @@ export default function Home() {
   const [denyDashboard, setDenyDashboard] = useState<any>(null);
   const [denyFilter, setDenyFilter] = useState<'ip' | 'device' | null>(null);
   const [denyFilterValue, setDenyFilterValue] = useState('');
+  const [denyDetailEntity, setDenyDetailEntity] = useState<{ entity_type: string; entity_value: string } | null>(null);
   const [riskWarning, setRiskWarning] = useState<string | null>(null);
   const denyReasonLabel: Record<string, string> = {
     nginx_db_token: '数据库 Token 探测',
@@ -2018,7 +2019,7 @@ export default function Home() {
                       <tbody>
                         {denyDashboard.riskEntities.slice(0, 15).map((e: any, i: number) => (
                           <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                            <td className="py-1 pr-2 font-mono text-zinc-400" title={e.entity_value}>
+                            <td className="py-1 pr-2 font-mono text-zinc-400 cursor-pointer hover:text-blue-400 hover:underline" title={e.entity_value} onClick={() => setDenyDetailEntity({ entity_type: e.entity_type, entity_value: e.entity_value })}>
                               [{e.entity_type === 'ip' ? 'IP' : '设备'}] {e.entity_value.slice(0, 16)}
                             </td>
                             <td className="py-1 px-2 text-right font-bold" style={{ color: e.current_score >= 50 ? '#f87171' : e.current_score >= 30 ? '#fbbf24' : '#a3e635' }}>
@@ -2361,6 +2362,77 @@ export default function Home() {
                       )})}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            )}
+
+            {/* 实体详情弹窗 */}
+            {denyDetailEntity && denyDashboard?.recentEvents && (
+              <div className="fixed inset-0 z-[80] flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setDenyDetailEntity(null)}>
+                <div className="w-full max-w-2xl max-h-[80vh] flex flex-col glass-strong rounded-2xl overflow-hidden mx-4" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
+                    <div>
+                      <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                        [{denyDetailEntity.entity_type === 'ip' ? 'IP' : '设备'}] {denyDetailEntity.entity_value.slice(0, 20)}
+                      </h3>
+                      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>完整: {denyDetailEntity.entity_value}</div>
+                    </div>
+                    <button onClick={() => setDenyDetailEntity(null)} className="text-lg opacity-60 hover:opacity-100">✕</button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {(() => {
+                      const myEvents = denyDashboard.recentEvents.filter((ev: any) =>
+                        denyDetailEntity.entity_type === 'ip'
+                          ? ev.ip === denyDetailEntity.entity_value
+                          : ev.device_code_hash === denyDetailEntity.entity_value || ev.device_code_hash?.slice(0,16) === denyDetailEntity.entity_value.slice(0,16)
+                      );
+                      const relatedIps = new Set<string>();
+                      const relatedDevices = new Set<string>();
+                      myEvents.forEach((ev: any) => {
+                        if (denyDetailEntity.entity_type !== 'ip' && ev.ip) relatedIps.add(ev.ip);
+                        if (denyDetailEntity.entity_type === 'ip' && ev.device_code_hash) relatedDevices.add(ev.device_code_hash);
+                      });
+                      return (
+                        <>
+                          {relatedIps.size > 0 && (
+                            <div className="rounded-lg p-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                              <div className="text-[10px] font-bold mb-2" style={{ color: 'var(--text-muted)' }}>关联 IP ({relatedIps.size})</div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {[...relatedIps].slice(0, 20).map(ip => (
+                                  <span key={ip} className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{ip}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {relatedDevices.size > 0 && (
+                            <div className="rounded-lg p-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                              <div className="text-[10px] font-bold mb-2" style={{ color: 'var(--text-muted)' }}>关联设备 ({relatedDevices.size})</div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {[...relatedDevices].slice(0, 20).map(dc => (
+                                  <span key={dc} className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{dc.slice(0, 16)}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <div className="rounded-lg p-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}>
+                            <div className="text-[10px] font-bold mb-2" style={{ color: 'var(--text-muted)' }}>Deny 事件 ({myEvents.length})</div>
+                            <div className="max-h-60 overflow-y-auto space-y-1">
+                              {myEvents.slice(0, 100).map((ev: any, idx: number) => (
+                                <div key={idx} className="text-[10px] font-mono flex gap-2 py-1 border-b border-zinc-800/30">
+                                  <span className="text-zinc-500 shrink-0 w-[60px]">{new Date(ev.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                                  <span className="text-zinc-400 shrink-0 w-[50px]">{ev.deny_source}</span>
+                                  <span className="text-zinc-300 shrink-0" style={{ color: ev.risk_score_added >= 20 ? '#f87171' : '#a1a1aa' }}>{denyReasonLabel[ev.deny_reason] || ev.deny_reason}</span>
+                                  <span className="text-zinc-600 truncate">{ev.request_path}</span>
+                                  {denyDetailEntity.entity_type === 'device' && <span className="text-zinc-600 ml-auto">{ev.ip}</span>}
+                                </div>
+                              ))}
+                              {myEvents.length === 0 && <div className="text-zinc-500 text-[11px]">暂无 deny 事件记录</div>}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
             )}
