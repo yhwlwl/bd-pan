@@ -2,10 +2,6 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  if (!request.nextUrl.pathname.startsWith('/api/')) {
-    return NextResponse.next();
-  }
-
   if (request.method === 'OPTIONS') {
     return new NextResponse(null, {
       status: 204,
@@ -19,7 +15,6 @@ export function middleware(request: NextRequest) {
   }
 
   const response = NextResponse.next();
-  response.headers.set('Access-Control-Allow-Origin', '*');
   return response;
 }
 
