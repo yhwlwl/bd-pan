@@ -72,6 +72,9 @@ export default function Home() {
     }).catch(() => {});
   }, [sessionId]);
 
+  // 未来梦 PDF 目录（已知固定路径）
+  const FOLDER_PATH = "/sta/新媒体素材/可复用文件收集/未来梦扫描件/";
+
   // 初始化：guest 登录 → 列文件
   const init = useCallback(async () => {
     try {
@@ -100,7 +103,7 @@ export default function Home() {
         },
         body: JSON.stringify({
           action: "list",
-          path: "/sta/新媒体素材/可复用文件收集/未来梦扫描件/",
+          path: FOLDER_PATH,
         }),
       });
       const listData = await listRes.json();
@@ -110,12 +113,12 @@ export default function Home() {
         return;
       }
 
-      // 3. 筛选 PDF，排序
+      // 3. 筛选 PDF，构造完整路径，排序
       const files: PdfVolume[] = listData.data.content
         .filter((f: any) => !f.is_dir && f.name.toLowerCase().endsWith(".pdf"))
         .map((f: any) => ({
           name: f.name,
-          path: f.path || `${listData.data.path}/${f.name}`,
+          path: `${FOLDER_PATH}${f.name}`,
           size: f.size,
           modified: f.modified,
         }))
