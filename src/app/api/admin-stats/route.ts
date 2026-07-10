@@ -125,11 +125,13 @@ export async function GET(request: Request) {
         (logs || []).forEach((l: any) => {
             const t = new Date(l.created_at);
             if (l.action_type === '登录' && t >= sessionWindow) {
-                if (!loginMap.has(l.username)) loginMap.set(l.username, { time: l.created_at, role: '', sessionId: l.session_id || '', fingerprint: l.fingerprint || '' });
+                const key = l.username === 'guest' ? `guest:${l.fingerprint || l.session_id || ''}` : l.username;
+                if (!loginMap.has(key)) loginMap.set(key, { time: l.created_at, role: '', sessionId: l.session_id || '', fingerprint: l.fingerprint || '' });
             }
             if (l.action_type === '登出' && t >= sessionWindow) {
-                const prev = logoutMap.get(l.username);
-                if (!prev || t > new Date(prev)) logoutMap.set(l.username, l.created_at);
+                const key = l.username === 'guest' ? `guest:${l.fingerprint || l.session_id || ''}` : l.username;
+                const prev = logoutMap.get(key);
+                if (!prev || t > new Date(prev)) logoutMap.set(key, l.created_at);
             }
         });
         const onlineUsers: Array<{ username: string; lastActive: string; sessionId: string; fingerprint: string }> = [];
