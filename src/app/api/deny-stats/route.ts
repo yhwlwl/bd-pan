@@ -5,7 +5,7 @@
  * POST: 管理员操作（解封/清分/配置阈值）
  */
 import { verifyToken } from '../_auth';
-import { getRiskDashboard, adminUnban, adminResetScore } from '../../../lib/deny-tracker';
+import { getRiskDashboard, adminUnban, adminResetScore, adminAdjustScore } from '../../../lib/deny-tracker';
 import { getSettings, updateSettings } from '../../../lib/users';
 
 export async function GET(request: Request): Promise<Response> {
@@ -63,6 +63,14 @@ export async function POST(request: Request): Promise<Response> {
     if (action === 'clear_score' && entity_type && entity_value) {
       await adminResetScore(entity_type, entity_value);
       return new Response(JSON.stringify({ code: 200, message: '已清分' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    }
+
+    if (action === 'adjust_score' && entity_type && entity_value && typeof body.delta === 'number') {
+      await adminAdjustScore(entity_type, entity_value, body.delta);
+      return new Response(JSON.stringify({ code: 200, message: `分数已调整 (${body.delta >= 0 ? '+' : ''}${body.delta})` }), {
         status: 200,
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
       });

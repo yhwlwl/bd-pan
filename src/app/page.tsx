@@ -2012,6 +2012,7 @@ export default function Home() {
                           <th className="text-right py-1 px-2">事件</th>
                           <th className="text-left py-1 px-2">最近触发</th>
                           <th className="text-center py-1 pl-2">状态</th>
+                          <th className="text-center py-1 pl-2">操作</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2029,6 +2030,30 @@ export default function Home() {
                               {e.is_banned ? <span className="text-red-400 font-bold">🚫 封禁</span>
                                 : e.current_score >= 30 ? <span className="text-yellow-400">⚠️ 告警</span>
                                 : <span className="text-green-400">●</span>}
+                            </td>
+                            <td className="py-1 pl-2 text-center whitespace-nowrap">
+                              <button
+                                onClick={async () => {
+                                  await fetch(`${API_BASE}/api/deny-stats`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
+                                    body: JSON.stringify({ action: 'adjust_score', entity_type: e.entity_type, entity_value: e.entity_value, delta: 5 }),
+                                  });
+                                  fetchAdminData();
+                                }}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 border border-emerald-600/30 mr-1"
+                                title="+5">+5</button>
+                              <button
+                                onClick={async () => {
+                                  await fetch(`${API_BASE}/api/deny-stats`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
+                                    body: JSON.stringify({ action: 'adjust_score', entity_type: e.entity_type, entity_value: e.entity_value, delta: -5 }),
+                                  });
+                                  fetchAdminData();
+                                }}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 border border-red-600/30"
+                                title="-5">-5</button>
                             </td>
                           </tr>
                         ))}

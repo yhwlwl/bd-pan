@@ -563,3 +563,22 @@ export async function adminResetScore(entityType: 'ip' | 'device_code', entityVa
     updated_at: now,
   });
 }
+
+/**
+ * 管理员手动增减分数
+ */
+export async function adminAdjustScore(entityType: 'ip' | 'device_code', entityValue: string, delta: number): Promise<void> {
+  const row = await getRiskScore(entityType, entityValue);
+  const now = new Date().toISOString();
+  const current = row?.current_score ?? 0;
+  const newScore = Math.max(0, current + delta);
+  await generalUpsert('bdpan_risk_scores', {
+    entity_type: entityType,
+    entity_value: entityValue,
+    current_score: newScore,
+    total_events: (row?.total_events ?? 0) + 1,
+    last_offense_at: now,
+    last_offense_reason: delta >= 0 ? 'admin_add_score' : 'admin_sub_score',
+    updated_at: now,
+  });
+}
