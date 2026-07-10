@@ -125,6 +125,7 @@ export default function Home() {
   const [logTimeFilter, setLogTimeFilter] = useState<string>('all');
   const [logUserFilter, setLogUserFilter] = useState<string>('all');
   const [adminDataSource, setAdminDataSource] = useState<'ecs' | 'supabase'>('ecs');
+  const [adminPageSource, setAdminPageSource] = useState<string>('pan');
   // 文件预览
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office'; filePath: string; sign?: string; size?: number } | null>(null);
   const [previewItemMeta, setPreviewItemMeta] = useState<{ name: string; filePath: string; sign?: string; size?: number; type?: 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' | 'unknown'; perms?: { download?: boolean; preview?: boolean } } | null>(null);
@@ -1531,7 +1532,7 @@ export default function Home() {
     try {
       // 非 admin 只拉统计数据（操作日志等）
       if (userRole !== 'admin') {
-        const statsRes = await fetch(`${API_BASE}/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } });
+        const statsRes = await fetch(`${API_BASE}/api/admin-stats?source=${source}&page_source=${adminPageSource}`, { headers: { 'Authorization': `Bearer ${userToken}` } });
         const sData = await statsRes.json();
         if (sData.code === 200 && sData.data) setAdminStats(sData.data);
         return;
@@ -1539,7 +1540,7 @@ export default function Home() {
       // admin 拉全部（含 deny 风控管理）
       const [usrRes, statsRes, denyRes] = await Promise.all([
         fetch(`${API_BASE}/api/users`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-        fetch(`${API_BASE}/api/admin-stats?source=${source}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+        fetch(`${API_BASE}/api/admin-stats?source=${source}&page_source=${adminPageSource}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
         fetch(`${API_BASE}/api/deny-stats`, { headers: { 'Authorization': `Bearer ${userToken}` } }).catch(() => null as any),
       ]);
       const data = await usrRes.json();
@@ -1898,7 +1899,7 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <span className="text-lg">{isAdmin ? '👑' : '📊'}</span>
                 <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{isAdmin ? '管理面板' : '日志面板'}</h3>
-                {isAdmin && (
+                {isAdmin && (<>
                   <button
                     onClick={() => {
                       const next = adminDataSource === 'ecs' ? 'supabase' : 'ecs';
@@ -1906,7 +1907,15 @@ export default function Home() {
                     }}
                     className={`text-[9px] px-1.5 py-0.5 rounded border ${adminDataSource === 'ecs' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}
                     title="切换数据源">{adminDataSource === 'ecs' ? '📡 ECS' : '☁️ Supabase'}</button>
-                )}
+                  <button
+                    onClick={() => {
+                      const next = adminPageSource === 'pan' ? 'weilaimeng' : adminPageSource === 'weilaimeng' ? 'all' : 'pan';
+                      setAdminPageSource(next); setAdminMsg(null); fetchAdminData();
+                    }}
+                    className="text-[9px] px-1.5 py-0.5 rounded border"
+                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+                    title="切换数据来源">{adminPageSource === 'pan' ? '📋 主站' : adminPageSource === 'weilaimeng' ? '📋 未来梦' : '📋 全部'}</button>
+                </>)}
               </div>
               <div className="flex items-center gap-2">
                 {adminStats?.onlineUsers?.length > 0 && (
