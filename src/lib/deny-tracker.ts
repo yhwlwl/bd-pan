@@ -151,6 +151,13 @@ function decayScore(previousScore: number, hoursSinceLast: number): number {
   return previousScore * (1 - hoursSinceLast / DECAY_WINDOW_HOURS);
 }
 
+/** 阶梯式封禁时长：首次10分钟，二次1小时，三次及以上24小时 */
+function getBanDuration(riskRow: { banned_at: string | null; total_events: number } | null): number {
+  if (!riskRow || !riskRow.banned_at) return 10 / 60;
+  if (riskRow.total_events < 15) return 1;
+  return 24;
+}
+
 /** 读取阈值配置 */
 async function getThresholds(): Promise<{ warn: number; deviceBan: number; ipBan: number; banHours: number; enabled: boolean }> {
   try {
@@ -284,9 +291,10 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
     // 检查是否触发 IP 自动封禁
     if (ipScore >= thresholds.ipBan) {
       try {
+        const ipBanHours = getBanDuration(ipRow);
         const settings = await getSettings();
         const bannedIps = { ...(settings.bannedIps || {}) };
-        const banUntil = now.getTime() + thresholds.banHours * 3600 * 1000;
+        const banUntil = now.getTime() + ipBanHours * 3600 * 1000;
         bannedIps[input.ip] = banUntil;
         await updateSettings({ bannedIps });
         ipBanned = true;
@@ -299,7 +307,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
           action_item: `IP: ${input.ip} (分数: ${Math.round(ipScore)})`,
           ip: '127.0.0.1',
           location: '系统',
-          log_text: `[自动封禁] IP ${input.ip} 因风险评分 ${Math.round(ipScore)} 超过阈值 ${thresholds.ipBan}，自动封禁 ${thresholds.banHours} 小时。最近触发: ${input.denyReason}`,
+          log_text: `[自动封禁] IP ${input.ip} 因风险评分 ${Math.round(ipScore)} 超过阈值 ${thresholds.ipBan}，自动封禁 ${ipBanHours} 小时。最近触发: ${input.denyReason}`,
           source: input.source || 'pan',
         }).catch(() => {});
       } catch (e) {
@@ -308,6 +316,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
     }
 
     // Upsert IP 风险分
+    const ipBanHours = ipBanned ? getBanDuration(ipRow) : thresholds.banHours;
     await generalUpsert('bdpan_risk_scores', {
       entity_type: 'ip',
       entity_value: input.ip,
@@ -317,7 +326,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
       last_offense_reason: input.denyReason,
       is_banned: ipBanned,
       banned_at: ipBanned ? now.toISOString() : (ipRow?.banned_at || null),
-      ban_expiry: ipBanned ? new Date(now.getTime() + thresholds.banHours * 3600 * 1000).toISOString() : (ipRow?.ban_expiry || null),
+      ban_expiry: ipBanned ? new Date(now.getTime() + ipBanHours * 3600 * 1000).toISOString() : (ipRow?.ban_expiry || null),
       ban_reason: ipBanned ? `评分 ${Math.round(ipScore)} ≥ ${thresholds.ipBan}` : (ipRow?.ban_reason || null),
       updated_at: now.toISOString(),
     });
@@ -340,6 +349,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
 
       if (dcScore >= thresholds.deviceBan) {
         dcBanned = true;
+        const dcBanHours = getBanDuration(dcRow);
         pgInsert('bdpan_action_logs', {
           created_at: now.toISOString(),
           username: '系统',
@@ -347,11 +357,12 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
           action_item: `设备: ${deviceCodeHash} (分数: ${Math.round(dcScore)})`,
           ip: '127.0.0.1',
           location: '系统',
-          log_text: `[自动封禁] 设备 ${deviceCodeHash} 因风险评分 ${Math.round(dcScore)} 超过阈值 ${thresholds.deviceBan}，自动封禁 ${thresholds.banHours} 小时。最近触发: ${input.denyReason}`,
+          log_text: `[自动封禁] 设备 ${deviceCodeHash} 因风险评分 ${Math.round(dcScore)} 超过阈值 ${thresholds.deviceBan}，自动封禁 ${dcBanHours} 小时。最近触发: ${input.denyReason}`,
           source: input.source || 'pan',
         }).catch(() => {});
       }
 
+      const dcBanHours = dcBanned ? getBanDuration(dcRow) : thresholds.banHours;
       await generalUpsert('bdpan_risk_scores', {
         entity_type: 'device_code',
         entity_value: deviceCodeHash,
@@ -361,7 +372,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
         last_offense_reason: input.denyReason,
         is_banned: dcBanned,
         banned_at: dcBanned ? now.toISOString() : (dcRow?.banned_at || null),
-        ban_expiry: dcBanned ? new Date(now.getTime() + thresholds.banHours * 3600 * 1000).toISOString() : (dcRow?.ban_expiry || null),
+        ban_expiry: dcBanned ? new Date(now.getTime() + dcBanHours * 3600 * 1000).toISOString() : (dcRow?.ban_expiry || null),
         ban_reason: dcBanned ? `评分 ${Math.round(dcScore)} ≥ ${thresholds.deviceBan}` : (dcRow?.ban_reason || null),
         updated_at: now.toISOString(),
       });
