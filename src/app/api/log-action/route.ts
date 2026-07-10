@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pgInsert } from '../../../lib/pg-adapter';
+import { hashDeviceCode } from '../../../lib/fingerprint';
 
 export async function POST(req: Request) {
   try {
@@ -30,7 +31,8 @@ export async function POST(req: Request) {
     const dateStr = new Date(new Date().getTime() + 8 * 3600 * 1000).toISOString().split('T')[0];
     const log_text = `${username} (${ip}: ${location}) 于 ${dateStr}, ${action_type}了文件 ${action_item}`;
 
-    const { error: insertErr } = await pgInsert('bdpan_action_logs', { username, action_type, action_item, ip, location, log_text, created_at: new Date().toISOString(), session_id: session_id || '', fingerprint: fingerprint || '', device_code: device_code || '', source });
+    const finalDeviceCode = hashDeviceCode(device_code || '') || (device_code || '').slice(0, 32);
+    const { error: insertErr } = await pgInsert('bdpan_action_logs', { username, action_type, action_item, ip, location, log_text, created_at: new Date().toISOString(), session_id: session_id || '', fingerprint: fingerprint || '', device_code: finalDeviceCode, source });
     if (insertErr) console.error('[log-action] 写入失败:', insertErr.message);
     return NextResponse.json({ code: insertErr ? 500 : 200 });
   } catch (error: any) {
