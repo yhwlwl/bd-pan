@@ -605,6 +605,19 @@ export async function adminResetScore(entityType: 'ip' | 'device_code', entityVa
 /**
  * 管理员手动增减分数
  */
+export async function adminBanEntity(entityType: 'ip' | 'device_code', entityValue: string, banHours: number): Promise<void> {
+  const now = new Date();
+  await generalUpsert('bdpan_risk_scores', {
+    entity_type: entityType,
+    entity_value: entityValue,
+    is_banned: true,
+    banned_at: now.toISOString(),
+    ban_expiry: new Date(now.getTime() + banHours * 3600 * 1000).toISOString(),
+    ban_reason: 'admin_manual_ban',
+    updated_at: now.toISOString(),
+  });
+}
+
 export async function adminAdjustScore(entityType: 'ip' | 'device_code', entityValue: string, delta: number): Promise<void> {
   const row = await getRiskScore(entityType, entityValue);
   const now = new Date().toISOString();
