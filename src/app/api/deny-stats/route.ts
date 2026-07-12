@@ -5,7 +5,7 @@
  * POST: 管理员操作（解封/清分/配置阈值）
  */
 import { verifyToken } from '../_auth';
-import { getRiskDashboard, adminUnban, adminResetScore, adminAdjustScore } from '../../../lib/deny-tracker';
+import { getRiskDashboard, adminUnban, adminResetScore, adminAdjustScore, adminBanEntity } from '../../../lib/deny-tracker';
 import { getSettings, updateSettings } from '../../../lib/users';
 
 export async function GET(request: Request): Promise<Response> {
@@ -55,6 +55,14 @@ export async function POST(request: Request): Promise<Response> {
     if (action === 'unban' && entity_type && entity_value) {
       await adminUnban(entity_type, entity_value);
       return new Response(JSON.stringify({ code: 200, message: '已解封' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    }
+
+    if (action === 'ban_ip' && entity_type && entity_value && typeof body.ban_hours === 'number') {
+      await adminBanEntity(entity_type, entity_value, body.ban_hours);
+      return new Response(JSON.stringify({ code: 200, message: '已标记封禁' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
       });
