@@ -9,10 +9,10 @@ import { getSettings, updateSettings, checkIpBanned } from './users';
 import { hashDeviceCode, computeServerFallback } from './fingerprint';
 
 // ============================================================
-// 配置常量
+// 默认配置常量（可被 bdpan_settings.denyTracking 覆盖）
 // ============================================================
 
-const SCORE_MAP: Record<string, number> = {
+const DEFAULT_SCORE_MAP: Record<string, number> = {
   nginx_db_token: 30,
   nginx_sensitive_file: 20,
   nginx_pdf_referer: 10,
@@ -31,12 +31,14 @@ const DEFAULT_WARN_THRESHOLD = 30;
 const DEFAULT_DEVICE_BAN_THRESHOLD = 50;
 const DEFAULT_IP_BAN_THRESHOLD = 70;
 const DEFAULT_BAN_HOURS = 24;
-const DECAY_WINDOW_HOURS = 24;
-const DEDUP_WINDOW_MINUTES = 5;
-
-// 封禁到期后分数重置到阈值以下，避免立即再次被封
-const DEVICE_POST_BAN_SCORE = 40;   // < 50
-const IP_POST_BAN_SCORE = 60;       // < 70
+const DEFAULT_DECAY_WINDOW_HOURS = 24;
+const DEFAULT_DEDUP_WINDOW_MINUTES = 5;
+const DEFAULT_DEVICE_POST_BAN_SCORE = 40;
+const DEFAULT_IP_POST_BAN_SCORE = 60;
+const DEFAULT_FIRST_BAN_MINUTES = 10;
+const DEFAULT_SECOND_BAN_HOURS = 1;
+const DEFAULT_THIRD_BAN_HOURS = 24;
+const DEFAULT_BAN_ESCALATION_THRESHOLD = 15;
 
 // ============================================================
 // 类型
@@ -146,39 +148,63 @@ async function generalUpsert(table: string, data: Record<string, unknown>): Prom
 }
 
 /** 计算衰减后的分数 */
-function decayScore(previousScore: number, hoursSinceLast: number): number {
-  if (hoursSinceLast >= DECAY_WINDOW_HOURS) return 0;
-  return previousScore * (1 - hoursSinceLast / DECAY_WINDOW_HOURS);
+function decayScore(previousScore: number, hoursSinceLast: number, decayWindowHours: number): number {
+  if (hoursSinceLast >= decayWindowHours) return 0;
+  return previousScore * (1 - hoursSinceLast / decayWindowHours);
 }
 
-/** 阶梯式封禁时长：首次10分钟，二次1小时，三次及以上24小时 */
-function getBanDuration(riskRow: { banned_at: string | null; total_events: number } | null): number {
-  if (!riskRow || !riskRow.banned_at) return 10 / 60;
-  if (riskRow.total_events < 15) return 1;
-  return 24;
+export interface DenyFullConfig {
+  enabled: boolean; warn: number; deviceBan: number; ipBan: number; banHours: number;
+  scoreMap: Record<string, number>; decayWindowHours: number; dedupWindowMinutes: number;
+  devicePostBanScore: number; ipPostBanScore: number;
+  firstBanMinutes: number; secondBanHours: number; thirdBanHours: number; banEscalationThreshold: number;
 }
 
-/** 读取阈值配置 */
-async function getThresholds(): Promise<{ warn: number; deviceBan: number; ipBan: number; banHours: number; enabled: boolean }> {
+/** 阶梯式封禁时长：从配置读取 */
+function getBanDuration(riskRow: { banned_at: string | null; total_events: number } | null, cfg: DenyFullConfig): number {
+  if (!riskRow || !riskRow.banned_at) return cfg.firstBanMinutes / 60;
+  if (riskRow.total_events < cfg.banEscalationThreshold) return cfg.secondBanHours;
+  return cfg.thirdBanHours;
+}
+
+/** 读取 deny 完整配置（优先级：数据库 > 默认值） */
+async function getDenyConfig(): Promise<DenyFullConfig> {
   try {
     const settings = await getSettings();
-    const dt = (settings as any).denyTracking;
+    const dt = settings.denyTracking || {};
     return {
-      enabled: dt?.enabled !== false, // 默认开启
-      warn: dt?.warnThreshold ?? DEFAULT_WARN_THRESHOLD,
-      deviceBan: dt?.deviceBanThreshold ?? DEFAULT_DEVICE_BAN_THRESHOLD,
-      ipBan: dt?.ipBanThreshold ?? DEFAULT_IP_BAN_THRESHOLD,
-      banHours: dt?.banDurationHours ?? DEFAULT_BAN_HOURS,
+      enabled: dt.enabled !== false,
+      warn: dt.warnThreshold ?? DEFAULT_WARN_THRESHOLD,
+      deviceBan: dt.deviceBanThreshold ?? DEFAULT_DEVICE_BAN_THRESHOLD,
+      ipBan: dt.ipBanThreshold ?? DEFAULT_IP_BAN_THRESHOLD,
+      banHours: dt.banDurationHours ?? DEFAULT_BAN_HOURS,
+      scoreMap: dt.scoreMap || DEFAULT_SCORE_MAP,
+      decayWindowHours: dt.decayWindowHours ?? DEFAULT_DECAY_WINDOW_HOURS,
+      dedupWindowMinutes: dt.dedupWindowMinutes ?? DEFAULT_DEDUP_WINDOW_MINUTES,
+      devicePostBanScore: dt.devicePostBanScore ?? DEFAULT_DEVICE_POST_BAN_SCORE,
+      ipPostBanScore: dt.ipPostBanScore ?? DEFAULT_IP_POST_BAN_SCORE,
+      firstBanMinutes: dt.firstBanMinutes ?? DEFAULT_FIRST_BAN_MINUTES,
+      secondBanHours: dt.secondBanHours ?? DEFAULT_SECOND_BAN_HOURS,
+      thirdBanHours: dt.thirdBanHours ?? DEFAULT_THIRD_BAN_HOURS,
+      banEscalationThreshold: dt.banEscalationThreshold ?? DEFAULT_BAN_ESCALATION_THRESHOLD,
     };
   } catch {
     return {
-      enabled: true,
-      warn: DEFAULT_WARN_THRESHOLD,
-      deviceBan: DEFAULT_DEVICE_BAN_THRESHOLD,
-      ipBan: DEFAULT_IP_BAN_THRESHOLD,
-      banHours: DEFAULT_BAN_HOURS,
+      enabled: true, warn: DEFAULT_WARN_THRESHOLD, deviceBan: DEFAULT_DEVICE_BAN_THRESHOLD,
+      ipBan: DEFAULT_IP_BAN_THRESHOLD, banHours: DEFAULT_BAN_HOURS,
+      scoreMap: DEFAULT_SCORE_MAP, decayWindowHours: DEFAULT_DECAY_WINDOW_HOURS,
+      dedupWindowMinutes: DEFAULT_DEDUP_WINDOW_MINUTES,
+      devicePostBanScore: DEFAULT_DEVICE_POST_BAN_SCORE, ipPostBanScore: DEFAULT_IP_POST_BAN_SCORE,
+      firstBanMinutes: DEFAULT_FIRST_BAN_MINUTES, secondBanHours: DEFAULT_SECOND_BAN_HOURS,
+      thirdBanHours: DEFAULT_THIRD_BAN_HOURS, banEscalationThreshold: DEFAULT_BAN_ESCALATION_THRESHOLD,
     };
   }
+}
+
+// 向下兼容
+async function getThresholds(): Promise<{ warn: number; deviceBan: number; ipBan: number; banHours: number; enabled: boolean }> {
+  const cfg = await getDenyConfig();
+  return { warn: cfg.warn, deviceBan: cfg.deviceBan, ipBan: cfg.ipBan, banHours: cfg.banHours, enabled: cfg.enabled };
 }
 
 /** 读取某实体的风险分数记录 */
@@ -217,15 +243,15 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
 
   try {
     // 全局开关检查
-    const thresholds = await getThresholds();
-    if (!thresholds.enabled) return empty;
+    const cfg = await getDenyConfig();
+    if (!cfg.enabled) return empty;
 
     const now = new Date();
-    const pointValue = SCORE_MAP[input.denyReason] ?? 5;
+    const pointValue = cfg.scoreMap[input.denyReason] ?? 5;
 
-    // ── 去重：同一 (IP, path) 5 分钟内只计一次分 ──
+    // ── 去重：同一 (IP, path) N 分钟内只计一次分 ──
     if (input.requestPath) {
-      const dedupTime = new Date(now.getTime() - DEDUP_WINDOW_MINUTES * 60 * 1000).toISOString();
+      const dedupTime = new Date(now.getTime() - cfg.dedupWindowMinutes * 60 * 1000).toISOString();
       const { data: existing } = await pgFetch<{ id: number }>(
         'GET',
         `bdpan_deny_events?select=id&ip=eq.${encodeURIComponent(input.ip)}&request_path=eq.${encodeURIComponent(input.requestPath)}&created_at=gt.${encodeURIComponent(dedupTime)}&limit=1`
@@ -264,7 +290,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
       geo_region: input.geoRegion || '',
       ip_risk_at_time: 0,
       dc_risk_at_time: 0,
-      source: input.source || 'pan',
+      source: input.source || process.env.APP_SOURCE || 'pan',
     };
     const { error: insertErr } = await pgInsert('bdpan_deny_events', eventRecord);
     if (insertErr) {
@@ -279,19 +305,19 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
     if (ipRow) {
       const hoursSince = ipRow.last_offense_at
         ? (now.getTime() - new Date(ipRow.last_offense_at).getTime()) / 3600000
-        : DECAY_WINDOW_HOURS;
+        : cfg.decayWindowHours;
       // 检查IP封禁是否已过期，过期则重置分数
       if (ipRow.is_banned && ipRow.ban_expiry && new Date(ipRow.ban_expiry) <= now) {
-        ipScore = IP_POST_BAN_SCORE + pointValue; // 冷却重置
+        ipScore = cfg.ipPostBanScore + pointValue; // 冷却重置
       } else {
-        ipScore = decayScore(ipRow.current_score, hoursSince) + pointValue;
+        ipScore = decayScore(ipRow.current_score, hoursSince, cfg.decayWindowHours) + pointValue;
       }
     }
 
     // 检查是否触发 IP 自动封禁
-    if (ipScore >= thresholds.ipBan) {
+    if (ipScore >= cfg.ipBan) {
       try {
-        const ipBanHours = getBanDuration(ipRow);
+        const ipBanHours = getBanDuration(ipRow, cfg);
         const settings = await getSettings();
         const bannedIps = { ...(settings.bannedIps || {}) };
         const banUntil = now.getTime() + ipBanHours * 3600 * 1000;
@@ -307,8 +333,8 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
           action_item: `IP: ${input.ip} (分数: ${Math.round(ipScore)})`,
           ip: '127.0.0.1',
           location: '系统',
-          log_text: `[自动封禁] IP ${input.ip} 因风险评分 ${Math.round(ipScore)} 超过阈值 ${thresholds.ipBan}，自动封禁 ${ipBanHours} 小时。最近触发: ${input.denyReason}`,
-          source: input.source || 'pan',
+          log_text: `[自动封禁] IP ${input.ip} 因风险评分 ${Math.round(ipScore)} 超过阈值 ${cfg.ipBan}，自动封禁 ${ipBanHours} 小时。最近触发: ${input.denyReason}`,
+          source: input.source || process.env.APP_SOURCE || 'pan',
         }).catch(() => {});
       } catch (e) {
         console.warn('[deny-tracker] IP 自动封禁失败:', e);
@@ -316,7 +342,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
     }
 
     // Upsert IP 风险分
-    const ipBanHours = ipBanned ? getBanDuration(ipRow) : thresholds.banHours;
+    const ipBanHours = ipBanned ? getBanDuration(ipRow, cfg) : cfg.banHours;
     await generalUpsert('bdpan_risk_scores', {
       entity_type: 'ip',
       entity_value: input.ip,
@@ -339,17 +365,17 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
       if (dcRow) {
         const hoursSince = dcRow.last_offense_at
           ? (now.getTime() - new Date(dcRow.last_offense_at).getTime()) / 3600000
-          : DECAY_WINDOW_HOURS;
+          : cfg.decayWindowHours;
         if (dcRow.is_banned && dcRow.ban_expiry && new Date(dcRow.ban_expiry) <= now) {
-          dcScore = DEVICE_POST_BAN_SCORE + pointValue;
+          dcScore = cfg.devicePostBanScore + pointValue;
         } else {
-          dcScore = decayScore(dcRow.current_score, hoursSince) + pointValue;
+          dcScore = decayScore(dcRow.current_score, hoursSince, cfg.decayWindowHours) + pointValue;
         }
       }
 
-      if (dcScore >= thresholds.deviceBan) {
+      if (dcScore >= cfg.deviceBan) {
         dcBanned = true;
-        const dcBanHours = getBanDuration(dcRow);
+        const dcBanHours = getBanDuration(dcRow, cfg);
         pgInsert('bdpan_action_logs', {
           created_at: now.toISOString(),
           username: '系统',
@@ -357,12 +383,12 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
           action_item: `设备: ${deviceCodeHash} (分数: ${Math.round(dcScore)})`,
           ip: '127.0.0.1',
           location: '系统',
-          log_text: `[自动封禁] 设备 ${deviceCodeHash} 因风险评分 ${Math.round(dcScore)} 超过阈值 ${thresholds.deviceBan}，自动封禁 ${dcBanHours} 小时。最近触发: ${input.denyReason}`,
-          source: input.source || 'pan',
+          log_text: `[自动封禁] 设备 ${deviceCodeHash} 因风险评分 ${Math.round(dcScore)} 超过阈值 ${cfg.deviceBan}，自动封禁 ${dcBanHours} 小时。最近触发: ${input.denyReason}`,
+          source: input.source || process.env.APP_SOURCE || 'pan',
         }).catch(() => {});
       }
 
-      const dcBanHours = dcBanned ? getBanDuration(dcRow) : thresholds.banHours;
+      const dcBanHours = dcBanned ? getBanDuration(dcRow, cfg) : cfg.banHours;
       await generalUpsert('bdpan_risk_scores', {
         entity_type: 'device_code',
         entity_value: deviceCodeHash,
@@ -401,7 +427,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
 
     // ── 生成警告文案 ──
     let warning: string | null = null;
-    if (ipScore >= thresholds.warn || dcScore >= thresholds.warn) {
+    if (ipScore >= cfg.warn || dcScore >= cfg.warn) {
       const entity = dcScore >= ipScore ? '设备' : 'IP';
       const score = Math.round(dcScore >= ipScore ? dcScore : ipScore);
       warning = `⚠️ 您的${entity}已有多次异常访问记录（风险分: ${score}），继续违规操作将被自动封禁`;
@@ -531,7 +557,8 @@ export async function getRiskDashboard(): Promise<{
     `bdpan_deny_events?select=id&created_at=gt.${encodeURIComponent(since24h)}`
   );
   const total24h = count24h?.length ?? 0;
-  const warnCount = (riskEntities || []).filter((e: any) => e.current_score >= DEFAULT_WARN_THRESHOLD && !e.is_banned).length;
+  const cfg = await getDenyConfig();
+  const warnCount = (riskEntities || []).filter((e: any) => e.current_score >= cfg.warn && !e.is_banned).length;
   const bannedCount = (riskEntities || []).filter((e: any) => e.is_banned).length;
 
   return {
