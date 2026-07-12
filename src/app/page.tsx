@@ -133,6 +133,8 @@ export default function Home() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewStarted, setPreviewStarted] = useState(false);
   const [archiveItems, setArchiveItems] = useState<any[]>([]);
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
+  const previewFullscreenRef = useRef(false);
 
   // 更新日志弹窗
   const [showChangelog, setShowChangelog] = useState(false);
@@ -349,7 +351,7 @@ export default function Home() {
           : `${base}${pathPrefix}${filePath}`;
         // PDF：统一用 PDF.js（桌面+手机）
         if (type === 'pdf') {
-          const pdfJsUrl = `${API_BASE}/pdfjs/viewer.html?file=${encodeURIComponent(previewUrl)}`;
+          const pdfJsUrl = `/pdfjs/viewer.html?file=${encodeURIComponent(previewUrl)}`;
           setPreviewFile({ name, url: pdfJsUrl, type, filePath, sign, size });
           setPreviewLoading(false);
           return true;
@@ -621,6 +623,34 @@ export default function Home() {
       .catch(() => { });
 
 
+  }, []);
+
+  // 同步 previewFullscreen 到 ref（供闭包读取最新值）
+  useEffect(() => { previewFullscreenRef.current = previewFullscreen; }, [previewFullscreen]);
+
+  // 监听来自 PDF viewer iframe 的全屏请求（iOS 用 CSS 模拟全屏）
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'toggle-pdf-fullscreen') {
+        setPreviewFullscreen(prev => {
+          const next = !prev;
+          previewFullscreenRef.current = next;
+          return next;
+        });
+      }
+    };
+    window.addEventListener('message', handler);
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && previewFullscreenRef.current && e.target && (e.target as HTMLElement).tagName !== 'INPUT') {
+        setPreviewFullscreen(false);
+        previewFullscreenRef.current = false;
+      }
+    };
+    window.addEventListener('keydown', keyHandler);
+    return () => {
+      window.removeEventListener('message', handler);
+      window.removeEventListener('keydown', keyHandler);
+    };
   }, []);
 
   // Token 存在时自动加载目录
@@ -3128,8 +3158,22 @@ export default function Home() {
 
       {/* 文件预览弹窗 */}
       {previewItemMeta && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-xl" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]); }}>
-          <div className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-3xl overflow-hidden animate-in shadow-2xl border border-white/10" style={{ background: 'var(--bg-app)' }} onClick={e => e.stopPropagation()}>
+        <div
+          className={previewFullscreen
+            ? "fixed inset-0 z-[9999] flex items-center justify-center"
+            : "fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-xl"
+          }
+          style={{ background: previewFullscreen ? '#000' : 'rgba(0,0,0,0.85)' }}
+          onClick={() => { if (!previewFullscreen) { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setArchiveItems([]); setPreviewFullscreen(false); } }}
+        >
+          <div
+            className={previewFullscreen
+              ? "w-full h-full flex flex-col overflow-hidden"
+              : "w-full max-w-5xl max-h-[92vh] flex flex-col rounded-3xl overflow-hidden animate-in shadow-2xl border border-white/10"
+            }
+            style={{ background: previewFullscreen ? '#000' : 'var(--bg-app)' }}
+            onClick={e => e.stopPropagation()}
+          >
             {/* 顶部栏 */}
             <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
               <div className="flex items-center gap-3 min-w-0">
@@ -3167,7 +3211,12 @@ export default function Home() {
                     ⬇️ 下载
                   </button>
                 )}
-                <button onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setPreviewStarted(false); setArchiveItems([]); }} className="hover:opacity-100 opacity-60 transition-opacity p-2 text-lg">✕</button>
+                <button onClick={() => { setPreviewFile(null); setPreviewText(''); setPreviewItemMeta(null); setPreviewStarted(false); setArchiveItems([]); setPreviewFullscreen(false); }} className="hover:opacity-100 opacity-60 transition-opacity p-2 text-lg">✕</button>
+                {previewFullscreen && (
+                  <button onClick={() => setPreviewFullscreen(false)} className="hover:opacity-100 opacity-70 transition-opacity p-2 text-sm" title="退出全屏">
+                    ⛶ 退出全屏
+                  </button>
+                )}
               </div>
             </div>
 
@@ -3189,7 +3238,7 @@ export default function Home() {
               ) : previewFile?.type === 'video' ? (
                 <video src={previewFile.url} controls autoPlay className="max-w-full max-h-[78vh] rounded-lg shadow-2xl" style={{ outline: 'none' }} />
               ) : previewFile?.type === 'pdf' ? (
-                <iframe src={previewFile.url} className="w-full h-[78vh] rounded-lg border-0 bg-white" title={previewFile.name} />
+                <iframe src={previewFile.url} className={previewFullscreen ? "w-full h-full border-0 bg-white" : "w-full h-[78vh] rounded-lg border-0 bg-white"} title={previewFile.name} allow="fullscreen" />
               ) : previewFile?.type === 'office' ? (
                 <iframe src={previewFile.url} className="w-full h-[78vh] rounded-lg border-0 bg-white" title={previewFile.name} />
               ) : previewFile?.type === 'text' ? (

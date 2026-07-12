@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
 
         const body = await request.json().catch(() => ({}));
-        const { action, path, name, names, newName, dir_name, parent, keywords, scope } = body as {
+        let { action, path, name, names, newName, dir_name, parent, keywords, scope } = body as {
             action: string;
             path?: string;
             name?: string;
@@ -82,6 +82,12 @@ export async function POST(request: Request) {
             keywords?: string;
             scope?: number;
         };
+
+        // 强制目录锁定（新站所有人只能看到未来梦目录）
+        const FORCE_BASE_PATH = (process.env.FORCE_BASE_PATH || '').replace(/\/+$/, '');
+        if (FORCE_BASE_PATH && path) {
+            path = FORCE_BASE_PATH + (path === '/' ? '' : path);
+        }
 
         const ctx = getRequestContext(request);
         const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
@@ -95,6 +101,12 @@ export async function POST(request: Request) {
         const user = verifyTokenWithLog(request.headers.get('authorization') || undefined, ctx);
         if (!user) {
             return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
+        }
+
+        // 维护模式：非 admin 全部拒绝
+        const settings = await getSettings();
+        if (settings.maintenanceMode && user.role !== 'admin') {
+            return NextResponse.json({ code: 403, message: '站点维护中，请稍后再试' }, { status: 403 });
         }
 
         console.log(`[alist] ${action} start, path=${path}, user=${user.username}, role=${user.role}, time=${Date.now() - startTime}ms`);

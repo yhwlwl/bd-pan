@@ -2,6 +2,27 @@ import crypto from 'crypto';
 import type { Role } from '../../lib/users';
 import { logDenyEvent } from '../../lib/deny-tracker';
 
+// tokenInvalidBefore 缓存（避免每个请求都读数据库）
+let _cachedTokenInvalidBefore = 0;
+let _lastTokenInvalidFetch = 0;
+
+async function getTokenInvalidBefore(): Promise<number> {
+  if (Date.now() - _lastTokenInvalidFetch < 30000) return _cachedTokenInvalidBefore;
+  try {
+    const { getSettings } = await import('../../lib/users');
+    const s = await getSettings();
+    _cachedTokenInvalidBefore = s.tokenInvalidBefore || 0;
+    _lastTokenInvalidFetch = Date.now();
+  } catch {}
+  return _cachedTokenInvalidBefore;
+}
+
+// 强制刷新（应急面板调用）
+export async function refreshTokenInvalidBefore() {
+  _lastTokenInvalidFetch = 0;
+  return getTokenInvalidBefore();
+}
+
 export interface AuthContext {
   ip: string;
   deviceCode?: string;
@@ -17,6 +38,7 @@ export function signToken(username: string, role: Role, durationHours?: number):
     const secret = getSecret();
     const ttl = (durationHours && durationHours > 0 ? durationHours : 8) * 60 * 60 * 1000;
     const payload = {
+        iat: Date.now(),
         exp: Date.now() + ttl,
         username,
         role,
@@ -54,10 +76,14 @@ export function verifyToken(authHeader?: string): TokenPayload | null {
 
     try {
         const payloadStr = Buffer.from(payloadB64, 'base64url').toString('utf8');
-        const payload = JSON.parse(payloadStr) as { exp?: number; username?: string; role?: Role };
+        const payload = JSON.parse(payloadStr) as { iat?: number; exp?: number; username?: string; role?: Role };
         if (!payload.exp || typeof payload.exp !== 'number') return null;
         if (Date.now() > payload.exp) return null;
         if (!payload.username || !payload.role) return null;
+        // 维护模式踢出检查（admin 豁免，旧 token 无 iat 不检查）
+        if (_cachedTokenInvalidBefore > 0 && payload.iat && payload.iat < _cachedTokenInvalidBefore && payload.role !== 'admin') {
+          return null;
+        }
         return { username: payload.username, role: payload.role };
     } catch {
         return null;

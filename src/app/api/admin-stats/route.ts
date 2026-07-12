@@ -124,7 +124,7 @@ export async function GET(request: Request) {
         const logoutMap = new Map<string, string>();
         (logs || []).forEach((l: any) => {
             const t = new Date(l.created_at);
-            if (l.action_type === '登录' && t >= sessionWindow) {
+            if ((l.action_type === '登录' || l.action_type === '登录 - 游客') && t >= sessionWindow) {
                 const key = l.username === 'guest' ? `guest:${l.fingerprint || l.session_id || ''}` : l.username;
                 if (!loginMap.has(key)) loginMap.set(key, { time: l.created_at, role: '', sessionId: l.session_id || '', fingerprint: l.fingerprint || '' });
             }
