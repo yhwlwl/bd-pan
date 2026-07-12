@@ -353,7 +353,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
       is_banned: ipBanned,
       banned_at: ipBanned ? now.toISOString() : (ipRow?.banned_at || null),
       ban_expiry: ipBanned ? new Date(now.getTime() + ipBanHours * 3600 * 1000).toISOString() : (ipRow?.ban_expiry || null),
-      ban_reason: ipBanned ? `评分 ${Math.round(ipScore)} ≥ ${thresholds.ipBan}` : (ipRow?.ban_reason || null),
+      ban_reason: ipBanned ? `评分 ${Math.round(ipScore)} ≥ ${cfg.ipBan}` : (ipRow?.ban_reason || null),
       updated_at: now.toISOString(),
     });
 
@@ -399,7 +399,7 @@ export async function logDenyEvent(input: DenyEventInput): Promise<DenyResult> {
         is_banned: dcBanned,
         banned_at: dcBanned ? now.toISOString() : (dcRow?.banned_at || null),
         ban_expiry: dcBanned ? new Date(now.getTime() + dcBanHours * 3600 * 1000).toISOString() : (dcRow?.ban_expiry || null),
-        ban_reason: dcBanned ? `评分 ${Math.round(dcScore)} ≥ ${thresholds.deviceBan}` : (dcRow?.ban_reason || null),
+        ban_reason: dcBanned ? `评分 ${Math.round(dcScore)} ≥ ${cfg.deviceBan}` : (dcRow?.ban_reason || null),
         updated_at: now.toISOString(),
       });
     }
