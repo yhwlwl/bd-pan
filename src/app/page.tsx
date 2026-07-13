@@ -24,6 +24,7 @@ export interface UserPermissions {
   viewActionLogs?: boolean;
   viewIpStats?: boolean;
   viewDownloadLogs?: boolean;
+  mgAccess?: boolean;
 }
 
 type FilePermissionAction = 'view' | 'search' | 'download' | 'upload' | 'delete' | 'rename' | 'preview';
@@ -1868,22 +1869,13 @@ export default function Home() {
           <button onClick={toggleTheme} className="text-sm opacity-60 hover:opacity-100 transition-opacity" title="切换主题">
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
-          {isAdmin && (
+          {(isAdmin || userPerms?.mgAccess) && (
             <button
-              onClick={() => { setShowAdminPanel(true); fetchAdminData(); }}
+              onClick={() => window.open('/mg', '_blank')}
               className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"
               style={{ color: 'var(--accent)' }}
             >
-              👑 管理
-            </button>
-          )}
-          {!isAdmin && (userPerms?.viewStats || userPerms?.viewActionLogs || userPerms?.viewIpStats || userPerms?.viewDownloadLogs) && (
-            <button
-              onClick={() => { setShowAdminPanel(true); fetchAdminData(); }}
-              className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              📊 日志
+              管理
             </button>
           )}
           {canControlFile && (
