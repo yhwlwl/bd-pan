@@ -558,6 +558,7 @@ export async function getRiskDashboard(): Promise<{
   );
   const total24h = count24h?.length ?? 0;
   const cfg = await getDenyConfig();
+  (riskEntities || []).forEach((e: any) => { if (e.is_banned && e.ban_expiry && new Date(e.ban_expiry) <= now) e.is_banned = false; });
   const warnCount = (riskEntities || []).filter((e: any) => e.current_score >= cfg.warn && !e.is_banned).length;
   const bannedCount = (riskEntities || []).filter((e: any) => e.is_banned).length;
 
