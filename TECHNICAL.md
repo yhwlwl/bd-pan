@@ -935,10 +935,12 @@ server {
 
 每条事件同时记录 **IP + 设备码 + 用户名 + session_id**，三者关联到同一行。
 
-### 评分体系
+### 评分体系（全部可配置）
 
-| deny_reason | 分数 | 触发场景 |
-|-------------|------|----------|
+所有参数从 `bdpan_settings.denyTracking` 读取，未配则用默认值：
+
+| deny_reason | 默认分 | 触发场景 |
+|-------------|:-----:|----------|
 | `nginx_db_token` | 30 | /db/ 无 Token |
 | `nginx_sensitive_file` | 20 | 探测 .env/.git 等 |
 | `nginx_pdf_referer` | 10 | PDF 盗链 |
@@ -951,17 +953,28 @@ server {
 | `api_file_rule_denied` | 5 | 文件权限规则拒绝（预览/下载） |
 | `api_all_items_denied` | 5 | 批量操作所有项被拒 |
 
-**衰减**：`newScore = oldScore × max(0, 1 - hoursAgo ÷ 24) + eventPoints`
+**衰减** (decayWindowHours，默认 24h)：`newScore = oldScore × max(0, 1 - hoursAgo ÷ 衰减窗口) + eventPoints`
 
-**去重**：同一 `(IP, request_path)` 5 分钟内只计分一次
+**去重** (dedupWindowMinutes，默认 5min)：同一 `(IP, request_path)` N 分钟内只计分一次
 
-### 阈值与动作
+### 阈值与动作（全部可配置）
 
-| 分数 | 动作 |
-|------|------|
-| ≥30 | **风控告警**：页面顶部常驻黄色警告条 + 风控管理面板标记 ⚠️ |
-| ≥50 | **设备封禁**：`bdpan_risk_scores.is_banned=true`，24h 后解封，分数重置到 40 |
-| ≥70 | **IP 封禁**：写入 `settings.bannedIps`，24h 后解封，分数重置到 60 |
+| 参数 | 默认 | 动作 |
+|------|:---:|------|
+| warnThreshold | 30 | **风控告警**：页面顶部常驻黄色警告条 |
+| deviceBanThreshold | 50 | **设备封禁**：写入 bdpan_risk_scores，阶梯时长 |
+| ipBanThreshold | 70 | **IP 封禁**：写入 settings.bannedIps，阶梯时长 |
+| devicePostBanScore | 40 | 设备解封后分数重置到该值 |
+| ipPostBanScore | 60 | IP 解封后分数重置到该值 |
+
+### 阶梯封禁（全部可配置）
+
+| 参数 | 默认 | 说明 |
+|------|:---:|------|
+| firstBanMinutes | 10 | 首次封禁时长 |
+| secondBanHours | 1 | 二次封禁时长 |
+| thirdBanHours | 24 | 三次及以上封禁时长 |
+| banEscalationThreshold | 15 | total_events ≥ 此数进入下一级 |
 
 **管理员豁免**：admin/manager 角色绕过封禁检查。
 
@@ -991,6 +1004,24 @@ server {
 | `src/app/api/deny-stats/route.ts` | 风控管理面板数据 + 管理操作 |
 | `src/app/api/check-risk/route.ts` | 用户风险评分查询（页面顶部警告条用） |
 | `sql/deny-tables.sql` | 建表 DDL |
+
+### iat 踢出机制
+
+`_auth.ts` 中 `signToken()` 签发 JWT 时埋入 `iat: Date.now()`。
+应急面板设置 `tokenInvalidBefore` 后，`verifyToken()` 将所有 `iat < invalidBefore && role !== 'admin'` 的 token 拒绝，即时踢出所有非 admin 用户。
+
+```
+_aut.ts 缓存 30s，避免每个请求读库
+_setting 清 tokenInvalidBefore = 0 即可恢复
+```
+
+### 维护模式（maintenanceMode）
+
+应急面板触发。设置 `maintenanceMode=true` 后：
+- `/api/alist` 检查 `maintenanceMode && role !== 'admin'` → 403
+- 「站点维护中，请稍后再试」
+- 配合全量数据库备份（POST /api/mg-backup）
+- quickthot settings 快照，恢复时原样还原
 
 ---
 
