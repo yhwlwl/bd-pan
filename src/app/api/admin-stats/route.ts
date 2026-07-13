@@ -73,15 +73,20 @@ export async function GET(request: Request) {
         const recentActions: any[] = [];
         const allDownloadLogs: any[] = [];
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        let totalDownloads = 0, past24hDownloads = 0;
+        let totalDownloads = 0, past24hDownloads = 0, totalPreviews = 0, past24hPreviews = 0;
 
         logs.forEach((log: any) => {
             const isDownload = (log.action_type || '').startsWith('下载 -') || (log.action_type || '').startsWith('下载');
+            const isPreview = log.action_type === '预览';
             const isPast24h = new Date(log.created_at) >= twentyFourHoursAgo;
 
             if (isDownload) {
                 totalDownloads++;
                 if (isPast24h) past24hDownloads++;
+            }
+            if (isPreview) {
+                totalPreviews++;
+                if (isPast24h) past24hPreviews++;
                 let key = 'other';
                 const at = log.action_type || '';
                 if (at.includes('阿里云服务器极速下载')) key = 'ecs';
@@ -146,7 +151,7 @@ export async function GET(request: Request) {
 
         return NextResponse.json({
             code: 200,
-            data: { totalPanVisits, past24hDownloads, totalDownloads, channelStats, recentActions, topIps, allDownloadLogs, viewLogs: viewLogs || [], onlineUsers },
+            data: { totalPanVisits, past24hDownloads, totalDownloads, past24hPreviews, totalPreviews, channelStats, recentActions, topIps, allDownloadLogs, viewLogs: viewLogs || [], onlineUsers },
         });
     } catch (e: any) {
         console.error('[stats] error:', e);
