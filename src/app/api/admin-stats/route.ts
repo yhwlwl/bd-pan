@@ -36,7 +36,9 @@ export async function GET(request: Request) {
         if (!user) return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
         if (user.role !== 'admin') {
             const perms = await getUserPermissions(user.username, user.role);
-            if (!(perms.viewStats || perms.viewActionLogs || perms.viewIpStats || perms.viewDownloadLogs)) {
+            // 管理员面板权限或旧权限都可访问
+            const hasMgAccess = perms.mgAccess === true || Object.keys(perms.mgPermissions || {}).length > 0;
+            if (!(hasMgAccess || perms.viewStats || perms.viewActionLogs || perms.viewIpStats || perms.viewDownloadLogs)) {
                 return denyAndLog(request, 'api_role_denied', 401, '无权限访问统计信息', user.username);
             }
         }
@@ -48,15 +50,13 @@ export async function GET(request: Request) {
         const isSupabase = source === 'supabase' && BACKUP_URL;
 
         // 并行拉取两张表
-        const actionFilter = pageSource === 'all' ? '' : `source=eq.${encodeURIComponent(pageSource)}&`;
-        const viewFilter = pageSource === 'all' ? '' : `page_source=eq.${encodeURIComponent(pageSource)}&`;
         const [actionRes, viewRes] = await Promise.all([
             isSupabase
-                ? supabaseFetch('GET', `bdpan_action_logs?${actionFilter}order=created_at.desc&limit=100000`)
-                : pgFetch<any>('GET', `bdpan_action_logs?${actionFilter}order=created_at.desc&limit=100000`),
+                ? supabaseFetch('GET', `bdpan_action_logs?source=eq.${pageSource}&order=created_at.desc&limit=100000`)
+                : pgFetch<any>('GET', `bdpan_action_logs?source=eq.${encodeURIComponent(pageSource)}&order=created_at.desc&limit=100000`),
             isSupabase
-                ? supabaseFetch('GET', `view_logs?${viewFilter}order=visit_time.desc&limit=100000`)
-                : pgFetch<any>('GET', `view_logs?${viewFilter}order=visit_time.desc&limit=100000`),
+                ? supabaseFetch('GET', `view_logs?page_source=eq.${pageSource}&order=visit_time.desc&limit=100000`)
+                : pgFetch<any>('GET', `view_logs?page_source=eq.${encodeURIComponent(pageSource)}&order=visit_time.desc&limit=100000`),
         ]);
         const logs = isSupabase ? (Array.isArray(actionRes) ? actionRes : []) : (actionRes.data || []);
         const viewLogs = isSupabase ? (Array.isArray(viewRes) ? viewRes : []) : (viewRes.data || []);
@@ -125,6 +125,7 @@ export async function GET(request: Request) {
         (logs || []).forEach((l: any) => {
             const t = new Date(l.created_at);
             if ((l.action_type === '登录' || l.action_type === '登录 - 游客') && t >= sessionWindow) {
+                // 游客用 fingerprint 区分，非游客用 username
                 const key = l.username === 'guest' ? `guest:${l.fingerprint || l.session_id || ''}` : l.username;
                 if (!loginMap.has(key)) loginMap.set(key, { time: l.created_at, role: '', sessionId: l.session_id || '', fingerprint: l.fingerprint || '' });
             }
