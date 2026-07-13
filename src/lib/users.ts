@@ -8,6 +8,11 @@ export interface User {
     role: Role;
 }
 
+export interface MgSectionPermission {
+    view: number;   // 0=隐藏 1-6=可见最高风险等级
+    modify: number; // 0=只读 1-6=可修改最高风险等级
+}
+
 export interface UserPermissions {
     view: boolean;
     search: boolean;
@@ -19,10 +24,13 @@ export interface UserPermissions {
     setting: boolean;
     controlFile?: boolean;
     basePath?: string;
+    mgAccess?: boolean; // 主站显示管理按钮，可进入 /mg
     viewStats?: boolean;
     viewActionLogs?: boolean;
     viewIpStats?: boolean;
     viewDownloadLogs?: boolean;
+    // 管理后台板块权限（v2 风险分级）
+    mgPermissions?: Record<string, MgSectionPermission>;
 }
 
 export type FilePermissionAction = 'view' | 'search' | 'download' | 'upload' | 'delete' | 'rename' | 'preview';
@@ -101,6 +109,8 @@ export interface GlobalSettings {
     maintenanceMode?: boolean;
     tokenInvalidBefore?: number;
     maintenanceSnapshot?: any;
+    // 风险标签配置
+    mgRiskLabels?: Record<string, number>;
 }
 
 export type UserWithPermissions = Omit<User, 'password'> & { permissions: UserPermissions };
@@ -229,6 +239,7 @@ export async function getSettings(): Promise<GlobalSettings> {
         maintenanceMode: typeof val.maintenanceMode === 'boolean' ? val.maintenanceMode : false,
         tokenInvalidBefore: typeof val.tokenInvalidBefore === 'number' ? val.tokenInvalidBefore : 0,
         maintenanceSnapshot: (val.maintenanceSnapshot || undefined) as any,
+        mgRiskLabels: (val.mgRiskLabels || undefined) as Record<string, number> | undefined,
     };
 }
 
@@ -257,6 +268,7 @@ export async function getUserPermissions(username: string, role: Role): Promise<
         viewActionLogs: false,
         viewIpStats: false,
         viewDownloadLogs: false,
+        mgAccess: false,
     };
 
     const defaultGuest: UserPermissions = {
@@ -274,6 +286,7 @@ export async function getUserPermissions(username: string, role: Role): Promise<
         viewActionLogs: false,
         viewIpStats: false,
         viewDownloadLogs: false,
+        mgAccess: false,
     };
 
     if (role === 'admin') {
@@ -287,6 +300,7 @@ export async function getUserPermissions(username: string, role: Role): Promise<
             preview: true,
             setting: true,
             controlFile: true,
+            mgAccess: true,
             basePath: '/',
         };
     }
