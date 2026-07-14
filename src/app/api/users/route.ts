@@ -1,16 +1,22 @@
 import { NextResponse } from 'next/server';
-import { requireRole, requireRoleWithLog, type AuthContext } from '../_auth';
+import { verifyTokenWithLog, requireRoleWithLog, type AuthContext } from '../_auth';
 import { getUsers, addUser, removeUser, updateUserRole, getSettings, updateSettings, updateAdminPassword } from '../../../lib/users';
 import type { FilePermissionRule, Role, UserPermissions } from '../../../lib/users';
 import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
 import { hashDeviceCode } from '../../../lib/fingerprint';
 
-// GET: 获取用户列表和全局设置（仅 admin）
+// GET: 获取用户列表和全局设置（admin 或 mgPermissions 持有者）
 export async function GET(request: Request) {
     const ctx = getRequestContext(request);
-    const auth = requireRoleWithLog(request.headers.get('authorization') || undefined, ctx, 'admin');
+    const auth = verifyTokenWithLog(request.headers.get('authorization') || undefined, ctx);
     if (!auth) {
         return NextResponse.json({ error: '权限不足' }, { status: 401 });
+    }
+    // 非 admin 检查是否有管理后台权限
+    if (auth.role !== 'admin') {
+        const perms = await (await import('../../../lib/users')).getUserPermissions(auth.username, auth.role);
+        const hasMg = Object.values(perms.mgPermissions || {}).some((p: any) => (p as any)?.view > 0);
+        if (!hasMg) return NextResponse.json({ error: '权限不足' }, { status: 401 });
     }
 
     return NextResponse.json({
