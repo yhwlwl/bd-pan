@@ -9,6 +9,7 @@ interface Ann {
   active: boolean;
   targetAudience: "all" | "guest" | "user";
   displayLocation: "login" | "main" | "all";
+  color?: string;
   scheduledAt: string | null;
   publishedAt: string | null;
   createdAt: string;
@@ -29,6 +30,7 @@ export default function Announcements() {
   const [draft, setDraft] = useState("");
   const [target, setTarget] = useState<"all" | "guest" | "user">("all");
   const [location, setLocation] = useState<"login" | "main" | "all">("all");
+  const [annColor, setAnnColor] = useState("blue");
   const [schedule, setSchedule] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
@@ -59,6 +61,7 @@ export default function Announcements() {
       active: true,
       targetAudience: target,
       displayLocation: location,
+      color: annColor,
       scheduledAt: null,
       publishedAt: now,
       createdAt: now,
@@ -82,6 +85,7 @@ export default function Announcements() {
       active: false,
       targetAudience: target,
       displayLocation: location,
+      color: annColor,
       scheduledAt: new Date(schedule).toISOString(),
       publishedAt: null,
       createdAt: now,
@@ -205,6 +209,16 @@ export default function Announcements() {
               <option value="all">登录页+主页</option>
               <option value="login">仅登录页</option>
               <option value="main">仅主页</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-1">颜色</label>
+            <select value={annColor} onChange={e => setAnnColor(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
+              <option value="blue">蓝色</option>
+              <option value="amber">琥珀</option>
+              <option value="green">绿色</option>
+              <option value="red">红色</option>
+              <option value="purple">紫色</option>
             </select>
           </div>
           <div>

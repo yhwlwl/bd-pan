@@ -194,7 +194,7 @@ export default function FilePermissions() {
                   <option value="path">匹配路径</option>
                   <option value="name">匹配文件名</option>
                 </select>
-                <button onClick={previewRegex} className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200">
+                <button onClick={previewRegex} disabled={!canModify("fileperms.previewRegex")} title={!canModify("fileperms.previewRegex") ? "无修改权限" : undefined} className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed">
                   预览匹配
                 </button>
               </>
