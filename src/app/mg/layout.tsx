@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AdminProvider } from "./lib/admin-context";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/pan";
 
 export default function MgLayout({ children }: { children: React.ReactNode }) {
   const [auth, setAuth] = useState<{
@@ -77,7 +77,7 @@ export default function MgLayout({ children }: { children: React.ReactNode }) {
         <div className="w-full max-w-sm mx-4">
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
             <div className="text-center mb-8">
-              <h1 className="text-xl font-bold text-slate-800">WLM-PAN 管理后台</h1>
+              <h1 className="text-xl font-bold text-slate-800">STA-PAN 管理后台</h1>
               <p className="text-sm text-slate-500 mt-1">请使用管理员账号登录</p>
             </div>
 

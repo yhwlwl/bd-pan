@@ -2,8 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
-const APP_SOURCE = process.env.NEXT_PUBLIC_APP_SOURCE || "weilaimeng";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/pan";
+const APP_SOURCE = process.env.NEXT_PUBLIC_APP_SOURCE || "pan";
 
 // ============ 类型 ============
 
