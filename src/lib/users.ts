@@ -102,7 +102,7 @@ export interface GlobalSettings {
     denyEventRetentionDays?: number;
     visitLogRetentionDays?: number;
     // 公告系统（多公告支持）
-    announcements?: { id: string; content: string; active: boolean; targetAudience: 'all' | 'guest' | 'user'; scheduledAt: string | null; publishedAt: string | null; createdAt: string; updatedAt: string }[];
+    announcements?: { id: string; content: string; active: boolean; targetAudience: 'all' | 'guest' | 'user'; displayLocation: 'login' | 'main' | 'all'; scheduledAt: string | null; publishedAt: string | null; createdAt: string; updatedAt: string }[];
     // 风控详细配置
     denyTracking?: DenyTrackingConfig;
     // 应急/维护
