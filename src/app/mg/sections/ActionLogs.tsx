@@ -47,9 +47,13 @@ export default function ActionLogs() {
     else if (logFilter === "失败") result = result.filter((l: any) => (l.action || "").includes("失败"));
     else if (logFilter === "下载") result = result.filter((l: any) => (l.action || "").startsWith("下载"));
     else if (logFilter === "预览") result = result.filter((l: any) => l.action === "预览");
+    else if (logFilter === "上传") result = result.filter((l: any) => (l.action || "").startsWith("上传"));
     else if (logFilter === "删除") result = result.filter((l: any) => (l.action || "").startsWith("删除"));
-    else if (logFilter === "文件权限") result = result.filter((l: any) => (l.action || "").includes("文件权限"));
     else if (logFilter === "登录") result = result.filter((l: any) => (l.action || "").includes("登录"));
+    else if (logFilter === "管理") result = result.filter((l: any) => (l.action || "").startsWith("管理 -"));
+    else if (logFilter === "浏览") result = result.filter((l: any) => l.action === "浏览目录");
+    else if (logFilter === "文件权限") result = result.filter((l: any) => (l.action || "").includes("文件权限"));
+    else if (logFilter === "搜索") result = result.filter((l: any) => (l.action || "").includes("搜索"));
     return result;
   }, [rawLogs, logTimeFilter, logUserFilter, logFilter, now]);
 
@@ -62,6 +66,7 @@ export default function ActionLogs() {
     if (action.includes("下载")) return "text-green-600";
     if (action.includes("上传")) return "text-amber-600";
     if (action.includes("登录")) return "text-blue-600";
+    if (action.startsWith("管理 -")) return "text-rose-500";
     if (action.includes("文件权限")) return "text-purple-600";
     return "text-slate-600";
   };
@@ -106,9 +111,13 @@ export default function ActionLogs() {
           <option value="失败">失败</option>
           <option value="下载">下载</option>
           <option value="预览">预览</option>
+          <option value="上传">上传</option>
           <option value="删除">删除</option>
-          <option value="文件权限">文件权限</option>
           <option value="登录">登录</option>
+          <option value="管理">管理后台</option>
+          <option value="浏览">浏览目录</option>
+          <option value="搜索">搜索</option>
+          <option value="文件权限">文件权限</option>
         </select>
         <select value={riskLimit} onChange={e => setRiskLimit(Number(e.target.value))} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600">
           <option value={10}>10 条</option>

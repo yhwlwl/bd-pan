@@ -15,7 +15,8 @@ export async function GET() {
       downloadModes: settings.downloadModes || {
         ecs: 'enabled', cf: 'enabled', raw: 'enabled', vercel: 'disabled', direct302: 'enabled'
       },
-      announcement: settings.announcement
+      announcement: settings.announcement,
+      announcements: Array.isArray(settings.announcements) ? settings.announcements : []
     });
   } catch (error: any) {
     return NextResponse.json({ disableThirdDownload: false }, { status: 500 });

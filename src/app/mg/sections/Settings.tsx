@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAdmin } from "../lib/admin-context";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/pan";
 
 const SCORE_LABELS: Record<string, string> = {
   nginx_db_token: "Nginx Token 探测",

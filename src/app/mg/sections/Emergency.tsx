@@ -53,7 +53,7 @@ export default function Emergency() {
         announcements: [{
           id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
           content: "站点维护中，请稍后再试",
-          active: true, targetAudience: "all" as const, displayLocation: "all" as const, scheduledAt: null,
+          active: true, targetAudience: "all" as const, displayLocation: "all" as const, color: "red", scheduledAt: null,
           publishedAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
         }, ...(adminSettings.announcements || [])],
       },
