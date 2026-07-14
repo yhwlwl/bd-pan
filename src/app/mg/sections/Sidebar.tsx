@@ -47,8 +47,8 @@ export default function Sidebar({ currentTab, visibleTabs, sidebarOpen, setSideb
       >
         {/* 品牌区 */}
         <div className="px-5 py-4 border-b border-slate-700/50 shrink-0">
-          <h1 className="text-sm font-bold tracking-wide">WLM-PAN 管理后台</h1>
-          <p className="text-[10px] text-slate-400 mt-0.5">未来梦在线阅读平台</p>
+          <h1 className="text-sm font-bold tracking-wide">STA-PAN 管理后台</h1>
+          <p className="text-[10px] text-slate-400 mt-0.5">成都七中科协网盘</p>
         </div>
 
         {/* 导航区 */}
@@ -105,8 +105,8 @@ export default function Sidebar({ currentTab, visibleTabs, sidebarOpen, setSideb
                 disabled={!canModify("overview.switchPageSource")}
                 className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[11px] text-slate-300 flex-1 disabled:opacity-30"
               >
-                <option value="weilaimeng">未来梦</option>
                 <option value="pan">主站</option>
+                <option value="weilaimeng">未来梦</option>
                 <option value="all">全部</option>
               </select>
             </div>

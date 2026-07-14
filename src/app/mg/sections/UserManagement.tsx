@@ -6,7 +6,7 @@ import { useAdmin } from "../lib/admin-context";
 const PERM_LABELS: Record<string, string> = {
   view: "浏览", search: "搜索", download: "下载", upload: "上传",
   delete: "删除", rename: "重命名", preview: "预览",
-  setting: "本地配置", mgAccess: "管理面板",
+  setting: "本地配置", controlFile: "主站文件管理", mgAccess: "管理面板",
 };
 
 const ROLE_LABELS: Record<string, string> = {

@@ -33,12 +33,14 @@ const TABS: { key: string; label: string; sectionKey: string; permKey?: string }
 function MgContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { isAdmin, canView, loading } = useAdmin();
+  const { isAdmin, canView, userPerms, loading } = useAdmin();
   const tab = searchParams.get("tab") || "overview";
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const visibleTabs = TABS.filter((t) => {
     if (isAdmin) return true;
+    // 旧权限兼容：文件权限需要 controlFile 才能访问 API
+    if (t.sectionKey === "mgFilePerms" && !userPerms?.controlFile) return false;
     return canView(t.sectionKey);
   });
 
@@ -74,7 +76,7 @@ function MgContent() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="font-bold text-slate-700 text-sm">WLM-PAN</span>
+          <span className="font-bold text-slate-700 text-sm">STA-PAN</span>
           <div className="w-6" />
         </header>
         <main className="flex-1 overflow-auto p-4 lg:p-6">
