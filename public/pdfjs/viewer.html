@@ -19,7 +19,9 @@ canvas{display:block;box-shadow:0 2px 12px rgba(0,0,0,.5)}
   <input id="pageInput" type="number" min="1" value="1">
   <button id="zoomOut">−</button>
   <select id="scaleSelect">
-    <option value="3" selected>300%</option>
+    <option value="page-width" selected>适合宽度</option>
+    <option value="page-fit">适合长度</option>
+    <option value="3">300%</option>
     <option value="2">200%</option>
     <option value="1.5">150%</option>
     <option value="1">100%</option>
@@ -38,7 +40,7 @@ GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
 const key=(new URL(location.href)).searchParams.get('key')||'';
 const file=(new URL(location.href)).searchParams.get('file')||'';
 let pdfUrl=key?sessionStorage.getItem(key)||'':decodeURIComponent(file||'');
-if(!pdfUrl){pdfUrl='https://pan.tantantan.tech/pdf-preview/sta/新媒体素材/可复用文件收集/未来梦扫描件/《未来梦》Vol.20.pdf?sign=ZgQCQ-LbsGyKIZhKt9_uCDkoxF_hbzi_R41XBTBZHPo=:0'}
+if(!pdfUrl){wrapper.innerHTML='<div style="color:#999;text-align:center;padding:40px;font-size:14px">未指定文件</div>';return}
 if(key)sessionStorage.removeItem(key);
 document.title=decodeURIComponent(pdfUrl.split('/').pop()||'PDF');
 
@@ -109,14 +111,20 @@ pageInput.onchange=()=>goPage(parseInt(pageInput.value,10)||1);
 document.getElementById('zoomIn').onclick=()=>{const s=parseFloat(scaleSelect.value)||1;applyScale(Math.min(4,s*1.3))};
 document.getElementById('zoomOut').onclick=()=>{const s=parseFloat(scaleSelect.value)||1;applyScale(Math.max(0.25,s/1.3))};
 scaleSelect.onchange=()=>{const v=scaleSelect.value;if(v==='page-width'||v==='page-fit'){applyScale(v)}else{applyScale(v)}};
-
-// iOS Safari 的 Fullscreen API 仅对 video 元素有效，调用普通元素静默无反应
-const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent);
+// iOS Safari 的 Fullscreen API 仅对 video 元素有效，对普通元素调用静默无反应
+// 因此 iOS 全系直接用 postMessage 通知父页面做 CSS 全屏
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
 
 document.getElementById('fullscreenBtn').onclick=()=>{
-  if(isIOS){window.parent.postMessage({type:'toggle-pdf-fullscreen'},'*');return}
-  if(!document.fullscreenElement){document.documentElement.requestFullscreen().catch(()=>{})}
-  else{document.exitFullscreen().catch(()=>{})}
+  if (isIOS) {
+    window.parent.postMessage({ type: 'toggle-pdf-fullscreen' }, '*');
+    return;
+  }
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
 };
 
 document.addEventListener('keydown',e=>{
@@ -131,6 +139,7 @@ document.addEventListener('keydown',e=>{
     else{document.exitFullscreen().catch(()=>{})}
   }
 });
+
 
 loadPdf().catch(e=>{wrapper.innerHTML=`<div style="color:#f66;text-align:center;padding:40px">加载失败: ${e.message}</div>`});
 </script></body></html>

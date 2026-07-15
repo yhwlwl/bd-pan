@@ -23,9 +23,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: '请先登录' }, { status: 401 });
     }
 
-    const perms = await getUserPermissions(user.username, user.role);
-    if (!perms.upload) {
-        return denyAndLog(request, 'api_permission_denied', 403, '权限不足，无权上传', user.username);
+    if (user.role !== 'admin') {
+        const perms = await getUserPermissions(user.username, user.role);
+        if (!perms.upload) {
+            return denyAndLog(request, 'api_permission_denied', 403, '权限不足，无权上传', user.username);
+        }
+        // manager/其他角色不能获取 AList 管理 token
+        return denyAndLog(request, 'api_role_denied', 403, '仅管理员可获取 AList 凭证', user.username);
     }
 
     try {
