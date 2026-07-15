@@ -56,3 +56,5 @@ public/pdfjs/pdf_viewer.css
 public/pdfjs/images/
 server
 pdfjs*.zip
+# sensitive docs
+docs/poc.html
