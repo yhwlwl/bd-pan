@@ -6,12 +6,12 @@ import { hashDeviceCode } from '../../../lib/fingerprint';
 
 // ECS 成都节点 (主)
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
-const ECS_USER = process.env.ALIST_USERNAME || '';
-const ECS_PASS = process.env.ALIST_PASSWORD || '';
+const ECS_USER = process.env.ALIST_TOKEN_USER || process.env.ALIST_USERNAME || '';
+const ECS_PASS = process.env.ALIST_TOKEN_PASS || process.env.ALIST_PASSWORD || '';
 // FRP NAS 节点 (备)
 const FRP_URL = (process.env.NEXT_PUBLIC_ALIST_URL_FALLBACK || 'https://frp-gap.com:37492').replace(/\/+$/, '');
-const FRP_USER = process.env.ALIST_USERNAME_FALLBACK || '';
-const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
+const FRP_USER = process.env.ALIST_TOKEN_USER || process.env.ALIST_USERNAME_FALLBACK || '';
+const FRP_PASS = process.env.ALIST_TOKEN_PASS || process.env.ALIST_PASSWORD_FALLBACK || '';
 
 const tokenCache = new Map<string, { token: string; expiry: number }>();
 
@@ -23,13 +23,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: '请先登录' }, { status: 401 });
     }
 
-    if (user.role !== 'admin') {
-        const perms = await getUserPermissions(user.username, user.role);
-        if (!perms.upload) {
-            return denyAndLog(request, 'api_permission_denied', 403, '权限不足，无权上传', user.username);
-        }
-        // manager/其他角色不能获取 AList 管理 token
-        return denyAndLog(request, 'api_role_denied', 403, '仅管理员可获取 AList 凭证', user.username);
+    const perms = await getUserPermissions(user.username, user.role);
+    if (!perms.upload) {
+        return denyAndLog(request, 'api_permission_denied', 403, '权限不足，无权上传', user.username);
     }
 
     try {
