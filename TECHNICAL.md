@@ -613,12 +613,13 @@ sudo cp node_modules/@panzoom/panzoom/dist/panzoom.min.js public/pdfjs/
 **构建命令链：**
 
 ```bash
+
 cd /www/wwwroot/bd-pan
 sudo git pull
 sudo npm install                  # 安装依赖 + postinstall 自动拷贝 PDF.js
 sudo cp .../panzoom.min.js public/pdfjs/  # 手动拷贝 Panzoom
 sudo npm run build                # 构建 Next.js（.next/ 目录）
-sudo pm2 restart bdpan            # 重启进程
+sudo pm2 restart pan-vlm/sudo pm2 restart bdpan            # 重启进程
 ```
 
 > ⚠️ 如果只改了 `public/pdfjs/viewer.html`（静态文件），不需要 `npm run build` 和 `pm2 restart`——Nginx 直接读磁盘。
@@ -1368,7 +1369,26 @@ curl -I https://pan.tantantan.tech/wlm-api/api/alist
 
 ---
 
-## 22. 更新日志
+## 22. 安全审计
+
+### 历史漏洞
+
+| # | 漏洞 | 严重度 | 状态 | 修复 commit |
+|:-|------|:------:|:----:|:-----------:|
+| 1 | AList 管理 Token 泄露 — manager 可获取 AList admin JWT，读取百度网盘凭证 | 🔴 Critical 9.9 | ✅ 已修复 | `e255e06`(WLM) / `72855bc`(主站) |
+| 2 | 默认 JWT 密钥 — `ADMIN_TOKEN_SECRET` 未设置时 fallback 到 `default-secret-change-me` | 🔴 High 7.5 | ⚠️ 需确认 env | — |
+| 3 | viewer.html 硬编码后端 URL/路径/签名 | 🟡 Medium 5.3 | ✅ 已修复 | 同上 |
+
+### 误报
+
+| # | 报告内容 | 实情 |
+|:-|---------|------|
+| 1 | `/api/global-settings` 无认证泄露配置 | 公开 API，只返回 UI 开关量 |
+| 2 | JWT 签名验证绕过 | 测试者用了无需鉴权的 `/api/check-risk`。`_auth.ts` 72-75 行明确做 HMAC 验证 |
+| 3 | `alist-download` 绕过 PDF 保护 | 下载 API 本意就是下载 |
+| 4 | BFLA — Manager 可访问 admin API | 设计如此，按 `mgPermissions` 粒度控制 |
+
+## 23. 更新日志
 
 变更记录位于 `src/data/changelog.json`。
 
