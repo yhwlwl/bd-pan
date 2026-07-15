@@ -1,0 +1,23 @@
+name: Auto Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          password: ${{ secrets.ECS_PASS }}
+          port: 22
+          script: |
+            cd /www/wwwroot/bd-pan
+            git pull
+            npm install
+            npm run build
+            pm2 restart bdpan
