@@ -40,7 +40,7 @@ GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
 const key=(new URL(location.href)).searchParams.get('key')||'';
 const file=(new URL(location.href)).searchParams.get('file')||'';
 let pdfUrl=key?sessionStorage.getItem(key)||'':decodeURIComponent(file||'');
-if(!pdfUrl){wrapper.innerHTML='<div style="color:#999;text-align:center;padding:40px;font-size:14px">未指定文件</div>';return}
+if(!pdfUrl){wrapper.innerHTML='<div style="color:#999;text-align:center;padding:40px;font-size:14px">未指定文件</div>'}else{
 if(key)sessionStorage.removeItem(key);
 document.title=decodeURIComponent(pdfUrl.split('/').pop()||'PDF');
 
@@ -142,4 +142,5 @@ document.addEventListener('keydown',e=>{
 
 
 loadPdf().catch(e=>{wrapper.innerHTML=`<div style="color:#f66;text-align:center;padding:40px">加载失败: ${e.message}</div>`});
+}
 </script></body></html>
