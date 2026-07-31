@@ -10,7 +10,7 @@ import { logDenyEvent } from '../../../lib/deny-tracker';
 const ALLOWED_ORIGINS = [
   'deny.tantantan.tech',
   'pan.tantantan.tech',
-  'pan.cdqzsta.tech',
+  'pan.stacdqz.tech',
   'localhost',
 ];
 

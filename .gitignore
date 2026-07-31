@@ -58,3 +58,5 @@ server
 pdfjs*.zip
 # sensitive docs
 docs/poc.html
+# technical docs (keep local, don't push)
+TECHNICAL.md

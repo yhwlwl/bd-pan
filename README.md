@@ -7,7 +7,7 @@
 
 ## 一、基本信息
 
-- **官方网址**：[https://pan.cdqzsta.tech](https://pan.cdqzsta.tech)
+- **官方网址**：[https://pan.stacdqz.tech](https://pan.stacdqz.tech)
 - **站点特性**：基于 AList 协议的高级增强方案，独家支持大文件 UA 云端补全、多节点智能选路。
 
 ---
@@ -890,9 +890,9 @@ cd /www/wwwroot/bd-pan && git pull && npm run build && pm2 restart bdpan
 
 | 域名 | 指向 | 用途 |
 |------|------|------|
-| `pan.cdqzsta.tech` | Vercel | 前端（已部署） |
+| `pan.stacdqz.tech` | Vercel | 前端（已部署） |
 | `pan.tantantan.tech` | ECS:5245 | AList 服务 |
-| `test.cdqzsta.tech` | ECS:3000 (Nginx) | Next.js ECS 部署 |
+| ~~test.cdqzsta.tech~~（已随 cdqzsta.tech 过期失效） | ECS:3000 (Nginx) | Next.js ECS 部署（已停用） |
 
 ---
 

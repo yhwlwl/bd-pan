@@ -16,7 +16,7 @@ export const options = {
 
 export default function () {
   // --- ⚠️ 请在这里替换成你的线上 Vercel 网址或本地地址 ---
-  const BASE_URL = 'http://pan.cdqzsta.tech'; // 如果测本地
+  const BASE_URL = 'https://pan.stacdqz.tech'; // 如果测本地
   // const BASE_URL = 'https://你的域名.vercel.app'; // 如果测线上
 
   const url = `${BASE_URL}/api/alist`;

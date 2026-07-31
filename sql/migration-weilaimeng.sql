@@ -1,5 +1,5 @@
 -- ============================================================
--- 多站数据隔离迁移 — 未来梦 PDF 预览站 (weilaimeng.cdqzsta.tech)
+-- 多站数据隔离迁移 — 未来梦 PDF 预览站 (weilaimeng.stacdqz.tech)
 -- 在 ECS 上执行:
 --   docker exec -i postgres psql -U postgres -d bdpan < sql/migration-weilaimeng.sql
 -- 或通过 psql 远程执行
