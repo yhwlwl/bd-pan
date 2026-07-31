@@ -387,6 +387,18 @@ export async function updateAdminPassword(newPassword: string): Promise<{ ok: bo
     return { ok: true };
 }
 
+/** 用户自助修改自己的密码：先校验当前密码，再更新（明文存储，与现有登录一致） */
+export async function changeUserPassword(username: string, oldPassword: string, newPassword: string): Promise<{ ok: boolean; error?: string }> {
+    if (!db) return { ok: false, error: '数据库未配置' };
+    if (!username || !newPassword) return { ok: false, error: '参数不完整' };
+    // 校验旧密码（明文比对，与 findUser 登录逻辑一致）
+    const user = await findUser(username, oldPassword);
+    if (!user) return { ok: false, error: '当前密码不正确' };
+    const { error } = await pgUpdate(TABLE_USERS, 'username', username, { password: newPassword });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+}
+
 export async function getEffectivePermissionsForPath(username: string, role: Role, targetPath?: string): Promise<UserPermissions> {
     const basePermissions = await getUserPermissions(username, role);
     if (!targetPath || role === 'admin') return basePermissions;

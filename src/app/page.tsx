@@ -89,6 +89,14 @@ export default function Home() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
 
+  // 修改密码
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [oldPw, setOldPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [changePwLoading, setChangePwLoading] = useState(false);
+  const [changePwMsg, setChangePwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
   // AList 文件浏览
   const [alistPath, setAlistPath] = useState('/');
   const [alistFiles, setAlistFiles] = useState<any[]>([]);
@@ -787,6 +795,29 @@ export default function Home() {
       window.localStorage.removeItem('BDPAN_ROLE');
       window.localStorage.removeItem('BDPAN_USERNAME');
       window.localStorage.removeItem('BDPAN_PERMS');
+    }
+  };
+
+  // 修改密码
+  const handleChangePassword = async () => {
+    setChangePwMsg(null);
+    if (!newPw) { setChangePwMsg({ type: 'err', text: '请输入新密码' }); return; }
+    if (newPw !== confirmPw) { setChangePwMsg({ type: 'err', text: '两次输入的新密码不一致' }); return; }
+    setChangePwLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({ oldPassword: oldPw, newPassword: newPw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setChangePwMsg({ type: 'err', text: data.error || '修改失败' }); return; }
+      setChangePwMsg({ type: 'ok', text: '密码已修改，即将重新登录' });
+      setTimeout(() => handleLogout(), 1000);
+    } catch {
+      setChangePwMsg({ type: 'err', text: '网络错误' });
+    } finally {
+      setChangePwLoading(false);
     }
   };
 
@@ -1915,6 +1946,15 @@ export default function Home() {
             📖 说明
           </button>
           <span className="opacity-30">|</span>
+          {username && username !== 'guest' && (
+            <button
+              onClick={() => { setOldPw(''); setNewPw(''); setConfirmPw(''); setChangePwMsg(null); setShowChangePw(true); }}
+              className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              🔑 修改密码
+            </button>
+          )}
           <button onClick={handleLogout} className="text-[10px] hover:opacity-80 transition-opacity tracking-widest" style={{ color: 'var(--text-muted)' }}>
             退出
           </button>
@@ -2968,6 +3008,45 @@ export default function Home() {
                 恢复默认
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 修改密码弹窗 */}
+      {showChangePw && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowChangePw(false)}>
+          <div className="w-full max-w-sm glass-strong rounded-2xl p-4 mx-4 animate-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-[12px] font-bold" style={{ color: 'var(--text-primary)' }}>🔑 修改密码</div>
+              <button onClick={() => setShowChangePw(false)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
+            </div>
+
+            {changePwMsg && (
+              <div className={`mb-3 text-[11px] ${changePwMsg.type === 'ok' ? 'text-emerald-500' : 'text-red-400'}`}>{changePwMsg.text}</div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>当前密码</label>
+                <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} placeholder="请输入当前密码" className="w-full rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>新密码</label>
+                <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="请输入新密码" className="w-full rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>确认新密码</label>
+                <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="请再次输入新密码" className="w-full rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
+              </div>
+            </div>
+
+            <button
+              onClick={handleChangePassword}
+              disabled={changePwLoading}
+              className="mt-5 w-full bg-accent text-white text-[11px] font-bold py-2 rounded shadow hover:opacity-80 disabled:opacity-50"
+            >
+              {changePwLoading ? '提交中...' : '确认修改'}
+            </button>
           </div>
         </div>
       )}
