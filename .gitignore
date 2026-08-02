@@ -60,3 +60,5 @@ pdfjs*.zip
 docs/poc.html
 # technical docs (keep local, don't push)
 TECHNICAL.md
+# local cleanup archive (keep local, don't push)
+archive/
