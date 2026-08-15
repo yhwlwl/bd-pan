@@ -32,7 +32,7 @@ const MG_SECTIONS = [
 ];
 
 export default function UserManagement() {
-  const { adminUsers, adminStats, denyDashboard, adminAction, fetchAllData, canModify, loading } = useAdmin();
+  const { adminUsers, adminStats, denyDashboard, adminAction, fetchAllData, canModify, canViewOperation, loading } = useAdmin();
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [newUserName, setNewUserName] = useState("");
   const [newUserPass, setNewUserPass] = useState("");
@@ -44,6 +44,7 @@ export default function UserManagement() {
   }
 
   const users = (adminUsers || []).filter((u: any) => u.username !== "admin");
+  const canAssociations = canViewOperation("users.viewAssociations");
 
   const toggleExpand = (username: string) => {
     setExpandedUser(prev => (prev === username ? null : username));
@@ -51,24 +52,24 @@ export default function UserManagement() {
 
   const handleAddUser = async () => {
     if (!newUserName || !newUserPass) { setMsg("请填写用户名和密码"); return; }
-    const ok = await adminAction("add", { username: newUserName, password: newUserPass, role: newUserRole });
+    const ok = await adminAction("add", { username: newUserName, password: newUserPass, role: newUserRole, mgOperation: "users.addUser" });
     if (ok) { setNewUserName(""); setNewUserPass(""); setNewUserRole("manager"); setMsg(null); }
     fetchAllData();
   };
 
   const handleRemoveUser = async (username: string) => {
     if (!confirm(`确定要删除用户 ${username} 吗？`)) return;
-    await adminAction("remove", { username });
+    await adminAction("remove", { username, mgOperation: "users.deleteUser" });
     fetchAllData();
   };
 
   const handleUpdateRole = async (username: string, role: string) => {
-    await adminAction("updateRole", { username, role });
+    await adminAction("updateRole", { username, role, mgOperation: "users.changeRole" });
     fetchAllData();
   };
 
   const handleUpdatePerms = async (username: string, permissions: Record<string, boolean>) => {
-    await adminAction("updatePermissions", { username, permissions });
+    await adminAction("updatePermissions", { username, permissions, mgOperation: "users.changePerms" });
   };
 
   // 计算用户的关联 IP 和设备码（从 adminStats + denyDashboard）
@@ -270,6 +271,7 @@ export default function UserManagement() {
                     </div>
                   </div>
 
+                  {canAssociations && <>
                   {/* 关联 IP */}
                   <div>
                     <div className="text-xs font-bold text-slate-500 mb-2">关联 IP ({assoc.ips.length})</div>
@@ -301,6 +303,7 @@ export default function UserManagement() {
                       )}
                     </div>
                   </div>
+                  </>}
                 </div>
               )}
             </div>

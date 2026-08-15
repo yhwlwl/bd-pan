@@ -20,7 +20,7 @@ const colorMap: Record<string, { bg: string; text: string; border: string }> = {
 };
 
 export default function Downloads() {
-  const { adminStats, adminSettings, adminAction, fetchAllData, canModify, loading } = useAdmin();
+  const { adminStats, adminSettings, adminAction, fetchAllData, canModify, canViewOperation, loading } = useAdmin();
   const [expandedChannel, setExpandedChannel] = useState<string | null>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [modes, setModes] = useState<Record<string, string>>({});
@@ -31,7 +31,7 @@ export default function Downloads() {
   }, [adminSettings]);
 
   const saveModes = async () => {
-    await adminAction("updateSettings", { settings: { ...adminSettings, downloadModes: modes } });
+    await adminAction("updateSettings", { settings: { ...adminSettings, downloadModes: modes }, mgOperation: "settings.global" });
     fetchAllData();
   };
 
@@ -40,6 +40,9 @@ export default function Downloads() {
   }
 
   const channelStats = adminStats.channelStats || {};
+  const canChannels = canViewOperation("downloads.viewChannels");
+  const canExpand = canViewOperation("downloads.expandChannel");
+  const canHistory = canViewOperation("downloads.viewHistory");
   const toggleChannel = (key: string) => {
     setExpandedChannel(prev => (prev === key ? null : key));
   };
@@ -48,16 +51,16 @@ export default function Downloads() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-slate-800">下载明细</h2>
-        <button
+        {canHistory && <button
           onClick={() => setShowAllHistory(true)}
           className="text-xs text-blue-600 hover:underline font-medium"
         >
           全部历史下载 →
-        </button>
+        </button>}
       </div>
 
       {/* 5 张通道卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      {canChannels && <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {CHANNELS.map((ch) => {
           const data = channelStats[ch.key] || { past24h: 0, total: 0, logs: [] };
           const c = colorMap[ch.color];
@@ -65,7 +68,7 @@ export default function Downloads() {
           return (
             <button
               key={ch.key}
-              onClick={() => toggleChannel(ch.key)}
+              onClick={() => canExpand && toggleChannel(ch.key)}
               className={`bg-white rounded-xl border p-4 text-left transition-all hover:shadow-md ${isActive ? `${c.border} ring-2 ring-offset-1 ${c.border}` : "border-slate-200"}`}
             >
               <div className={`text-xs font-medium ${c.text} mb-2`}>{ch.name}</div>
@@ -77,10 +80,10 @@ export default function Downloads() {
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {/* 展开的通道详情 */}
-      {expandedChannel && (
+      {expandedChannel && canExpand && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-700">
@@ -146,7 +149,7 @@ export default function Downloads() {
       </div>
 
       {/* 全部历史下载弹窗 */}
-      {showAllHistory && (
+      {showAllHistory && canHistory && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40" onClick={() => setShowAllHistory(false)}>
           <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-4xl max-h-[80vh] overflow-auto mx-4" onClick={e => e.stopPropagation()}>
             <div className="sticky top-0 bg-white px-5 py-3 border-b border-slate-100 flex items-center justify-between">

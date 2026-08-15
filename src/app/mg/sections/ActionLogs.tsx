@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useAdmin } from "../lib/admin-context";
 
 export default function ActionLogs() {
-  const { adminStats, loading } = useAdmin();
+  const { adminStats, canViewOperation, loading } = useAdmin();
   const [logTimeFilter, setLogTimeFilter] = useState("all");
   const [logUserFilter, setLogUserFilter] = useState("all");
   const [logFilter, setLogFilter] = useState("全部");
@@ -15,6 +15,8 @@ export default function ActionLogs() {
   }
 
   const rawLogs = adminStats.recentActions || [];
+  const canFilter = canViewOperation("actionlogs.filter");
+  const canExport = canViewOperation("actionlogs.exportCSV");
 
   // 收集用户列表
   const userList = useMemo(() => {
@@ -88,24 +90,24 @@ export default function ActionLogs() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-slate-800">操作日志</h2>
-        <button onClick={exportCSV} className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium">
+        <button onClick={exportCSV} disabled={!canExport} className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium disabled:opacity-30">
           导出 CSV
         </button>
       </div>
 
       {/* 筛选栏 */}
       <div className="flex flex-wrap items-center gap-3">
-        <select value={logTimeFilter} onChange={e => setLogTimeFilter(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600">
+        <select value={logTimeFilter} onChange={e => setLogTimeFilter(e.target.value)} disabled={!canFilter} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600 disabled:opacity-30">
           <option value="all">全部时间</option>
           <option value="today">今天</option>
           <option value="7d">最近 7 天</option>
           <option value="30d">最近 30 天</option>
         </select>
-        <select value={logUserFilter} onChange={e => setLogUserFilter(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600">
+        <select value={logUserFilter} onChange={e => setLogUserFilter(e.target.value)} disabled={!canFilter} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600 disabled:opacity-30">
           <option value="all">全部用户</option>
           {userList.map(u => <option key={u} value={u}>{u}</option>)}
         </select>
-        <select value={logFilter} onChange={e => setLogFilter(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600">
+        <select value={logFilter} onChange={e => setLogFilter(e.target.value)} disabled={!canFilter} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600 disabled:opacity-30">
           <option value="全部">全部</option>
           <option value="被拦截">被拦截</option>
           <option value="失败">失败</option>
@@ -119,7 +121,7 @@ export default function ActionLogs() {
           <option value="搜索">搜索</option>
           <option value="文件权限">文件权限</option>
         </select>
-        <select value={riskLimit} onChange={e => setRiskLimit(Number(e.target.value))} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600">
+        <select value={riskLimit} onChange={e => setRiskLimit(Number(e.target.value))} disabled={!canFilter} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-600 disabled:opacity-30">
           <option value={10}>10 条</option>
           <option value={50}>50 条</option>
           <option value={200}>200 条</option>

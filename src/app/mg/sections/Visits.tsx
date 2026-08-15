@@ -29,13 +29,17 @@ export default function Visits() {
   const handleBan = async (ip: string, hours: number) => {
     const banUntil = Date.now() + hours * 3600 * 1000;
     const newBanned = { ...bannedIps, [ip]: banUntil };
-    await adminAction("updateSettings", { settings: { bannedIps: newBanned } });
+    const settingsOk = await adminAction("updateSettings", {
+      settings: { bannedIps: newBanned },
+      mgOperation: hours <= 24 ? "visits.banShort" : "visits.banCustom",
+    });
+    if (!settingsOk) return;
     // 同步标记 risk_scores
     try {
       await fetch(`${API_BASE}/api/deny-stats`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: "ban_ip", entity_type: "ip", entity_value: ip, ban_hours: hours }),
+        body: JSON.stringify({ action: "ban_ip", entity_type: "ip", entity_value: ip, ban_hours: hours, mgOperation: hours <= 24 ? "visits.banShort" : "visits.banCustom" }),
       });
     } catch {}
     fetchAllData();
@@ -45,13 +49,14 @@ export default function Visits() {
   const handleUnban = async (ip: string) => {
     const newBanned = { ...bannedIps };
     delete newBanned[ip];
-    await adminAction("updateSettings", { settings: { bannedIps: newBanned } });
+    const settingsOk = await adminAction("updateSettings", { settings: { bannedIps: newBanned }, mgOperation: "visits.unban" });
+    if (!settingsOk) return;
     // 同步清除 risk_scores 的封禁状态
     try {
       await fetch(`${API_BASE}/api/deny-stats`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: "unban", entity_type: "ip", entity_value: ip }),
+        body: JSON.stringify({ action: "unban", entity_type: "ip", entity_value: ip, mgOperation: "visits.unban" }),
       });
     } catch {}
     fetchAllData();
@@ -63,6 +68,8 @@ export default function Visits() {
     if (Date.now() > expiry) return { banned: false };
     return { banned: true, expiry: new Date(expiry).toLocaleString("zh-CN") };
   };
+
+  const canManageVisits = isAdmin || canModify("visits.unban") || canModify("visits.banShort") || canModify("visits.banCustom");
 
   return (
     <div className="space-y-6">
@@ -129,7 +136,7 @@ export default function Visits() {
                   <th className="text-left px-5 py-2 font-medium">IP / 定位</th>
                   <th className="text-left px-5 py-2 font-medium">{ipSort === "time" ? "最近活跃" : "访问次数"}</th>
                   <th className="text-left px-5 py-2 font-medium">最近用户</th>
-                  {isAdmin && <th className="text-right px-5 py-2 font-medium">操作</th>}
+                  {canManageVisits && <th className="text-right px-5 py-2 font-medium">操作</th>}
                 </tr>
               </thead>
               <tbody>
@@ -150,7 +157,7 @@ export default function Visits() {
                         )}
                       </td>
                       <td className="px-5 py-2.5 text-slate-600">{ipData.lastUser || "—"}</td>
-                      {isAdmin && (
+                      {canManageVisits && (
                         <td className="px-5 py-2.5 text-right">
                           <div className="flex items-center justify-end gap-1">
                             {ban.banned ? (

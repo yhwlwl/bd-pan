@@ -15,7 +15,6 @@ interface Ann {
   createdAt: string;
   updatedAt: string;
 }
-
 const LOCATION_LABELS: Record<string, string> = {
   login: "仅登录页", main: "仅主页", all: "登录页+主页",
 };
@@ -43,8 +42,8 @@ export default function Announcements() {
 
   const showMsg = (text: string) => { setMsg(text); setTimeout(() => setMsg(null), 3000); };
 
-  const save = async (newList: Ann[]) => {
-    const ok = await adminAction("updateSettings", { settings: { ...adminSettings, announcements: newList } });
+  const save = async (newList: Ann[], mgOperation = "announcements.publish") => {
+    const ok = await adminAction("updateSettings", { settings: { ...adminSettings, announcements: newList }, mgOperation });
     if (ok) {
       logAdminAction("公告", "更新公告列表");
       fetchAllData();
@@ -122,7 +121,7 @@ export default function Announcements() {
     const final = activating
       ? updated.map(a => (a.id !== id ? { ...a, active: false } : { ...a, active: true }))
       : updated;
-    if (await save(final)) {
+    if (await save(final, "announcements.toggle")) {
       showMsg(activating ? "公告已激活" : "公告已停用");
     }
   };
@@ -130,7 +129,7 @@ export default function Announcements() {
   const handleDelete = async (id: string) => {
     if (!confirm("确定删除此公告？")) return;
     const updated = announcements.filter(a => a.id !== id);
-    if (await save(updated)) {
+    if (await save(updated, "announcements.delete")) {
       logAdminAction("公告", `删除公告`);
       showMsg("公告已删除");
     }

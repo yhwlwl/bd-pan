@@ -34,7 +34,7 @@ export default function FilePermissions() {
   // 加载规则
   const loadRules = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/file-permissions`, {
+      const res = await fetch(`${API_BASE}/api/file-permissions?operation=fileperms.viewRules`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -46,12 +46,12 @@ export default function FilePermissions() {
   useEffect(() => { loadRules(); }, []);
 
   // 保存规则
-  const saveRules = async (newRules: FileRule[]) => {
+  const saveRules = async (newRules: FileRule[], mgOperation = "fileperms.editRules") => {
     try {
       const res = await fetch(`${API_BASE}/api/file-permissions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ rules: newRules }),
+        body: JSON.stringify({ rules: newRules, mgOperation }),
       });
       const data = await res.json();
       if (!res.ok) { setMsg(data.error || "保存失败"); return; }
@@ -71,6 +71,7 @@ export default function FilePermissions() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           action: "preview",
+          mgOperation: "fileperms.previewRegex",
           pattern: draft.path,
           scopePath: "/",
           regexScope: draft.regexScope || "path",
@@ -98,7 +99,7 @@ export default function FilePermissions() {
     const rule = rules.find(r => r.id === id);
     if (!confirm("确定删除此规则？")) return;
     if (rule) logAdminAction("文件权限", `删除规则: ${rule.path}`);
-    saveRules(rules.filter((r) => r.id !== id));
+    saveRules(rules.filter((r) => r.id !== id), "fileperms.deleteRule");
   };
 
   const editRule = (rule: FileRule) => {

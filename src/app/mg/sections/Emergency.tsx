@@ -6,7 +6,7 @@ import { useAdmin } from "../lib/admin-context";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
 
 export default function Emergency() {
-  const { adminStats, denyDashboard, adminSettings, adminAction, logAdminAction, fetchAllData, canModify, token } = useAdmin();
+  const { adminStats, denyDashboard, adminSettings, adminAction, logAdminAction, fetchAllData, canModify, token, isAdmin } = useAdmin();
   const [loading, setLoading] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -25,13 +25,15 @@ export default function Emergency() {
     setLoading("maintenance");
 
     // Step 1: 备份全部数据
-    try {
-      await fetch(`${API_BASE}/api/mg-backup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ label: "维护前自动备份" }),
-      });
-    } catch {}
+    if (isAdmin) {
+      try {
+        await fetch(`${API_BASE}/api/mg-backup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ label: "维护前自动备份" }),
+        });
+      } catch {}
+    }
 
     // Step 2: 快照 settings
     const snapshot = JSON.parse(JSON.stringify(adminSettings || {}));
@@ -40,7 +42,7 @@ export default function Emergency() {
     delete snapshot.maintenanceMode;
 
     // Step 3: 写入维护模式
-    await adminAction("updateSettings", {
+    const maintenanceOk = await adminAction("updateSettings", {
       settings: {
         ...adminSettings,
         maintenanceMode: true,
@@ -57,7 +59,9 @@ export default function Emergency() {
           publishedAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
         }, ...(adminSettings.announcements || [])],
       },
+      mgOperation: "emergency.maintenance",
     });
+    if (!maintenanceOk) { setLoading(null); return; }
 
     logAdminAction("应急", "进入全站维护模式");
     showMsg("维护模式已开启");
@@ -76,7 +80,7 @@ export default function Emergency() {
       a.content === "站点维护中，请稍后再试" ? { ...a, active: false } : a
     );
 
-    await adminAction("updateSettings", {
+    const restoreOk = await adminAction("updateSettings", {
       settings: {
         ...snapshot,
         announcements,
@@ -84,7 +88,9 @@ export default function Emergency() {
         tokenInvalidBefore: 0,
         maintenanceSnapshot: undefined,
       },
+      mgOperation: "emergency.restore",
     });
+    if (!restoreOk) { setLoading(null); return; }
 
     setLocalMaintenance(false);
     logAdminAction("应急", "恢复站点运行");
@@ -103,7 +109,8 @@ export default function Emergency() {
     const newBanned = { ...(adminSettings?.bannedIps || {}) };
     ips.forEach((ip: string) => { newBanned[ip] = bannedUntil; });
 
-    await adminAction("updateSettings", { settings: { ...adminSettings, bannedIps: newBanned } });
+    const banOk = await adminAction("updateSettings", { settings: { bannedIps: newBanned }, mgOperation: "emergency.banAllIPs" });
+    if (!banOk) { setLoading(null); return; }
 
     logAdminAction("应急", `批量封禁 ${ips.length} 个 IP (1h)`);
     showMsg(`已封禁 ${ips.length} 个在线 IP (1h)`);

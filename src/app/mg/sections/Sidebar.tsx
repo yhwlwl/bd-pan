@@ -87,8 +87,8 @@ export default function Sidebar({ currentTab, visibleTabs, sidebarOpen, setSideb
             <span className="font-bold text-emerald-400">{onlineCount}</span>
           </button>
 
-          {/* 数据源（仅 admin） */}
-          {isAdmin && (
+          {/* 数据源（按逐项切换权限显示） */}
+          {(isAdmin || canModify("overview.switchDataSource") || canModify("overview.switchPageSource")) && (
             <div className="flex items-center gap-2 px-2">
               <select
                 value={adminDataSource}
@@ -105,8 +105,8 @@ export default function Sidebar({ currentTab, visibleTabs, sidebarOpen, setSideb
                 disabled={!canModify("overview.switchPageSource")}
                 className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[11px] text-slate-300 flex-1 disabled:opacity-30"
               >
-                <option value="pan">主站</option>
                 <option value="weilaimeng">未来梦</option>
+                <option value="pan">主站</option>
                 <option value="all">全部</option>
               </select>
             </div>

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAdmin } from "../lib/admin-context";
 
 export default function Overview() {
-  const { adminStats, denyDashboard, isAdmin, adminDataSource, adminPageSource, setAdminDataSource, setAdminPageSource, lastFetchTime, canModify, loading } = useAdmin();
+  const { adminStats, denyDashboard, isAdmin, adminDataSource, adminPageSource, setAdminDataSource, setAdminPageSource, lastFetchTime, canModify, canViewOperation, loading } = useAdmin();
   const [showOnlineUsers, setShowOnlineUsers] = useState(false);
   const [showLogModal, setShowLogModal] = useState<{ title: string; logs: any[] } | null>(null);
 
@@ -19,6 +19,11 @@ export default function Overview() {
   const recentActions = (stats.recentActions || []).slice(0, 10);
   // 最近 10 条拦截事件
   const recentDeny = (deny?.recentEvents || []).slice(0, 10);
+  const canStats = isAdmin || canViewOperation("overview.viewStats");
+  const canOnline = isAdmin || canViewOperation("overview.viewOnlineUsers");
+  const canRecent = isAdmin || canViewOperation("overview.viewRecentActions");
+  const canRecentDeny = isAdmin || canViewOperation("overview.viewRecentDeny");
+  const canPreviews = isAdmin || canViewOperation("overview.viewPreviews");
 
   const actionColor = (action: string) => {
     if (action.includes("被拦截") || action.includes("blocked")) return "text-red-600 bg-red-50";
@@ -41,34 +46,34 @@ export default function Overview() {
       {/* ─── 4 张指标卡 ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* 在线用户 */}
-        <button
+        {canOnline && <button
           onClick={() => setShowOnlineUsers(true)}
           className="bg-white rounded-xl border border-slate-200 p-5 text-left hover:shadow-md transition-shadow"
         >
           <div className="text-xs font-medium text-slate-500 mb-2">在线用户</div>
           <div className="text-3xl font-bold text-emerald-600">{stats.onlineUsers?.length || 0}</div>
           <div className="text-xs text-slate-400 mt-1">当前活跃会话</div>
-        </button>
+        </button>}
 
         {/* 今日下载 */}
-        <button onClick={() => {
+        {canStats && <button onClick={() => {
           const dlLogs = (stats.recentActions || []).filter((l: any) => (l.action || "").startsWith("下载"));
           setShowLogModal({ title: "今日下载记录", logs: dlLogs.filter((l: any) => new Date(l.time).getTime() >= Date.now() - 86400000) });
         }} className="bg-white rounded-xl border border-slate-200 p-5 text-left hover:shadow-md transition-shadow">
           <div className="text-xs font-medium text-slate-500 mb-2">今日下载</div>
           <div className="text-3xl font-bold text-blue-600">{stats.past24hDownloads || 0}</div>
           <div className="text-xs text-slate-400 mt-1">过去 24 小时</div>
-        </button>
+        </button>}
 
         {/* 总访问量 */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        {canStats && <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="text-xs font-medium text-slate-500 mb-2">总访问量</div>
           <div className="text-3xl font-bold text-slate-800">{stats.totalPanVisits || 0}</div>
           <div className="text-xs text-slate-400 mt-1">历史累计</div>
-        </div>
+        </div>}
 
         {/* 风控状态 */}
-        <div className={`bg-white rounded-xl border p-5 ${deny?.summary?.bannedCount > 0 ? "border-red-200" : deny?.summary?.warnCount > 0 ? "border-amber-200" : "border-green-200"}`}>
+        {canRecentDeny && <div className={`bg-white rounded-xl border p-5 ${deny?.summary?.bannedCount > 0 ? "border-red-200" : deny?.summary?.warnCount > 0 ? "border-amber-200" : "border-green-200"}`}>
           <div className="text-xs font-medium text-slate-500 mb-2">风控状态</div>
           <div className="flex items-center gap-2">
             {deny?.summary?.bannedCount > 0 ? (
@@ -80,11 +85,11 @@ export default function Overview() {
             )}
           </div>
           <div className="text-xs text-slate-500 mt-1">风控状态 · 24h: {deny?.summary?.total24h || 0} 事件</div>
-        </div>
+        </div>}
       </div>
 
       {/* ─── 预览统计 ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {canPreviews && <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <button onClick={() => {
           const pvLogs = (stats.recentActions || []).filter((l: any) => l.action === "预览");
           setShowLogModal({ title: "今日预览记录", logs: pvLogs.filter((l: any) => new Date(l.time).getTime() >= Date.now() - 86400000) });
@@ -101,12 +106,12 @@ export default function Overview() {
           <div className="text-3xl font-bold text-slate-800">{adminStats?.totalPreviews || 0}</div>
           <div className="text-xs text-slate-400 mt-1">历史累计</div>
         </button>
-      </div>
+      </div>}
 
       {/* ─── 实时动态（双区） ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 最近操作 */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        {canRecent && <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-700">最近操作</h3>
             <a href="/mg?tab=action-logs" className="text-xs text-blue-600 hover:underline">查看全部 →</a>
@@ -131,10 +136,10 @@ export default function Overview() {
               ))
             )}
           </div>
-        </div>
+        </div>}
 
         {/* 最近拦截 */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        {canRecentDeny && <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-700">最近拦截</h3>
             <a href="/mg?tab=risk-control" className="text-xs text-blue-600 hover:underline">查看全部 →</a>
@@ -155,7 +160,7 @@ export default function Overview() {
               ))
             )}
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* ─── 底部状态栏 ─── */}

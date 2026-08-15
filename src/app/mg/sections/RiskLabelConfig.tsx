@@ -56,7 +56,7 @@ const OP_LABELS: Record<string, string> = {
 };
 
 export default function RiskLabelConfig() {
-  const { adminSettings, adminAction, fetchAllData } = useAdmin();
+  const { adminSettings, adminAction, fetchAllData, canModify } = useAdmin();
   const [labels, setLabels] = useState<Record<string, number>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -73,13 +73,13 @@ export default function RiskLabelConfig() {
     for (const [k, v] of Object.entries(labels)) {
       if (v !== (DEFAULT_RISK_LABELS[k] ?? 0)) diff[k] = v;
     }
-    const ok = await adminAction("updateSettings", { settings: { ...adminSettings, mgRiskLabels: diff } });
+    const ok = await adminAction("updateSettings", { settings: { mgRiskLabels: diff }, mgOperation: "settings.riskLabels" });
     if (ok) { showMsg("风险标签已保存"); fetchAllData(); }
   };
 
   const reset = async () => {
     if (!confirm("恢复所有风险标签为默认值？")) return;
-    const ok = await adminAction("updateSettings", { settings: { ...adminSettings, mgRiskLabels: undefined } });
+    const ok = await adminAction("updateSettings", { settings: { mgRiskLabels: undefined }, mgOperation: "settings.riskLabels" });
     if (ok) { setLabels({ ...DEFAULT_RISK_LABELS }); showMsg("已恢复默认值"); fetchAllData(); }
   };
 
@@ -94,8 +94,8 @@ export default function RiskLabelConfig() {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-slate-800">风险标签配置</h2>
         <div className="flex gap-2">
-          <button onClick={reset} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">恢复默认</button>
-          <button onClick={save} className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700">保存配置</button>
+          <button onClick={reset} disabled={!canModify("settings.riskLabels")} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30">恢复默认</button>
+          <button onClick={save} disabled={!canModify("settings.riskLabels")} className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-30">保存配置</button>
         </div>
       </div>
 
@@ -121,6 +121,7 @@ export default function RiskLabelConfig() {
                       <select
                         value={labels[op] ?? 0}
                         onChange={e => setLabels({ ...labels, [op]: parseInt(e.target.value) })}
+                        disabled={!canModify("settings.riskLabels")}
                         className="text-xs border border-slate-200 rounded px-2 py-1 bg-white"
                       >
                         {[0,1,2,3,4,5,6].map(lv => (

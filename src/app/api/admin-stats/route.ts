@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
-import { verifyToken, verifyTokenWithLog } from '../_auth';
-import { getUserPermissions } from '../../../lib/users';
+import { getMgAuthContext, canMgModify, canMgView } from '../_mg-auth';
 import { pgFetch } from '../../../lib/pg-adapter';
-import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
-import { hashDeviceCode } from '../../../lib/fingerprint';
 
 const BACKUP_URL = (process.env.SUPABASE_BACKUP_URL || '').replace(/\/+$/, '');
 const BACKUP_KEY = process.env.SUPABASE_BACKUP_KEY || '';
@@ -27,26 +24,23 @@ async function supabaseFetch(method: string, path: string): Promise<any> {
     }
     return all;
 }
-
 export async function GET(request: Request) {
     try {
-        const ctx = getRequestContext(request);
-        const authHeader = request.headers.get('authorization') || undefined;
-        const user = verifyTokenWithLog(authHeader, ctx);
-        if (!user) return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
-        if (user.role !== 'admin') {
-            const perms = await getUserPermissions(user.username, user.role);
-            // 管理员面板权限或旧权限都可访问
-            const hasMgAccess = perms.mgAccess === true || Object.keys(perms.mgPermissions || {}).length > 0;
-            if (!(hasMgAccess || perms.viewStats || perms.viewActionLogs || perms.viewIpStats || perms.viewDownloadLogs)) {
-                return denyAndLog(request, 'api_role_denied', 401, '无权限访问统计信息', user.username);
-            }
-        }
+        const auth = await getMgAuthContext(request);
+        if (!auth) return NextResponse.json({ code: 401, message: '请先登录' }, { status: 401 });
+        const canReadStats = auth.user.role === 'admin' || [
+            'overview.viewStats', 'overview.viewOnlineUsers', 'overview.viewRecentActions',
+            'overview.viewRecentDeny', 'overview.viewPreviews', 'downloads.viewChannels', 'downloads.viewHistory',
+            'visits.viewIPs', 'visits.viewFlow', 'actionlogs.viewTable', 'users.viewAssociations',
+        ].some((operation) => canMgView(auth, operation));
+        if (!canReadStats) return NextResponse.json({ code: 403, message: '无权限访问统计信息' }, { status: 403 });
 
         // 数据源
         const { searchParams } = new URL(request.url);
-        const source = searchParams.get('source') || 'ecs';
-        const pageSource = searchParams.get('page_source') || 'pan';
+        const requestedSource = searchParams.get('source') || 'ecs';
+        const requestedPageSource = searchParams.get('page_source') || 'pan';
+        const source = auth.user.role === 'admin' || canMgModify(auth, 'overview.switchDataSource') ? requestedSource : 'ecs';
+        const pageSource = auth.user.role === 'admin' || canMgModify(auth, 'overview.switchPageSource') ? requestedPageSource : 'pan';
         const isSupabase = source === 'supabase' && BACKUP_URL;
 
         // 并行拉取两张表
@@ -101,7 +95,7 @@ export async function GET(request: Request) {
                 allDownloadLogs.push({ ...logObj, channel: key });
             }
 
-            if (log.username === 'admin' && user.role !== 'admin') return;
+            if (log.username === 'admin' && auth.user.role !== 'admin') return;
             const displayName = log.username === 'guest' && log.fingerprint ? `guest(${log.fingerprint.slice(-4)})` : log.username;
             recentActions.push({ username: displayName, action: log.action_type, item: log.action_item, time: log.created_at, ip: log.ip, location: log.location || '未知定位', device_code: log.device_code || '' });
         });
@@ -149,9 +143,34 @@ export async function GET(request: Request) {
             }
         });
 
+        const fullData = { totalPanVisits, past24hDownloads, totalDownloads, past24hPreviews, totalPreviews, channelStats, recentActions, topIps, allDownloadLogs, viewLogs: viewLogs || [], onlineUsers };
+        if (auth.user.role === 'admin') {
+            return NextResponse.json({ code: 200, data: fullData });
+        }
+
+        const canOverviewStats = canMgView(auth, 'overview.viewStats');
+        const canOverviewRecent = canMgView(auth, 'overview.viewRecentActions');
+        const canDownloadsChannels = canMgView(auth, 'downloads.viewChannels');
+        const canDownloadsExpand = canMgView(auth, 'downloads.expandChannel');
+        const canDownloadsHistory = canMgView(auth, 'downloads.viewHistory');
+        const canVisits = canMgView(auth, 'visits.viewIPs') || canMgView(auth, 'visits.viewFlow');
+        const canActionLogs = canMgView(auth, 'actionlogs.viewTable');
+        const canAssociations = canMgView(auth, 'users.viewAssociations');
+        const visibleChannelStats = canDownloadsExpand
+            ? channelStats
+            : Object.fromEntries(Object.entries(channelStats).map(([key, value]) => [key, { past24h: value.past24h, total: value.total, logs: [] }]));
         return NextResponse.json({
             code: 200,
-            data: { totalPanVisits, past24hDownloads, totalDownloads, past24hPreviews, totalPreviews, channelStats, recentActions, topIps, allDownloadLogs, viewLogs: viewLogs || [], onlineUsers },
+            data: {
+                ...(canOverviewStats || canVisits ? { totalPanVisits } : {}),
+                ...(canOverviewStats || canDownloadsChannels ? { past24hDownloads, totalDownloads } : {}),
+                ...(canMgView(auth, 'overview.viewPreviews') ? { past24hPreviews, totalPreviews } : {}),
+                ...(canDownloadsChannels ? { channelStats: visibleChannelStats } : {}),
+                ...((canOverviewRecent || canActionLogs || canAssociations) ? { recentActions } : {}),
+                ...(canVisits ? { topIps, viewLogs: viewLogs || [] } : {}),
+                ...(canDownloadsHistory ? { allDownloadLogs } : {}),
+                ...(canMgView(auth, 'overview.viewOnlineUsers') ? { onlineUsers } : {}),
+            },
         });
     } catch (e: any) {
         console.error('[stats] error:', e);

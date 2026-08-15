@@ -2,6 +2,7 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import CHANGELOG_DATA from '../data/changelog.json';
+import { hasAnyMgViewPermission } from '../lib/mg-permissions';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '');
@@ -25,6 +26,7 @@ export interface UserPermissions {
   viewIpStats?: boolean;
   viewDownloadLogs?: boolean;
   mgAccess?: boolean;
+  mgPermissions?: Record<string, { view?: number; modify?: number }>;
 }
 
 type FilePermissionAction = 'view' | 'search' | 'download' | 'upload' | 'delete' | 'rename' | 'preview';
@@ -228,6 +230,7 @@ export default function Home() {
 
   const isAdmin = userRole === 'admin';
   const canControlFile = isAdmin || userPerms?.controlFile === true;
+  const canAccessManagement = hasAnyMgViewPermission(userRole || 'guest', userPerms, undefined);
   const canDownload = userPerms ? userPerms.download : false;
   const canUpload = userPerms ? userPerms.upload : false;
   const canDelete = userPerms ? userPerms.delete : false;
@@ -1907,7 +1910,7 @@ export default function Home() {
           <button onClick={toggleTheme} className="text-sm opacity-60 hover:opacity-100 transition-opacity" title="切换主题">
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
-          {(isAdmin || userPerms?.mgAccess) && (
+          {canAccessManagement && (
             <button
               onClick={() => window.open('/mg', '_blank')}
               className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"

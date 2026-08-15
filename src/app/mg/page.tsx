@@ -16,31 +16,31 @@ import Emergency from "./sections/Emergency";
 import RiskLabelConfig from "./sections/RiskLabelConfig";
 import Settings from "./sections/Settings";
 
-const TABS: { key: string; label: string; sectionKey: string; permKey?: string }[] = [
-  { key: "overview", label: "总览", sectionKey: "mgOverview", permKey: "viewStats" },
-  { key: "downloads", label: "下载明细", sectionKey: "mgDownloads", permKey: "viewDownloadLogs" },
-  { key: "visits", label: "访问日志", sectionKey: "mgVisits", permKey: "viewIpStats" },
-  { key: "action-logs", label: "操作日志", sectionKey: "mgActionLogs", permKey: "viewActionLogs" },
-  { key: "risk-control", label: "风控管理", sectionKey: "mgRiskControl" },
-  { key: "users", label: "用户管理", sectionKey: "mgUsers" },
-  { key: "file-permissions", label: "文件权限", sectionKey: "mgFilePerms" },
-  { key: "emergency", label: "应急", sectionKey: "mgEmergency" },
-  { key: "announcements", label: "公告", sectionKey: "mgAnnouncements" },
-  { key: "risk-labels", label: "风险标签", sectionKey: "mgSettings" },
-  { key: "settings", label: "设置", sectionKey: "mgSettings" },
+const TABS: { key: string; label: string; sectionKey: string; viewOperations: string[] }[] = [
+  { key: "overview", label: "总览", sectionKey: "mgOverview", viewOperations: ["overview.viewStats", "overview.viewOnlineUsers", "overview.viewRecentActions", "overview.viewRecentDeny", "overview.viewPreviews"] },
+  { key: "downloads", label: "下载明细", sectionKey: "mgDownloads", viewOperations: ["downloads.viewChannels", "downloads.expandChannel", "downloads.viewHistory"] },
+  { key: "visits", label: "访问日志", sectionKey: "mgVisits", viewOperations: ["visits.viewIPs", "visits.viewFlow"] },
+  { key: "action-logs", label: "操作日志", sectionKey: "mgActionLogs", viewOperations: ["actionlogs.viewTable"] },
+  { key: "risk-control", label: "风控管理", sectionKey: "mgRiskControl", viewOperations: ["riskcontrol.viewSummary", "riskcontrol.viewEntities", "riskcontrol.viewDetail", "riskcontrol.viewDenyEvents"] },
+  { key: "users", label: "用户管理", sectionKey: "mgUsers", viewOperations: ["users.viewList", "users.viewPerms", "users.viewAssociations"] },
+  { key: "file-permissions", label: "文件权限", sectionKey: "mgFilePerms", viewOperations: ["fileperms.viewRules"] },
+  { key: "emergency", label: "应急", sectionKey: "mgEmergency", viewOperations: ["emergency.view"] },
+  { key: "announcements", label: "公告", sectionKey: "mgAnnouncements", viewOperations: ["announcements.viewStatus", "announcements.viewHistory"] },
+  { key: "risk-labels", label: "风险标签", sectionKey: "mgSettings", viewOperations: ["settings.riskLabels"] },
+  { key: "settings", label: "设置", sectionKey: "mgSettings", viewOperations: ["settings.view", "settings.appearance", "settings.dataRetention", "settings.global", "settings.fileLimits", "settings.loginLimits", "settings.denyConfig"] },
 ];
 
 function MgContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { isAdmin, canView, userPerms, loading } = useAdmin();
+  const { isAdmin, canViewOperation, userPerms, loading } = useAdmin();
   const tab = searchParams.get("tab") || "overview";
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const visibleTabs = TABS.filter((t) => {
     if (isAdmin) return true;
     if (t.sectionKey === "mgFilePerms" && !userPerms?.controlFile) return false;
-    return canView(t.sectionKey);
+    return t.viewOperations.some((operation) => canViewOperation(operation));
   });
 
   useEffect(() => {
@@ -97,7 +97,6 @@ function MgContent() {
     </div>
   );
 }
-
 export default function MgPage() {
   return (
     <Suspense fallback={<div className="flex items-center justify-center h-screen bg-slate-50"><div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" /></div>}>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyToken, verifyTokenWithLog, type AuthContext } from '../_auth';
+import { getMgAuthContext, canMgModify, canMgView, type MgAuthContext } from '../_mg-auth';
 import {
     canAssignFilePermissionTarget,
     canManageFilePermissions,
@@ -21,6 +21,10 @@ const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 
 const tokenCache = new Map<string, { token: string; expiry: number }>();
 
+function sameRule(left: FilePermissionRule | undefined, right: FilePermissionRule | undefined): boolean {
+    if (!left || !right) return false;
+    return JSON.stringify(left) === JSON.stringify(right);
+}
 async function getAlistToken(url: string, user: string, pass: string): Promise<string> {
     const cacheKey = `${url}|${user}|${pass}`;
     const cached = tokenCache.get(cacheKey);
@@ -39,21 +43,27 @@ async function getAlistToken(url: string, user: string, pass: string): Promise<s
     return newToken;
 }
 
-async function authorize(request: Request) {
-    const ctx = getRequestContext(request);
-    const authHeader = request.headers.get('authorization') || undefined;
-    const user = verifyTokenWithLog(authHeader, ctx);
-    if (!user) return null;
-    const allowed = await canManageFilePermissions(user.username, user.role);
-    if (!allowed) return null;
-    return user;
+async function authorize(request: Request, operation: 'view' | 'preview' | 'edit' | 'delete'): Promise<MgAuthContext | null> {
+    const auth = await getMgAuthContext(request);
+    if (!auth) return null;
+    if (auth.user.role !== 'admin' && auth.permissions.controlFile !== true) return null;
+    if (auth.user.role === 'admin') return auth;
+    const allowed = operation === 'view'
+        ? canMgView(auth, 'fileperms.viewRules')
+        : operation === 'preview'
+            ? canMgModify(auth, 'fileperms.previewRegex')
+            : operation === 'delete'
+                ? canMgModify(auth, 'fileperms.deleteRule')
+                : canMgModify(auth, 'fileperms.editRules');
+    return allowed ? auth : null;
 }
 
 export async function GET(request: Request) {
-    const user = await authorize(request);
-    if (!user) {
+    const auth = await authorize(request, 'view');
+    if (!auth) {
         return NextResponse.json({ error: '权限不足' }, { status: 401 });
     }
+    const user = auth.user;
 
     const settings = await getSettings();
     const allUsers = (await getUsers()).map((item) => ({ username: item.username, role: item.role }));
@@ -69,14 +79,18 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const user = await authorize(request);
-    if (!user) {
-        return NextResponse.json({ error: '权限不足' }, { status: 401 });
-    }
-
     try {
         const body = await request.json();
         const { action } = body;
+        const requestedOperation = body.mgOperation as string | undefined;
+        const operation = action === 'preview'
+            ? 'preview'
+            : requestedOperation === 'fileperms.deleteRule'
+                ? 'delete'
+                : 'edit';
+        const auth = await authorize(request, operation);
+        if (!auth) return NextResponse.json({ error: '权限不足' }, { status: 401 });
+        const user = auth.user;
 
         // === preview action: 预览正则匹配的文件 ===
         if (action === 'preview') {
@@ -232,13 +246,24 @@ export async function POST(request: Request) {
         // === 原有逻辑: 保存规则 ===
         const submittedRules = Array.isArray(body?.rules) ? (body.rules as FilePermissionRule[]) : [];
         const settings = await getSettings();
+        const currentRules = settings.filePermissionRules || [];
         const allUsers = (await getUsers()).map((item) => ({ username: item.username, role: item.role }));
         const manageableUsernames = new Set(
             allUsers
                 .filter((item) => canAssignFilePermissionTarget(user.role, item.role, item.username))
                 .map((item) => item.username),
         );
-
+        if (requestedOperation === 'fileperms.deleteRule' && user.role !== 'admin') {
+            const manageableRules = currentRules.filter((rule) => rule.users.some((username) => manageableUsernames.has(username)));
+            const currentById = new Map(manageableRules.map((rule) => [rule.id, rule]));
+            const submittedById = new Map(submittedRules.map((rule) => [rule.id, rule]));
+            const removed = manageableRules.filter((rule) => !submittedById.has(rule.id));
+            const changed = manageableRules.filter((rule) => submittedById.has(rule.id) && !sameRule(currentById.get(rule.id), submittedById.get(rule.id)));
+            const added = submittedRules.filter((rule) => !currentById.has(rule.id));
+            if (removed.length !== 1 || changed.length > 0 || added.length > 0 || !canMgModify(auth, 'fileperms.deleteRule')) {
+                return NextResponse.json({ error: '删除规则请求无效' }, { status: 403 });
+            }
+        }
         const sanitizedRules = submittedRules
             .map((rule) => filterRuleUsersByActor(rule, user.role, allUsers))
             .filter(Boolean) as FilePermissionRule[];

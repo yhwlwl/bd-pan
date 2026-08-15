@@ -1,92 +1,97 @@
 /**
  * GET+POST /api/deny-stats — 管理面板风险仪表板 API
  *
- * GET: 返回 deny 事件列表 + 风险实体 + 统计数据
- * POST: 管理员操作（解封/清分/配置阈值）
+ * 风控数据按查看操作裁剪，写操作按具体风险操作授权。
  */
-import { verifyToken } from '../_auth';
+import { getMgAuthContext, canMgModify, canMgView } from '../_mg-auth';
 import { getRiskDashboard, adminUnban, adminResetScore, adminAdjustScore, adminBanEntity } from '../../../lib/deny-tracker';
 import { getSettings, updateSettings } from '../../../lib/users';
 
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  });
+}
 export async function GET(request: Request): Promise<Response> {
-  const authHeader = request.headers.get('authorization') || undefined;
-  const user = verifyToken(authHeader);
-  if (!user) {
-    return new Response(JSON.stringify({ code: 401, message: '请先登录' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    });
-  }
-  if (user.role !== 'admin' && user.role !== 'manager') {
-    return new Response(JSON.stringify({ code: 403, message: '权限不足' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    });
+  const auth = await getMgAuthContext(request);
+  if (!auth) return json({ code: 401, message: '请先登录' }, 401);
+  if (auth.user.role !== 'admin' && !(
+    canMgView(auth, 'riskcontrol.viewSummary') ||
+    canMgView(auth, 'riskcontrol.viewEntities') ||
+    canMgView(auth, 'riskcontrol.viewDetail') ||
+    canMgView(auth, 'riskcontrol.viewDenyEvents') ||
+    canMgView(auth, 'overview.viewRecentDeny') ||
+    canMgView(auth, 'emergency.view')
+  )) {
+    return json({ code: 403, message: '权限不足' }, 403);
   }
 
   try {
     const dashboard = await getRiskDashboard();
-    return new Response(JSON.stringify({ code: 200, ...dashboard }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    if (auth.user.role === 'admin') return json({ code: 200, ...dashboard });
+
+    const canSummary = canMgView(auth, 'riskcontrol.viewSummary') || canMgView(auth, 'overview.viewRecentDeny') || canMgView(auth, 'emergency.view');
+    return json({
+      code: 200,
+      summary: canSummary ? dashboard.summary : { total24h: 0, warnCount: 0, bannedCount: 0 },
+      riskEntities: canMgView(auth, 'riskcontrol.viewEntities') || canMgView(auth, 'riskcontrol.viewDetail') ? dashboard.riskEntities : [],
+      recentEvents: canMgView(auth, 'riskcontrol.viewDenyEvents') || canMgView(auth, 'overview.viewRecentDeny') ? dashboard.recentEvents : [],
     });
   } catch (e: any) {
-    return new Response(JSON.stringify({ code: 500, message: e.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    });
+    return json({ code: 500, message: e.message }, 500);
   }
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const authHeader = request.headers.get('authorization') || undefined;
-  const user = verifyToken(authHeader);
-  if (!user || user.role !== 'admin') {
-    return new Response(JSON.stringify({ code: 403, message: '仅管理员可操作' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    });
-  }
+  const auth = await getMgAuthContext(request);
+  if (!auth) return json({ code: 401, message: '请先登录' }, 401);
 
   try {
     const body = await request.json();
-    const { action, entity_type, entity_value } = body;
+    const { action, entity_type, entity_value, mgOperation } = body;
+    const operationByAction: Record<string, string[]> = {
+      unban: ['riskcontrol.unban', 'visits.unban'],
+      ban_ip: ['visits.banShort', 'visits.banCustom'],
+      clear_score: ['riskcontrol.clearScore'],
+      adjust_score: ['riskcontrol.adjustScore'],
+      config_thresholds: ['settings.denyConfig'],
+    };
+    const allowedOperations = operationByAction[action] || [];
+    const operation = typeof mgOperation === 'string' && allowedOperations.includes(mgOperation)
+      ? mgOperation
+      : auth.user.role === 'admin' && allowedOperations[0];
+    if (!operation || (auth.user.role !== 'admin' && !canMgModify(auth, operation))) {
+      return json({ code: 403, message: '无对应操作权限' }, 403);
+    }
 
     if (action === 'unban' && entity_type && entity_value) {
       await adminUnban(entity_type, entity_value);
-      return new Response(JSON.stringify({ code: 200, message: '已解封' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      });
+      return json({ code: 200, message: '已解封' });
     }
 
     if (action === 'ban_ip' && entity_type && entity_value && typeof body.ban_hours === 'number') {
+      const expectedOperation = body.ban_hours <= 24 ? 'visits.banShort' : 'visits.banCustom';
+      if (auth.user.role !== 'admin' && mgOperation !== expectedOperation) {
+        return json({ code: 403, message: '封禁时长与操作权限不匹配' }, 403);
+      }
       await adminBanEntity(entity_type, entity_value, body.ban_hours);
-      return new Response(JSON.stringify({ code: 200, message: '已标记封禁' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      });
+      return json({ code: 200, message: '已标记封禁' });
     }
 
     if (action === 'clear_score' && entity_type && entity_value) {
       await adminResetScore(entity_type, entity_value);
-      return new Response(JSON.stringify({ code: 200, message: '已清分' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      });
+      return json({ code: 200, message: '已清分' });
     }
 
     if (action === 'adjust_score' && entity_type && entity_value && typeof body.delta === 'number') {
       await adminAdjustScore(entity_type, entity_value, body.delta);
-      return new Response(JSON.stringify({ code: 200, message: `分数已调整 (${body.delta >= 0 ? '+' : ''}${body.delta})` }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      });
+      return json({ code: 200, message: `分数已调整 (${body.delta >= 0 ? '+' : ''}${body.delta})` });
     }
 
     if (action === 'config_thresholds') {
       const settings = await getSettings();
-      const dt = (settings as any).denyTracking || {};
+      const dt = settings.denyTracking || {};
       const newDT = {
         ...dt,
         enabled: body.enabled !== undefined ? body.enabled : dt.enabled,
@@ -95,21 +100,12 @@ export async function POST(request: Request): Promise<Response> {
         ipBanThreshold: body.ip_ban_threshold ?? dt.ipBanThreshold,
         banDurationHours: body.ban_duration_hours ?? dt.banDurationHours,
       };
-      await updateSettings({ denyTracking: newDT } as any);
-      return new Response(JSON.stringify({ code: 200, message: '配置已更新' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      });
+      await updateSettings({ denyTracking: newDT });
+      return json({ code: 200, message: '配置已更新' });
     }
 
-    return new Response(JSON.stringify({ code: 400, message: '未知操作' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    });
+    return json({ code: 400, message: '未知操作' }, 400);
   } catch (e: any) {
-    return new Response(JSON.stringify({ code: 500, message: e.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    });
+    return json({ code: 500, message: e.message }, 500);
   }
 }

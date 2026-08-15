@@ -6,7 +6,7 @@ import { useAdmin } from "../lib/admin-context";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
 
 export default function RiskControl() {
-  const { denyDashboard, denyDetailEntity, setDenyDetailEntity, denyReasonLabel, fetchAllData, token, logAdminAction, canModify, loading } = useAdmin();
+  const { denyDashboard, denyDetailEntity, setDenyDetailEntity, denyReasonLabel, fetchAllData, token, logAdminAction, canModify, canViewOperation, loading } = useAdmin();
   const [showDenyEvents, setShowDenyEvents] = useState(false);
 
   if (loading || !denyDashboard) {
@@ -15,13 +15,22 @@ export default function RiskControl() {
 
   const { summary, riskEntities, recentEvents } = denyDashboard;
   const entities = (riskEntities || []).slice(0, 50);
+  const canEntities = canViewOperation("riskcontrol.viewEntities");
+  const canDetail = canViewOperation("riskcontrol.viewDetail");
+  const canEvents = canViewOperation("riskcontrol.viewDenyEvents");
 
   const postDenyAction = async (body: any) => {
-    await fetch(`${API_BASE}/api/deny-stats`, {
+    const mgOperation = body.mgOperation || (
+      body.action === "adjust_score" ? "riskcontrol.adjustScore" :
+      body.action === "unban" ? "riskcontrol.unban" :
+      body.action === "clear_score" ? "riskcontrol.clearScore" : ""
+    );
+    const res = await fetch(`${API_BASE}/api/deny-stats`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, mgOperation }),
     });
+    if (!res.ok) return;
     const actionLabel =
       body.action === "adjust_score" ? `调整分数 ${body.delta > 0 ? "+" : ""}${body.delta}` :
       body.action === "unban" ? "解封实体" :
@@ -54,7 +63,7 @@ export default function RiskControl() {
       </div>
 
       {/* 风险实体表 */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {canEntities && <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100">
           <h3 className="text-sm font-bold text-slate-700">风险实体 ({entities.length})</h3>
         </div>
@@ -76,8 +85,9 @@ export default function RiskControl() {
                 <tr key={i} className={`border-b border-slate-50 hover:bg-slate-50 ${e.is_banned ? "bg-red-50/30" : ""}`}>
                   <td className="px-4 py-2">
                     <button
-                      onClick={() => setDenyDetailEntity({ entity_type: e.entity_type, entity_value: e.entity_value })}
-                      className="font-mono text-slate-700 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                      onClick={() => canDetail && setDenyDetailEntity({ entity_type: e.entity_type, entity_value: e.entity_value })}
+                      disabled={!canDetail}
+                      className="font-mono text-slate-700 hover:text-blue-600 hover:underline cursor-pointer text-left disabled:cursor-default"
                       title={e.entity_value}
                     >
                       {e.entity_type === "ip" ? e.entity_value : (e.entity_value || "").slice(0, 16) + "…"}
@@ -121,10 +131,10 @@ export default function RiskControl() {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
 
       {/* Deny 事件列表 */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {canEvents && <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <button
           onClick={() => setShowDenyEvents(!showDenyEvents)}
           className="w-full px-5 py-3 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
@@ -162,7 +172,7 @@ export default function RiskControl() {
             </table>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* 实体详情弹窗 */}
       {denyDetailEntity && (
