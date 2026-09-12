@@ -9,8 +9,8 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#2a2a2a;over
 #toolbar select{background:#555;border:none;color:#fff;padding:2px 4px;border-radius:3px;font-size:11px;max-width:70px}
 #toolbar label{font-size:10px;opacity:.7;white-space:nowrap}
 #viewerContainer{position:absolute;top:0;left:0;right:0;bottom:28px;overflow:hidden;touch-action:none}
-#wrapper{transform-origin:0 0}
-canvas{display:block;box-shadow:0 2px 12px rgba(0,0,0,.5)}
+#wrapper{transform-origin:0 0;will-change:transform}
+canvas{display:block;max-width:none;box-shadow:0 2px 12px rgba(0,0,0,.5)}
 </style></head><body>
 <div id="toolbar">
   <button id="prev">◀</button>
@@ -19,9 +19,9 @@ canvas{display:block;box-shadow:0 2px 12px rgba(0,0,0,.5)}
   <input id="pageInput" type="number" min="1" value="1">
   <button id="zoomOut">−</button>
   <select id="scaleSelect">
-    <option value="page-width" selected>适合宽度</option>
+    <option value="page-width">适合宽度</option>
     <option value="page-fit">适合长度</option>
-    <option value="3">300%</option>
+    <option value="3" selected>300%</option>
     <option value="2">200%</option>
     <option value="1.5">150%</option>
     <option value="1">100%</option>
@@ -50,24 +50,106 @@ const container=document.getElementById('viewerContainer'),
       pageInput=document.getElementById('pageInput'),
       scaleSelect=document.getElementById('scaleSelect');
 
-let pdf=null,pageNum=1,total=0,panzoom=null,wh=null;
+let pdf=null,pageNum=1,total=0,panzoom=null,wh=null,currentEntry=null,renderToken=0;
 const cache=new Map();
+const MAX_CACHED_PAGES=2;
+const DEFAULT_RENDER_SCALE=3;
+const MAX_CANVAS_PIXELS=16_000_000;
+const MAX_CANVAS_DIMENSION=4096;
 
-// Panzoom 初始化/重置
-function initPan(){
+function getRenderScale(value=scaleSelect.value){
+  const scale=parseFloat(value);
+  return Number.isFinite(scale)&&scale>0?scale:DEFAULT_RENDER_SCALE;
+}
+
+function getDisplayScale(entry){
+  const availableWidth=Math.max(1,container.clientWidth-16);
+  const availableHeight=Math.max(1,container.clientHeight-16);
+  const widthScale=availableWidth/entry.pageWidth;
+  const heightScale=availableHeight/entry.pageHeight;
+  if(scaleSelect.value==='page-width')return widthScale;
+  if(scaleSelect.value==='page-fit')return Math.min(widthScale,heightScale);
+  return Math.min(widthScale,heightScale);
+}
+
+function applyDisplaySize(entry){
+  const displayScale=Math.max(0.1,getDisplayScale(entry));
+  const displayWidth=entry.pageWidth*displayScale;
+  const displayHeight=entry.pageHeight*displayScale;
+  entry.displayWidth=displayWidth;
+  entry.displayHeight=displayHeight;
+  entry.canvas.style.width=`${displayWidth}px`;
+  entry.canvas.style.height=`${displayHeight}px`;
+  wrapper.style.width=`${displayWidth}px`;
+  wrapper.style.height=`${displayHeight}px`;
+}
+
+function getFitPosition(entry){
+  return {
+    scale:1,
+    x:Math.max(0,(container.clientWidth-entry.displayWidth)/2),
+    y:Math.max(0,(container.clientHeight-entry.displayHeight)/2)
+  };
+}
+
+// Panzoom 只负责用户手势缩放；初始适配通过 CSS 显示尺寸完成，避免移动端缩放超大画布时丢失画面。
+function initPan(entry){
   if(panzoom){panzoom.destroy();panzoom=null}
+  applyDisplaySize(entry);
+  const fit=getFitPosition(entry);
   panzoom=Panzoom(wrapper,{
     maxScale:5,minScale:0.3,contain:'outside',
+    startScale:fit.scale,startX:fit.x,startY:fit.y,
     pinchGesture:true,step:0.15
   });
   wh=e=>{if(e.ctrlKey||e.metaKey)panzoom.zoomWithWheel(e);else e.preventDefault()};
   container.addEventListener('wheel',wh,{passive:false});
 }
 
-// 销毁 Panzoom（翻页时）
 function killPan(){
   if(panzoom){panzoom.destroy();panzoom=null;container.removeEventListener('wheel',wh)}
   wrapper.style.transform='';
+}
+
+function showError(error,request=renderToken){
+  if(request!==renderToken)return;
+  loading.textContent='失败';
+  wrapper.innerHTML=`<div style="color:#f66;text-align:center;padding:40px">加载失败: ${error?.message||error}</div>`;
+}
+
+async function renderCanvas(page,requestedScale){
+  const baseViewport=page.getViewport({scale:1});
+  const maxScale=Math.min(
+    requestedScale,
+    MAX_CANVAS_DIMENSION/Math.max(baseViewport.width,baseViewport.height),
+    Math.sqrt(MAX_CANVAS_PIXELS/(baseViewport.width*baseViewport.height))
+  );
+  const attempts=[...new Set([maxScale,maxScale*.75,maxScale*.5,Math.min(maxScale,1)].filter(s=>Number.isFinite(s)&&s>0))];
+  let lastError=null;
+  for(const safeScale of attempts){
+    let canvas=null;
+    try{
+      const viewport=page.getViewport({scale:safeScale});
+      canvas=document.createElement('canvas');
+      canvas.width=Math.ceil(viewport.width);
+      canvas.height=Math.ceil(viewport.height);
+      const context=canvas.getContext('2d');
+      if(!context)throw new Error('无法创建 PDF 画布');
+      await page.render({canvasContext:context,viewport}).promise;
+      return {
+        canvas,
+        pageWidth:baseViewport.width,
+        pageHeight:baseViewport.height,
+        renderWidth:viewport.width,
+        renderHeight:viewport.height,
+        renderScale:safeScale
+      };
+    }catch(error){
+      lastError=error;
+      if(canvas){canvas.width=1;canvas.height=1}
+    }
+  }
+  throw lastError||new Error('PDF 页面渲染失败');
 }
 
 async function loadPdf(){
@@ -78,31 +160,52 @@ async function loadPdf(){
   total=pdf.numPages;
   document.getElementById('totalPages').textContent=total;
   pageInput.max=total;
-  loading.textContent='';renderPage(1);
+  await renderPage(1);
 }
+
 async function renderPage(num){
-  if(cache.has(num)){showCached(num);updateUI(num);return}
+  const request=++renderToken;
+  loading.textContent='⏳';
+  if(cache.has(num)){
+    if(request!==renderToken)return;
+    showCached(num);updateUI(num);loading.textContent='';return;
+  }
+  killPan();
+  currentEntry=null;
   wrapper.innerHTML='';
   const page=await pdf.getPage(num);
-  let vpScale=1;
-  if(scaleSelect.value==='page-width'){vpScale=(container.clientWidth-20)/page.getViewport({scale:1}).width}
-  else if(scaleSelect.value==='page-fit'){vpScale=Math.min((container.clientWidth-20)/page.getViewport({scale:1}).width,(container.clientHeight-40)/page.getViewport({scale:1}).height)}
-  else{vpScale=parseFloat(scaleSelect.value)||1}
-  const vp=page.getViewport({scale:vpScale});
-  const canvas=document.createElement('canvas');
-  canvas.height=vp.height;canvas.width=vp.width;
-  wrapper.appendChild(canvas);wrapper.style.width=vp.width+'px';wrapper.style.height=vp.height+'px';
-  await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
-  cache.set(num,canvas);if(cache.size>12){const[[k]]=cache;cache.delete(k)}
+  const entry=await renderCanvas(page,getRenderScale());
+  if(request!==renderToken||num!==pageNum)return;
+  cache.set(num,entry);
+  if(cache.size>MAX_CACHED_PAGES)cache.delete(cache.keys().next().value);
+  currentEntry=entry;
+  wrapper.appendChild(entry.canvas);
+  initPan(entry);
   updateUI(num);
-  initPan();
-  setTimeout(()=>{for(let i=1;i<=4;i++){const n=num+i;if(n<=total&&!cache.has(n)){pdf.getPage(n).then(pp=>{const vs=parseFloat(scaleSelect.value)||1;const vv=pp.getViewport({scale:vs});const cc=document.createElement('canvas');cc.height=vv.height;cc.width=vv.width;pp.render({canvasContext:cc.getContext('2d'),viewport:vv}).promise.then(()=>{if(cache.size<12)cache.set(n,cc)})})}}},300);
+  loading.textContent='';
 }
-function showCached(num){killPan();wrapper.innerHTML='';wrapper.appendChild(cache.get(num));wrapper.style.width=cache.get(num).width+'px';wrapper.style.height=cache.get(num).height+'px';initPan()}
+
+function showCached(num){
+  killPan();
+  currentEntry=cache.get(num);
+  wrapper.innerHTML='';
+  wrapper.appendChild(currentEntry.canvas);
+  initPan(currentEntry);
+}
+
 function updateUI(num){pageNum=num;document.getElementById('pageInfo').textContent=num;pageInput.value=num}
-function goPage(n){if(n<1||n>total)return;killPan();cache.clear();pageNum=n;renderPage(n)}
-function applyScale(s){
-  scaleSelect.value=s;killPan();cache.clear();renderPage(pageNum);
+
+function renderPageSafely(num){renderPage(num).catch(error=>showError(error))}
+function goPage(n){if(n<1||n>total)return;pageNum=n;cache.clear();renderPageSafely(n)}
+function applyScale(s){scaleSelect.value=s;cache.clear();renderPageSafely(pageNum)}
+
+if(window.ResizeObserver){
+  const observer=new ResizeObserver(()=>{
+    if(!currentEntry)return;
+    applyDisplaySize(currentEntry);
+    if(panzoom)initPan(currentEntry);
+  });
+  observer.observe(container);
 }
 
 document.getElementById('prev').onclick=()=>goPage(pageNum-1);

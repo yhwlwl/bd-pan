@@ -105,15 +105,20 @@ export default function Emergency() {
     setLoading("ban");
 
     const ips = (adminStats?.topIps || []).slice(0, 50).map((i: any) => i.ip);
-    const bannedUntil = Date.now() + 3600000;
-    const newBanned = { ...(adminSettings?.bannedIps || {}) };
-    ips.forEach((ip: string) => { newBanned[ip] = bannedUntil; });
+    let successCount = 0;
+    for (const ip of ips) {
+      try {
+        const res = await fetch(`${API_BASE}/api/deny-stats`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: "ban_ip", entity_type: "ip", entity_value: ip, ban_hours: 1, mgOperation: "emergency.banAllIPs" }),
+        });
+        if (res.ok) successCount++;
+      } catch {}
+    }
 
-    const banOk = await adminAction("updateSettings", { settings: { bannedIps: newBanned }, mgOperation: "emergency.banAllIPs" });
-    if (!banOk) { setLoading(null); return; }
-
-    logAdminAction("应急", `批量封禁 ${ips.length} 个 IP (1h)`);
-    showMsg(`已封禁 ${ips.length} 个在线 IP (1h)`);
+    if (successCount === 0 && ips.length > 0) { showMsg("❌ 批量封禁失败"); setLoading(null); return; }
+    showMsg(`已封禁 ${successCount}/${ips.length} 个在线 IP (1h)`);
     setLoading(null);
     fetchAllData();
   };

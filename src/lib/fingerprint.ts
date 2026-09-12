@@ -1,14 +1,14 @@
 /**
- * 设备码工具 — 服务端指纹计算
+ * 设备码工具 — 服务端规范化
  *
- * 浏览器端 computeDeviceCode() 算法相同，分别在 page.tsx 和 403.html 中独立实现（纯 JS/TS，无依赖）。
- * 算法：Canvas + WebGL + 屏幕 + 平台 + 时区 + CPU + 内存 + 语言 → FNV-1a 64bit hash
+ * 设备码现在由浏览器首次访问时生成的随机 ID 提供，并保存在本地存储中。
+ * 它不是认证凭据，只用于把同一浏览器的风险事件串起来；账号和服务端 IP 才是硬校验维度。
  */
 import crypto from 'crypto';
 
 /**
- * 服务端兜底指纹 — 当客户端无 JS 无法计算设备码时使用
- * 基于 IP + UA + Accept-Language 的 SHA256 hash
+ * 兼容旧调用的服务端兜底指纹。新风控链路不再调用它，因为把 IP 放进设备指纹
+ * 会导致用户换网后产生新设备、共享出口又会把多个用户错误合并。
  */
 export function computeServerFallback(ip: string, ua: string, acceptLanguage: string): string {
   const input = [ip, ua, acceptLanguage].join('|||');
@@ -20,8 +20,9 @@ export function computeServerFallback(ip: string, ua: string, acceptLanguage: st
  * 用于数据库索引和去重
  */
 export function hashDeviceCode(raw: string): string | null {
-  if (!raw || raw.length < 8) return null;
-  return crypto.createHash('sha256').update(raw.trim()).digest('hex').slice(0, 16);
+  const value = raw?.trim() || '';
+  if (value.length < 8 || value.length > 200) return null;
+  return crypto.createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
 /**
@@ -29,8 +30,11 @@ export function hashDeviceCode(raw: string): string | null {
  * 返回 { deviceCode, hash }，不合法则返回 null
  */
 export function normalizeDeviceCode(raw: string | undefined | null): { deviceCode: string; hash: string } | null {
-  if (!raw || raw.length < 8 || raw.length > 500) return null;
-  const deviceCode = raw.trim().slice(0, 200);
+  const value = raw?.trim() || '';
+  if (value.length < 8 || value.length > 200) return null;
+  const deviceCode = value;
   const hash = crypto.createHash('sha256').update(deviceCode).digest('hex').slice(0, 16);
   return { deviceCode, hash };
 }
+
+

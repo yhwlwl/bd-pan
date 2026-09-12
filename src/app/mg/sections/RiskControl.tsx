@@ -3,40 +3,84 @@
 import { useState } from "react";
 import { useAdmin } from "../lib/admin-context";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/pan";
+type EntityStatusFilter = "all" | "banned" | "warning" | "event_only" | "normal";
 
 export default function RiskControl() {
-  const { denyDashboard, denyDetailEntity, setDenyDetailEntity, denyReasonLabel, fetchAllData, token, logAdminAction, canModify, canViewOperation, loading } = useAdmin();
+  const { denyDashboard, denyDetailEntity, setDenyDetailEntity, denyReasonLabel, fetchAllData, token, setAdminMsg, canModify, canViewOperation, loading } = useAdmin();
   const [showDenyEvents, setShowDenyEvents] = useState(false);
+  const [entityFilter, setEntityFilter] = useState("");
+  const [manualType, setManualType] = useState<"account" | "ip" | "device_code">("account");
+  const [manualValue, setManualValue] = useState("");
+  const [manualHours, setManualHours] = useState("24");
+  const [entityStatus, setEntityStatus] = useState<EntityStatusFilter>("all");
+  const [reasonFilter, setReasonFilter] = useState("all");
 
   if (loading || !denyDashboard) {
     return <div className="text-slate-500 text-sm py-12 text-center">⏳ 加载数据中...</div>;
   }
 
   const { summary, riskEntities, recentEvents } = denyDashboard;
-  const entities = (riskEntities || []).slice(0, 50);
+  const normalizedFilter = entityFilter.trim().toLowerCase();
+  const reasonOptions = Array.from(new Set<string>((recentEvents || []).map((event: any) => event.deny_reason).filter(Boolean)));
+  const entities = (riskEntities || []).filter((e: any) => {
+    const matchesText = !normalizedFilter
+      || `${e.entity_type} ${e.entity_value} ${e.last_offense_reason || ""}`.toLowerCase().includes(normalizedFilter);
+    const matchesReason = reasonFilter === "all" || e.last_offense_reason === reasonFilter;
+    const matchesStatus = entityStatus === "all"
+      || (entityStatus === "banned" && e.is_banned)
+      || (entityStatus === "warning" && !e.is_banned && Number(e.current_score) >= 30)
+      || (entityStatus === "event_only" && e.risk_source === "deny_event")
+      || (entityStatus === "normal" && !e.is_banned && Number(e.current_score) < 30 && e.risk_source !== "deny_event");
+    return matchesText && matchesReason && matchesStatus;
+  }).slice(0, 100);
+  const filteredEvents = (recentEvents || []).filter((event: any) => reasonFilter === "all" || event.deny_reason === reasonFilter);
   const canEntities = canViewOperation("riskcontrol.viewEntities");
   const canDetail = canViewOperation("riskcontrol.viewDetail");
   const canEvents = canViewOperation("riskcontrol.viewDenyEvents");
 
   const postDenyAction = async (body: any) => {
-    const mgOperation = body.mgOperation || (
-      body.action === "adjust_score" ? "riskcontrol.adjustScore" :
-      body.action === "unban" ? "riskcontrol.unban" :
-      body.action === "clear_score" ? "riskcontrol.clearScore" : ""
-    );
-    const res = await fetch(`${API_BASE}/api/deny-stats`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...body, mgOperation }),
-    });
-    if (!res.ok) return;
-    const actionLabel =
-      body.action === "adjust_score" ? `调整分数 ${body.delta > 0 ? "+" : ""}${body.delta}` :
-      body.action === "unban" ? "解封实体" :
-      body.action === "clear_score" ? "清空分数" : body.action;
-    logAdminAction("风控操作", `${actionLabel}: ${body.entity_type}=${body.entity_value}`);
-    fetchAllData();
+    try {
+      const mgOperation = body.mgOperation || (
+        body.action === "adjust_score" ? "riskcontrol.adjustScore" :
+        body.action === "unban" ? "riskcontrol.unban" :
+        body.action === "ban_entity" ? "riskcontrol.ban" :
+        body.action === "clear_score" ? "riskcontrol.clearScore" : ""
+      );
+      const res = await fetch(`${API_BASE}/api/deny-stats`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...body, mgOperation }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAdminMsg(`❌ ${data.error || data.message || "风控操作失败"}`);
+        return false;
+      }
+      fetchAllData();
+      return true;
+    } catch {
+      setAdminMsg("❌ 风控接口异常，请稍后重试");
+      return false;
+    }
+  };
+
+  const handleManualBan = async () => {
+    const value = manualValue.trim();
+    const hours = Number(manualHours);
+    if (!value) {
+      setAdminMsg("❌ 请输入账号、IP 或设备码哈希");
+      return;
+    }
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 8760) {
+      setAdminMsg("❌ 封禁时长必须在 1~8760 小时之间");
+      return;
+    }
+    const ok = await postDenyAction({ action: "ban_entity", entity_type: manualType, entity_value: value, ban_hours: hours });
+    if (ok) {
+      setManualValue("");
+      setManualHours("24");
+    }
   };
 
   const scoreColor = (score: number) =>
@@ -62,10 +106,48 @@ export default function RiskControl() {
         </div>
       </div>
 
+      {canModify("riskcontrol.ban") && <div className="bg-white rounded-xl border border-orange-200 p-4">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="text-xs font-bold text-slate-700 w-full">手动封禁实体</div>
+          <select value={manualType} onChange={(e) => setManualType(e.target.value as "account" | "ip" | "device_code")} className="text-xs border border-slate-200 rounded-lg px-2.5 py-2">
+            <option value="account">账号</option>
+            <option value="ip">IP</option>
+            <option value="device_code">设备码哈希</option>
+          </select>
+          <input value={manualValue} onChange={(e) => setManualValue(e.target.value)} placeholder={manualType === "account" ? "输入账号" : manualType === "ip" ? "输入 IP" : "输入 16 位设备码哈希"} className="flex-1 min-w-52 text-xs border border-slate-200 rounded-lg px-3 py-2" />
+          <input type="number" min={1} max={8760} value={manualHours} onChange={(e) => setManualHours(e.target.value)} className="w-24 text-xs border border-slate-200 rounded-lg px-3 py-2" title="封禁小时数" />
+          <button onClick={handleManualBan} className="text-xs px-3 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700">封禁并联动</button>
+        </div>
+        <p className="text-[10px] text-slate-400 mt-2">封禁任一实体会同步关联的账号、设备和 IP；设备需要填写服务端保存的 16 位哈希。</p>
+      </div>}
+
       {/* 风险实体表 */}
       {canEntities && <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100">
-          <h3 className="text-sm font-bold text-slate-700">风险实体 ({entities.length})</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-700">风险实体 ({entities.length})</h3>
+              <p className="text-[10px] text-slate-400 mt-1">包含风险表和最近 Deny 事件中发现的账号/IP/设备</p>
+            </div>
+            <input
+              value={entityFilter}
+              onChange={(e) => setEntityFilter(e.target.value)}
+              placeholder="搜索账号 / IP / 设备"
+              className="w-52 max-w-full text-xs border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
+            />
+            <select value={entityStatus} onChange={(e) => setEntityStatus(e.target.value as EntityStatusFilter)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5">
+              <option value="all">全部状态</option>
+              <option value="banned">已封禁</option>
+              <option value="warning">告警</option>
+              <option value="event_only">仅有 Deny 记录</option>
+              <option value="normal">正常</option>
+            </select>
+            <select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 max-w-52">
+              <option value="all">全部原因</option>
+              {reasonOptions.map((reason: string) => <option key={reason} value={reason}>{denyReasonLabel[reason] || reason}</option>)}
+            </select>
+            <button onClick={() => fetchAllData()} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-600 hover:bg-slate-50">刷新</button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -90,12 +172,12 @@ export default function RiskControl() {
                       className="font-mono text-slate-700 hover:text-blue-600 hover:underline cursor-pointer text-left disabled:cursor-default"
                       title={e.entity_value}
                     >
-                      {e.entity_type === "ip" ? e.entity_value : (e.entity_value || "").slice(0, 16) + "…"}
+                      {e.entity_type === "ip" || e.entity_type === "account" ? e.entity_value : (e.entity_value || "").slice(0, 16) + "…"}
                     </button>
                   </td>
                   <td className="px-4 py-2">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${e.entity_type === "ip" ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"}`}>
-                      {e.entity_type === "ip" ? "IP" : "设备"}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${e.entity_type === "ip" ? "bg-blue-50 text-blue-600" : e.entity_type === "account" ? "bg-emerald-50 text-emerald-600" : "bg-purple-50 text-purple-600"}`}>
+                      {e.entity_type === "ip" ? "IP" : e.entity_type === "account" ? "账号" : "设备"}
                     </span>
                   </td>
                   <td className={`px-4 py-2 font-bold ${scoreColor(e.current_score)}`}>{Math.round(e.current_score)}</td>
@@ -118,6 +200,19 @@ export default function RiskControl() {
                         <><button onClick={() => postDenyAction({ action: "adjust_score", entity_type: e.entity_type, entity_value: e.entity_value, delta: 5 })} className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100">+5</button>
                         <button onClick={() => postDenyAction({ action: "adjust_score", entity_type: e.entity_type, entity_value: e.entity_value, delta: -5 })} className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 hover:bg-green-100">-5</button></>
                       )}
+                      {!e.is_banned && canModify("riskcontrol.ban") && (
+                        <button
+                          onClick={() => {
+                            const rawHours = window.prompt("封禁时长（小时，1~8760）", "24");
+                            if (rawHours === null) return;
+                            const banHours = Number(rawHours);
+                            if (Number.isFinite(banHours) && banHours > 0 && banHours <= 8760) {
+                              postDenyAction({ action: "ban_entity", entity_type: e.entity_type, entity_value: e.entity_value, ban_hours: banHours });
+                            }
+                          }}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 hover:bg-orange-100"
+                        >封禁</button>
+                      )}
                       {e.is_banned && canModify("riskcontrol.unban") && (
                         <button onClick={() => postDenyAction({ action: "unban", entity_type: e.entity_type, entity_value: e.entity_value })} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 hover:bg-blue-100">解封</button>
                       )}
@@ -139,7 +234,7 @@ export default function RiskControl() {
           onClick={() => setShowDenyEvents(!showDenyEvents)}
           className="w-full px-5 py-3 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
         >
-          <span className="text-sm font-bold text-slate-700">最近 Deny 事件 ({(recentEvents || []).length})</span>
+          <span className="text-sm font-bold text-slate-700">最近 Deny 事件 ({filteredEvents.length})</span>
           <span className="text-xs text-slate-400">{showDenyEvents ? "收起 ▲" : "展开 ▼"}</span>
         </button>
         {showDenyEvents && (
@@ -157,7 +252,7 @@ export default function RiskControl() {
                 </tr>
               </thead>
               <tbody>
-                {(recentEvents || []).slice(0, 20).map((ev: any, j: number) => (
+                {filteredEvents.slice(0, 20).map((ev: any, j: number) => (
                   <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
                     <td className="px-4 py-1.5 text-slate-500 font-mono">{new Date(ev.created_at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                     <td className="px-4 py-1.5 text-slate-500">{ev.deny_source}</td>
@@ -189,15 +284,18 @@ function EntityDetailModal() {
 
   const { entity_type, entity_value } = denyDetailEntity;
   const events = (denyDashboard?.recentEvents || []).filter((ev: any) =>
-    entity_type === "ip" ? ev.ip === entity_value : ev.device_code_hash === entity_value
+    entity_type === "ip" ? ev.ip === entity_value : entity_type === "account" ? ev.username === entity_value : ev.device_code_hash === entity_value
   );
 
   // 关联 IP 和设备码
   const relatedIps = new Set<string>();
   const relatedDevices = new Set<string>();
+  const relatedAccounts = new Set<string>();
   events.forEach((ev: any) => {
     if (entity_type !== "ip" && ev.ip) relatedIps.add(ev.ip);
     if (entity_type === "ip" && ev.device_code_hash) relatedDevices.add(ev.device_code_hash);
+    if (entity_type !== "account" && ev.username && ev.username !== "guest") relatedAccounts.add(ev.username);
+    if (entity_type === "account" && ev.device_code_hash) relatedDevices.add(ev.device_code_hash);
   });
 
   return (
@@ -206,7 +304,7 @@ function EntityDetailModal() {
         <div className="sticky top-0 bg-white px-5 py-3 border-b border-slate-100 flex items-center justify-between">
           <div>
             <span className="text-sm font-bold text-slate-800">
-              {entity_type === "ip" ? "IP" : "设备"} 详情
+              {entity_type === "ip" ? "IP" : entity_type === "account" ? "账号" : "设备"} 详情
             </span>
             <span className="text-xs text-slate-500 font-mono ml-2">{entity_value}</span>
           </div>
@@ -214,7 +312,7 @@ function EntityDetailModal() {
         </div>
         <div className="p-5 space-y-4">
           {/* 关联信息 */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <div className="text-xs font-bold text-slate-500 mb-2">关联 IP ({relatedIps.size})</div>
               <div className="flex flex-wrap gap-1">
@@ -228,6 +326,14 @@ function EntityDetailModal() {
               <div className="flex flex-wrap gap-1">
                 {[...relatedDevices].slice(0, 20).map((dc) => (
                   <span key={dc} className="text-[10px] font-mono bg-purple-50 text-purple-600 px-2 py-0.5 rounded">{dc.slice(0, 12)}</span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-500 mb-2">关联账号 ({relatedAccounts.size})</div>
+              <div className="flex flex-wrap gap-1">
+                {[...relatedAccounts].slice(0, 20).map((account) => (
+                  <span key={account} className="text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded">{account}</span>
                 ))}
               </div>
             </div>

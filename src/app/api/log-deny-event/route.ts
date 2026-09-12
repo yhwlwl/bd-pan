@@ -5,14 +5,24 @@
  * Origin 校验防伪造，CORS 由 Nginx /pan/ location 全局处理。
  * 无需鉴权——deny 事件本身就来自未认证请求。
  */
-import { logDenyEvent } from '../../../lib/deny-tracker';
+import { getRequestContext, logDenyEvent } from '../../../lib/deny-tracker';
+import { verifyToken } from '../_auth';
 
 const ALLOWED_ORIGINS = [
   'deny.tantantan.tech',
   'pan.tantantan.tech',
   'pan.stacdqz.tech',
+  'wlm.stacdqz.tech',
   'localhost',
 ];
+
+const ALLOWED_REASONS = new Set([
+  'nginx_db_token', 'nginx_sensitive_file', 'nginx_pdf_referer', 'nginx_well_known',
+  'nginx_unknown', 'api_ip_banned', 'api_entity_banned', 'api_auth_failed',
+  'api_login_failed', 'api_role_denied', 'api_permission_denied', 'api_file_rule_denied',
+  'api_all_items_denied', 'api_pdf_download_denied', 'api_alist_token_denied',
+  'api_path_scope_denied', 'api_pdf_link_redacted',
+]);
 
 function isValidOrigin(request: Request): boolean {
   const origin = request.headers.get('origin') || '';
@@ -46,37 +56,38 @@ export async function POST(request: Request): Promise<Response> {
     const {
       deny_source = 'nginx',
       deny_reason = 'nginx_unknown',
-      ip: bodyIp,
       device_code,
       user_agent,
       request_path,
-      username,
       session_id,
       geo_country,
       geo_city,
       geo_region,
-      source = 'pan',
     } = body;
 
-    // IP 优先用请求头，前端传空时自动补（保证去重和评分有真实 IP）
-    const ip = (bodyIp && bodyIp !== '') ? bodyIp : (
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      request.headers.get('x-real-ip') || 'unknown'
-    );
+    // IP、设备、账号的信任边界：IP 只来自 Nginx 覆盖写入的可信头，
+    // 不接受 body.ip；公共回调也不能替任意账号制造关联风险记录。
+    const ctx = getRequestContext(request);
+    const tokenUser = verifyToken(request.headers.get('authorization') || undefined);
+    const safeReason = typeof deny_reason === 'string' && ALLOWED_REASONS.has(deny_reason)
+      ? deny_reason
+      : 'nginx_unknown';
+    const safeDenySource = deny_source === 'api' || deny_source === 'frontend' ? deny_source : 'nginx';
+    const safeSource = process.env.APP_SOURCE || 'pan';
 
     const result = await logDenyEvent({
-      denySource: deny_source,
-      denyReason: deny_reason,
-      ip,
-      deviceCode: device_code,
+      denySource: safeDenySource,
+      denyReason: safeReason,
+      ip: ctx.ip,
+      deviceCode: ctx.deviceCode || device_code,
       userAgent: user_agent,
       requestPath: request_path,
-      username,
+      username: tokenUser?.username,
       sessionId: session_id,
       geoCountry: geo_country,
       geoCity: geo_city,
       geoRegion: geo_region,
-      source,
+      source: safeSource,
     });
 
     return new Response(JSON.stringify(result), {

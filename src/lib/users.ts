@@ -64,6 +64,9 @@ export interface DenyTrackingConfig {
     secondBanHours?: number;
     thirdBanHours?: number;
     banEscalationThreshold?: number;
+    accountBanThreshold?: number;
+    cascadeBans?: boolean;
+    cascadeMaxEntities?: number;
 }
 
 export interface GlobalSettings {

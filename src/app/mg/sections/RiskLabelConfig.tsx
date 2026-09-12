@@ -17,7 +17,7 @@ const DEFAULT_RISK_LABELS: Record<string, number> = {
   "users.viewList":2,"users.viewPerms":2,"users.viewAssociations":2,"users.editBasePath":2,
   "users.addUser":3,"users.changeRole":4,"users.changePerms":4,"users.deleteUser":4,
   "riskcontrol.viewSummary":3,"riskcontrol.viewEntities":3,"riskcontrol.viewDetail":3,
-  "riskcontrol.viewDenyEvents":3,"riskcontrol.adjustScore":4,"riskcontrol.unban":4,"riskcontrol.clearScore":4,
+  "riskcontrol.viewDenyEvents":3,"riskcontrol.adjustScore":4,"riskcontrol.ban":4,"riskcontrol.unban":4,"riskcontrol.clearScore":4,
   "settings.view":2,"settings.appearance":2,"settings.dataRetention":2,
   "settings.global":3,"settings.fileLimits":3,"settings.loginLimits":3,
   "settings.denyConfig":4,"settings.changePassword":6,"settings.riskLabels":6,
@@ -48,7 +48,7 @@ const OP_LABELS: Record<string, string> = {
   "users.viewList":"查看用户列表","users.viewPerms":"查看用户权限","users.viewAssociations":"查看关联IP/设备",
   "users.editBasePath":"修改目录隔离","users.addUser":"添加用户","users.changeRole":"修改角色","users.changePerms":"修改权限","users.deleteUser":"删除用户",
   "riskcontrol.viewSummary":"查看摘要条","riskcontrol.viewEntities":"查看实体表","riskcontrol.viewDetail":"查看实体详情",
-  "riskcontrol.viewDenyEvents":"查看Deny事件","riskcontrol.adjustScore":"调整分数","riskcontrol.unban":"解封实体","riskcontrol.clearScore":"清空分数",
+  "riskcontrol.viewDenyEvents":"查看Deny事件","riskcontrol.adjustScore":"调整分数","riskcontrol.ban":"手动封禁实体","riskcontrol.unban":"解封实体","riskcontrol.clearScore":"清空分数",
   "settings.view":"查看设置","settings.appearance":"修改站点外观","settings.dataRetention":"修改数据保留",
   "settings.global":"修改全局设置","settings.fileLimits":"修改文件限制","settings.loginLimits":"修改登录限制",
   "settings.denyConfig":"修改风控配置","settings.changePassword":"修改管理员密码","settings.riskLabels":"修改风险标签配置",
@@ -139,3 +139,5 @@ export default function RiskLabelConfig() {
     </div>
   );
 }
+
+

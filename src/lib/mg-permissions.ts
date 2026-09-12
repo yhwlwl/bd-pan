@@ -56,6 +56,7 @@ export const DEFAULT_MG_RISK_LABELS: Record<string, number> = {
     'riskcontrol.viewDetail': 3,
     'riskcontrol.viewDenyEvents': 3,
     'riskcontrol.adjustScore': 4,
+    'riskcontrol.ban': 4,
     'riskcontrol.unban': 4,
     'riskcontrol.clearScore': 4,
     'settings.view': 2,
@@ -167,4 +168,5 @@ export function hasAnyMgViewPermission(
         canViewMgOperation(role, permissions, riskOverrides, operationKey)
     );
 }
+
 

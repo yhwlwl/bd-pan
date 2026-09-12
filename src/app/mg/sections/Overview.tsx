@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAdmin } from "../lib/admin-context";
 
 export default function Overview() {
-  const { adminStats, denyDashboard, isAdmin, adminDataSource, adminPageSource, setAdminDataSource, setAdminPageSource, lastFetchTime, canModify, canViewOperation, loading } = useAdmin();
+  const { adminStats, denyDashboard, denyReasonLabel, isAdmin, adminDataSource, adminPageSource, setAdminDataSource, setAdminPageSource, lastFetchTime, canModify, canViewOperation, loading } = useAdmin();
   const [showOnlineUsers, setShowOnlineUsers] = useState(false);
   const [showLogModal, setShowLogModal] = useState<{ title: string; logs: any[] } | null>(null);
 
@@ -154,7 +154,7 @@ export default function Overview() {
                     {new Date(ev.created_at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
                   </span>
                   <span className="text-slate-500 shrink-0">{denySourceLabel[ev.deny_source] || ev.deny_source}</span>
-                  <span className="text-red-600 font-medium truncate">{ev.deny_reason}</span>
+                  <span className="text-red-600 font-medium truncate">{denyReasonLabel[ev.deny_reason] || ev.deny_reason}</span>
                   <span className="text-slate-400 font-mono shrink-0">{ev.ip || "—"}</span>
                 </div>
               ))

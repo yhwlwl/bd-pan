@@ -59,12 +59,17 @@ const denyReasonLabel: Record<string, string> = {
   nginx_well_known: "安全漏洞探测",
   nginx_unknown: "Nginx 拦截",
   api_ip_banned: "已封禁 IP 尝试",
+  api_entity_banned: "已封禁实体尝试",
   api_auth_failed: "API 认证失败",
   api_login_failed: "登录失败",
   api_role_denied: "越权访问管理接口",
   api_permission_denied: "无操作权限",
   api_file_rule_denied: "文件规则拒绝",
   api_all_items_denied: "批量操作全拒",
+  api_pdf_download_denied: "PDF 下载路径拒绝",
+  api_alist_token_denied: "AList 服务 Token 接口探测",
+  api_path_scope_denied: "路径越界/穿越尝试",
+  api_pdf_link_redacted: "PDF 链接已裁剪（审计）",
   api_mg_unauthorized: "管理后台未授权访问",
   frontend: "前端拦截",
   admin_add_score: "管理员手动加分",
@@ -292,3 +297,4 @@ export function AdminProvider({
 
   return React.createElement(AdminContext.Provider, { value }, children);
 }
+

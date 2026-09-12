@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
-import { verifyTokenWithLog } from '../_auth';
+import { verifyToken, verifyTokenWithLog } from '../_auth';
 import {
-    applyBasePathForPermissions,
     getEffectivePermissionsForPath,
     getSettings,
     getUserPermissions,
 } from '../../../lib/users';
 import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
 import { hashDeviceCode } from '../../../lib/fingerprint';
+import { isAlistPathScopeError, resolveScopedAlistPath } from '../../../lib/path-scope';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_URL = ALIST_BASE_DEFAULT;
@@ -41,14 +41,10 @@ async function getAlistToken(url: string, user: string, pass: string): Promise<s
 import { getAllFilesInDir } from '../../../lib/alist-utils';
 
 export async function GET(request: Request) {
+    let requestUsername: string | undefined;
     try {
         const ctx = getRequestContext(request);
         const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
-        const { banned, reason: banReason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
-        if (banned) {
-            return NextResponse.json({ code: 403, message: `您的${banReason === 'device' ? '设备' : 'IP'}已被禁止访问` }, { status: 403 });
-        }
-
         const { searchParams } = new URL(request.url);
         const pathsParam = searchParams.get('paths');
         const tokenParam = searchParams.get('token');
@@ -67,10 +63,20 @@ export async function GET(request: Request) {
 
         // Verify user
         const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
-        const user = verifyTokenWithLog(authHeader, ctx);
+        const tokenUser = verifyToken(authHeader);
+        const { banned, reason: banReason } = await checkEntityBanned(
+            ctx.ip, deviceCodeHash, tokenUser?.role, tokenUser?.username,
+        );
+        if (banned) {
+            const label = banReason === 'device' ? '设备' : banReason === 'account' ? '账号' : 'IP';
+            return denyAndLog(request, 'api_entity_banned', 403, `您的${label}已被禁止访问`, tokenUser?.username);
+        }
+
+        const user = tokenUser || verifyTokenWithLog(authHeader, ctx);
         if (!user) {
             return NextResponse.json({ error: '请先登录' }, { status: 401 });
         }
+        requestUsername = user.username;
 
         // Check permissions
         const basePerms = await getUserPermissions(user.username, user.role);
@@ -88,7 +94,7 @@ export async function GET(request: Request) {
         let deniedCount = 0;
 
         for (const path of paths) {
-            const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
+            const absolutePath = resolveScopedAlistPath(path, basePerms.basePath);
             const pathName = path.split('/').pop() || 'folder';
 
             // 权限检查
@@ -129,6 +135,9 @@ export async function GET(request: Request) {
 
     } catch (error: any) {
         console.error('[ZIP预览] 错误:', error);
+        if (isAlistPathScopeError(error)) {
+            return denyAndLog(request, 'api_path_scope_denied', 403, '请求路径不在允许范围内', requestUsername);
+        }
         return new Response(`错误: ${error?.message}`, { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     }
 }

@@ -286,12 +286,7 @@ export async function POST(request: Request) {
                             continue;
                         }
                         if (key === 'bannedIps') {
-                            const operation = typeof mgOperation === 'string' ? mgOperation : '';
-                            const valid = ['visits.banShort', 'visits.banCustom', 'visits.unban', 'emergency.banAllIPs'];
-                            if (auth.user.role !== 'admin' && (!valid.includes(operation) || !canMgModify(auth, operation))) {
-                                return errorResponse('无 IP 封禁修改权限');
-                            }
-                            continue;
+                            return errorResponse('IP 封禁必须通过风控管理入口');
                         }
                         if (!hasAllowedSettingChange(auth, key, mgOperation)) {
                             return errorResponse(`无权修改设置: ${key}`);

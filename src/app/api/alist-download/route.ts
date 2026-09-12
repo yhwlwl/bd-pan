@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
-import { verifyTokenWithLog, type AuthContext } from '../_auth';
+import { verifyToken, verifyTokenWithLog, type AuthContext } from '../_auth';
 import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
 import { hashDeviceCode } from '../../../lib/fingerprint';
 import {
-    applyBasePathForPermissions,
     getEffectivePermissionsForPath,
     getSettings,
     getUserPermissions,
 } from '../../../lib/users';
 import { pgInsert } from '../../../lib/pg-adapter';
+import { encodeAlistPathForUrl, isAlistPathScopeError, resolveScopedAlistPath } from '../../../lib/path-scope';
 
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
@@ -51,32 +51,38 @@ function formatBytes(bytes: number): string {
 }
 
 export async function GET(request: Request) {
+    let requestUsername: string | undefined;
     try {
         const ctx = getRequestContext(request);
         const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
-        const { banned, reason: banReason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
-        if (banned) {
-            return NextResponse.json({ code: 403, message: `您的${banReason === 'device' ? '设备' : 'IP'}已被禁止访问` }, { status: 403 });
-        }
-
         const { searchParams } = new URL(request.url);
         const path = searchParams.get('path');
-        const configB64 = searchParams.get('c');
         const tokenParam = searchParams.get('token');
         if (!path) {
             return NextResponse.json({ error: '缺少 path 参数' }, { status: 400 });
         }
 
         const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
-        const user = verifyTokenWithLog(authHeader, ctx);
+        const tokenUser = verifyToken(authHeader);
+        const { banned, reason: banReason } = await checkEntityBanned(
+            ctx.ip, deviceCodeHash, tokenUser?.role, tokenUser?.username,
+        );
+        if (banned) {
+            const label = banReason === 'device' ? '设备' : banReason === 'account' ? '账号' : 'IP';
+            return denyAndLog(request, 'api_entity_banned', 403, `您的${label}已被禁止访问`, tokenUser?.username);
+        }
+
+        const user = tokenUser || verifyTokenWithLog(authHeader, ctx);
         if (!user) {
             return new Response('请先登录', { status: 401, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
         }
+        requestUsername = user.username;
 
         const basePerms = await getUserPermissions(user.username, user.role);
-        const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
+        const absolutePath = resolveScopedAlistPath(path, basePerms.basePath);
         const isPreview = searchParams.get('preview') === '1';
-        const logSource = searchParams.get('source') || 'pan';
+        // 来源由服务端决定，不能让客户端把下载日志伪装成另一站点。
+        const logSource = process.env.APP_SOURCE || 'pan';
         console.log(`[download] path=${path}, absolutePath=${absolutePath}, user=${user.username}, role=${user.role}, isPreview=${isPreview}`);
         const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
         console.log(`[download] perms: download=${pathPerms.download}, preview=${pathPerms.preview}, view=${pathPerms.view}`);
@@ -89,38 +95,11 @@ export async function GET(request: Request) {
             return new Response('该文件禁止下载', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
         }
 
-        let customConfig: any = null;
-        if (configB64) {
-            try {
-                const s = Buffer.from(configB64, 'base64').toString('utf8');
-                try {
-                    customConfig = JSON.parse(s);
-                } catch {
-                    customConfig = JSON.parse(decodeURIComponent(s));
-                }
-            } catch { }
-        }
-
-        let url: string;
-        let aUser: string;
-        let aPass: string;
-        if (customConfig?.url) {
-            url = customConfig.url.replace(/\/+$/, '');
-            aUser = customConfig.user || '';
-            aPass = customConfig.pass || '';
-        } else {
-            const settings = await getSettings();
-            const channel = settings.downloadChannel || 'ecs';
-            if (channel === 'ecs') {
-                url = ECS_URL;
-                aUser = ECS_USER;
-                aPass = ECS_PASS;
-            } else {
-                url = FRP_URL;
-                aUser = FRP_USER;
-                aPass = FRP_PASS;
-            }
-        }
+        const settings = await getSettings();
+        const channel = settings.downloadChannel || 'ecs';
+        const url = channel === 'ecs' ? ECS_URL : FRP_URL;
+        const aUser = channel === 'ecs' ? ECS_USER : FRP_USER;
+        const aPass = channel === 'ecs' ? ECS_PASS : FRP_PASS;
 
         const token = await getAlistToken(url, aUser, aPass);
         const scopedPath = absolutePath;
@@ -154,8 +133,8 @@ export async function GET(request: Request) {
             if (rangeHeader) proxyHeaders.Range = rangeHeader;
 
             const sign = getData.data?.sign || '';
-            const publicPath = normalizeVisiblePath(path);
-            const proxyUrl = sign ? `${url}/p${publicPath}?sign=${sign}` : `${url}/p${publicPath}`;
+            const encodedPath = encodeAlistPathForUrl(absolutePath);
+            const proxyUrl = sign ? `${url}/p${encodedPath}?sign=${encodeURIComponent(sign)}` : `${url}/p${encodedPath}`;
             fileRes = await fetch(proxyUrl, { headers: proxyHeaders });
         }
 
@@ -207,6 +186,9 @@ export async function GET(request: Request) {
         });
     } catch (error: any) {
         console.error('[alist-download] error:', error);
+        if (isAlistPathScopeError(error)) {
+            return denyAndLog(request, 'api_path_scope_denied', 403, '请求路径不在允许范围内', requestUsername);
+        }
         return new Response(`下载代理出错: ${error?.message || '未知错误'}`, {
             status: 500,
             headers: { 'Content-Type': 'text/plain; charset=utf-8' },

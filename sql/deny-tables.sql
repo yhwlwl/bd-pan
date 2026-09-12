@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS bdpan_deny_events (
   dc_risk_at_time REAL,
   geo_country TEXT,
   geo_city TEXT,
-  geo_region TEXT
+  geo_region TEXT,
+  source TEXT NOT NULL DEFAULT 'pan'
 );
 
 CREATE TABLE IF NOT EXISTS bdpan_risk_scores (
@@ -42,7 +43,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_risk_scores_entity ON bdpan_risk_scores(en
 CREATE INDEX IF NOT EXISTS idx_risk_scores_score ON bdpan_risk_scores(current_score DESC);
 CREATE INDEX IF NOT EXISTS idx_deny_events_ip ON bdpan_deny_events(ip, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_deny_events_dc ON bdpan_deny_events(device_code_hash, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_deny_events_username ON bdpan_deny_events(username, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_deny_events_dedup ON bdpan_deny_events(ip, request_path, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_deny_events_ip_path_reason ON bdpan_deny_events(ip, request_path, deny_reason, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_deny_events_ip_reason ON bdpan_deny_events(ip, deny_reason, created_at DESC);
 
 -- 验证
 SELECT 'bdpan_deny_events' AS tbl, count(*) FROM bdpan_deny_events

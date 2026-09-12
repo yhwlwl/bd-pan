@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { verifyToken, verifyTokenWithLog } from '../_auth';
 import {
-    applyBasePathForPermissions,
     getEffectivePermissionsForPath,
     getSettings,
     getUserPermissions,
 } from '../../../lib/users';
 import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
 import { hashDeviceCode } from '../../../lib/fingerprint';
+import { isAlistPathScopeError, resolveScopedAlistPath } from '../../../lib/path-scope';
 
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
@@ -36,14 +36,10 @@ async function getAlistToken(url: string, user: string, pass: string): Promise<s
 import { getAllFilesInDir } from '../../../lib/alist-utils';
 
 export async function GET(request: Request) {
+    let requestUsername: string | undefined;
     try {
         const ctx = getRequestContext(request);
         const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
-        const { banned, reason: banReason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
-        if (banned) {
-            return NextResponse.json({ code: 403, message: `您的${banReason === 'device' ? '设备' : 'IP'}已被禁止访问` }, { status: 403 });
-        }
-
         const { searchParams } = new URL(request.url);
         const pathsParam = searchParams.get('paths');
         const tokenParam = searchParams.get('token');
@@ -55,8 +51,18 @@ export async function GET(request: Request) {
         }
 
         const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
-        const user = verifyTokenWithLog(authHeader, ctx);
+        const tokenUser = verifyToken(authHeader);
+        const { banned, reason: banReason } = await checkEntityBanned(
+            ctx.ip, deviceCodeHash, tokenUser?.role, tokenUser?.username,
+        );
+        if (banned) {
+            const label = banReason === 'device' ? '设备' : banReason === 'account' ? '账号' : 'IP';
+            return denyAndLog(request, 'api_entity_banned', 403, `您的${label}已被禁止访问`, tokenUser?.username);
+        }
+
+        const user = tokenUser || verifyTokenWithLog(authHeader, ctx);
         if (!user) return NextResponse.json({ error: '请先登录' }, { status: 401 });
+        requestUsername = user.username;
 
         const basePerms = await getUserPermissions(user.username, user.role);
         const settings = await getSettings();
@@ -70,7 +76,7 @@ export async function GET(request: Request) {
         let skipped = 0, totalSize = 0;
 
         for (const path of paths) {
-            const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
+            const absolutePath = resolveScopedAlistPath(path, basePerms.basePath);
             const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
             if (!pathPerms.view || !pathPerms.download) {
                 skipped++;
@@ -91,10 +97,11 @@ export async function GET(request: Request) {
             if (gd.data?.is_dir) {
                 const files = await getAllFilesInDir(url, aListToken, absolutePath);
                 for (const f of files) {
-                    const fp = await getEffectivePermissionsForPath(user.username, user.role, f.path);
+                    const filePath = resolveScopedAlistPath(f.path, basePerms.basePath);
+                    const fp = await getEffectivePermissionsForPath(user.username, user.role, filePath);
                     if (fp.download === false) { skipped++; continue; }
-                    const relativePath = f.path.replace(absolutePath, pathName).replace(/^\//, '').replace(/\\/g, '/');
-                    result.push({ name: f.name, path: f.path, sign: f.sign || '', size: f.size, relativePath });
+                    const relativePath = filePath.replace(absolutePath, pathName).replace(/^\//, '').replace(/\\/g, '/');
+                    result.push({ name: f.name, path: filePath, sign: f.sign || '', size: f.size, relativePath });
                     totalSize += f.size;
                 }
             } else {
@@ -111,6 +118,9 @@ export async function GET(request: Request) {
         return NextResponse.json({ files: result, totalFiles: result.length, totalSize, skipped });
     } catch (error: any) {
         console.error('[batch-list] 错误:', error);
+        if (isAlistPathScopeError(error)) {
+            return denyAndLog(request, 'api_path_scope_denied', 403, '请求路径不在允许范围内', requestUsername);
+        }
         return NextResponse.json({ error: error?.message }, { status: 500 });
     }
 }

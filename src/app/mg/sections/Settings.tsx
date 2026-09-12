@@ -12,19 +12,25 @@ const SCORE_LABELS: Record<string, string> = {
   nginx_well_known: "Nginx 漏洞扫描",
   nginx_unknown: "Nginx 其他拦截",
   api_ip_banned: "已封禁 IP 尝试访问",
+  api_entity_banned: "已封禁实体尝试访问",
   api_auth_failed: "API 认证失败",
   api_login_failed: "API 登录失败",
   api_role_denied: "API 越权访问",
   api_permission_denied: "API 权限拒绝",
   api_file_rule_denied: "API 文件规则拒绝",
   api_all_items_denied: "API 批量操作全拒",
+  api_pdf_download_denied: "PDF 下载路径拒绝",
+  api_alist_token_denied: "AList 服务 Token 接口探测",
+  api_path_scope_denied: "路径越界/穿越尝试",
+  api_pdf_link_redacted: "PDF 链接已裁剪（审计）",
 };
 
 const DEFAULT_SCORES: Record<string, number> = {
   nginx_db_token: 30, nginx_sensitive_file: 20, nginx_pdf_referer: 10,
-  nginx_well_known: 15, nginx_unknown: 10, api_ip_banned: 25,
+  nginx_well_known: 15, nginx_unknown: 10, api_ip_banned: 0, api_entity_banned: 0,
   api_auth_failed: 5, api_login_failed: 8, api_role_denied: 10,
-  api_permission_denied: 5, api_file_rule_denied: 5, api_all_items_denied: 5,
+  api_permission_denied: 5, api_file_rule_denied: 5, api_all_items_denied: 5, api_pdf_download_denied: 8,
+  api_alist_token_denied: 20, api_path_scope_denied: 20, api_pdf_link_redacted: 0,
 };
 
 export default function Settings() {
@@ -44,7 +50,13 @@ export default function Settings() {
       setS({ ...adminSettings });
       setDt({ ...(adminSettings.denyTracking || {}) });
       if (adminSettings.denyTracking?.scoreMap) {
-        setScores({ ...DEFAULT_SCORES, ...adminSettings.denyTracking.scoreMap });
+        // 已封禁请求只审计不再加分，避免“封禁后重试”反馈回路。
+        setScores({
+          ...DEFAULT_SCORES,
+          ...adminSettings.denyTracking.scoreMap,
+          api_ip_banned: 0,
+          api_entity_banned: 0,
+        });
       }
     }
   }, [adminSettings]);
@@ -119,8 +131,11 @@ export default function Settings() {
           <NumField label="警告阈值" value={dt.warnThreshold ?? 30} min={1} max={200} onChange={v => setDt({ ...dt, warnThreshold: v })} />
           <NumField label="设备封禁阈值" value={dt.deviceBanThreshold ?? 50} min={1} max={200} onChange={v => setDt({ ...dt, deviceBanThreshold: v })} />
           <NumField label="IP 封禁阈值" value={dt.ipBanThreshold ?? 70} min={1} max={200} onChange={v => setDt({ ...dt, ipBanThreshold: v })} />
+          <NumField label="账号封禁阈值" value={dt.accountBanThreshold ?? dt.ipBanThreshold ?? 70} min={1} max={200} onChange={v => setDt({ ...dt, accountBanThreshold: v })} />
           <NumField label="IP 解封后重置分" value={dt.ipPostBanScore ?? 60} min={0} max={200} onChange={v => setDt({ ...dt, ipPostBanScore: v })} />
           <NumField label="设备解封后重置分" value={dt.devicePostBanScore ?? 40} min={0} max={200} onChange={v => setDt({ ...dt, devicePostBanScore: v })} />
+          <Toggle label="关联实体联动封禁" checked={dt.cascadeBans !== false} onChange={v => setDt({ ...dt, cascadeBans: v })} />
+          <NumField label="关联实体上限" value={dt.cascadeMaxEntities ?? 100} min={10} max={500} onChange={v => setDt({ ...dt, cascadeMaxEntities: v })} />
         </div>
         <button onClick={saveDt} disabled={!canModify("settings.denyConfig")} className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-30">保存风控阈值</button>
       </Card>
@@ -242,3 +257,4 @@ function NumField({ label, value, min, max, onChange }: { label: string; value: 
     </Field>
   );
 }
+

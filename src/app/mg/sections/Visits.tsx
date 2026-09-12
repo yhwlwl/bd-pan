@@ -6,7 +6,7 @@ import { useAdmin } from "../lib/admin-context";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
 
 export default function Visits() {
-  const { adminStats, adminSettings, isAdmin, adminAction, fetchAllData, canModify, loading, token } = useAdmin();
+  const { adminStats, adminSettings, isAdmin, fetchAllData, canModify, loading, token, setAdminMsg } = useAdmin();
   const [ipSort, setIpSort] = useState<"count" | "time" | "flow">("count");
   const [ipLimit, setIpLimit] = useState(5);
   const [banInput, setBanInput] = useState<{ ip: string; show: boolean }>({ ip: "", show: false });
@@ -26,39 +26,45 @@ export default function Visits() {
   });
   const displayed = sorted.slice(0, ipLimit >= 99999 ? sorted.length : ipLimit);
 
-  const handleBan = async (ip: string, hours: number) => {
-    const banUntil = Date.now() + hours * 3600 * 1000;
-    const newBanned = { ...bannedIps, [ip]: banUntil };
-    const settingsOk = await adminAction("updateSettings", {
-      settings: { bannedIps: newBanned },
-      mgOperation: hours <= 24 ? "visits.banShort" : "visits.banCustom",
-    });
-    if (!settingsOk) return;
-    // 同步标记 risk_scores
+  const postRiskAction = async (body: Record<string, unknown>): Promise<boolean> => {
     try {
-      await fetch(`${API_BASE}/api/deny-stats`, {
+      const res = await fetch(`${API_BASE}/api/deny-stats`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: "ban_ip", entity_type: "ip", entity_value: ip, ban_hours: hours, mgOperation: hours <= 24 ? "visits.banShort" : "visits.banCustom" }),
+        body: JSON.stringify(body),
       });
-    } catch {}
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAdminMsg(`❌ ${data.error || "风控操作失败"}`);
+        return false;
+      }
+      return true;
+    } catch {
+      setAdminMsg("❌ 风控接口异常");
+      return false;
+    }
+  };
+
+  const handleBan = async (ip: string, hours: number) => {
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 8760) {
+      setAdminMsg("❌ 封禁时长必须在 1~8760 小时之间");
+      return;
+    }
+    const ok = await postRiskAction({
+      action: "ban_ip",
+      entity_type: "ip",
+      entity_value: ip,
+      ban_hours: hours,
+      mgOperation: hours <= 24 ? "visits.banShort" : "visits.banCustom",
+    });
+    if (!ok) return;
     fetchAllData();
     setBanInput({ ip: "", show: false });
   };
 
   const handleUnban = async (ip: string) => {
-    const newBanned = { ...bannedIps };
-    delete newBanned[ip];
-    const settingsOk = await adminAction("updateSettings", { settings: { bannedIps: newBanned }, mgOperation: "visits.unban" });
-    if (!settingsOk) return;
-    // 同步清除 risk_scores 的封禁状态
-    try {
-      await fetch(`${API_BASE}/api/deny-stats`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: "unban", entity_type: "ip", entity_value: ip, mgOperation: "visits.unban" }),
-      });
-    } catch {}
+    const ok = await postRiskAction({ action: "unban", entity_type: "ip", entity_value: ip, mgOperation: "visits.unban" });
+    if (!ok) return;
     fetchAllData();
   };
 
@@ -192,16 +198,17 @@ export default function Visits() {
             <input
               type="number"
               defaultValue={24}
-              min={0}
+              min={1}
+              max={8760}
               id="banHours"
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3"
-              placeholder="封禁小时数（0=永久）"
+              placeholder="封禁小时数（1~8760）"
             />
             <div className="flex gap-2">
               <button
                 onClick={() => {
-                  const h = parseInt((document.getElementById("banHours") as HTMLInputElement)?.value || "24", 10);
-                  handleBan(banInput.ip, h || 87600);
+                  const h = Number((document.getElementById("banHours") as HTMLInputElement)?.value || "24");
+                  handleBan(banInput.ip, h);
                 }}
                 className="flex-1 bg-red-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-red-700"
               >

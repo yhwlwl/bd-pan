@@ -50,7 +50,7 @@ export default function MgLayout({ children }: { children: React.ReactNode }) {
           session_id: data.sessionId || "",
           fingerprint: "",
           device_code: "",
-          source: process.env.NEXT_PUBLIC_APP_SOURCE || "weilaimeng",
+          source: process.env.NEXT_PUBLIC_APP_SOURCE || "pan",
         }),
       }).catch(() => {});
 

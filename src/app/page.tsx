@@ -169,12 +169,17 @@ export default function Home() {
     nginx_well_known: '安全漏洞探测',
     nginx_unknown: 'Nginx 拦截',
     api_ip_banned: '已封禁 IP 尝试',
+    api_entity_banned: '已封禁实体尝试',
     api_auth_failed: 'API 认证失败',
     api_login_failed: '登录失败',
     api_role_denied: '越权访问管理接口',
     api_permission_denied: '无操作权限',
     api_file_rule_denied: '文件规则拒绝',
     api_all_items_denied: '批量操作全拒',
+    api_pdf_download_denied: 'PDF 下载路径拒绝',
+    api_alist_token_denied: 'AList 服务 Token 接口探测',
+    api_path_scope_denied: '路径越界/穿越尝试',
+    api_pdf_link_redacted: 'PDF 链接已裁剪（审计）',
     frontend: '前端拦截',
   };
   const [adminSettings, setAdminSettings] = useState<GlobalSettings>({
@@ -222,12 +227,6 @@ export default function Home() {
   const [logFilter, setLogFilter] = useState<string>('全部');
   const [selectedChannelDetailedStats, setSelectedChannelDetailedStats] = useState<string | null>(null);
   const [allDownloadStatsModal, setAllDownloadStatsModal] = useState<{ title: string; logs: any[] } | null>(null);
-  // === 远端 AList 设置（仅本地生效） ===
-  const [showSettings, setShowSettings] = useState(false);
-  const [customUrl, setCustomUrl] = useState('');
-  const [customUser, setCustomUser] = useState('');
-  const [customPass, setCustomPass] = useState('');
-
   const isAdmin = userRole === 'admin';
   const canControlFile = isAdmin || userPerms?.controlFile === true;
   const canAccessManagement = hasAnyMgViewPermission(userRole || 'guest', userPerms, undefined);
@@ -240,16 +239,6 @@ export default function Home() {
 
   const [alistDeleteConfirm, setAlistDeleteConfirm] = useState<{ name: string; isDir: boolean } | null>(null);
   const [alistDeleteInput, setAlistDeleteInput] = useState('');
-
-  const getCustomConfig = () => {
-    if (typeof window !== 'undefined') {
-      try {
-        const str = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-        if (str) return JSON.parse(str);
-      } catch (e) { }
-    }
-    return null;
-  };
 
   const getPreviewType = (name: string): 'image' | 'video' | 'text' | 'pdf' | 'archive' | 'office' | null => {
     const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -332,9 +321,6 @@ export default function Home() {
     // 记录预览日志
     logUserAction('预览', filePath);
 
-    const prov = alistProvider.toLowerCase();
-    const isBaidu = prov.includes('baidu') || alistPath.toLowerCase().includes('baidu') || alistPath.includes('百度网盘');
-
     try {
       if (type === 'archive') {
         const ext = name.split('.').pop()?.toLowerCase();
@@ -344,37 +330,51 @@ export default function Home() {
         return true;
       }
 
-      // 获取文件直链
+      // 获取文件信息。只有具备下载权限时，接口才会返回 raw_url/sign；
+      // 预览权限用户必须走受控预览代理。
       const res = await fetchAlist({ action: 'get', path: filePath });
       const data = await res.json();
-      if (data.code !== 200 || !data.data?.raw_url) {
-        setAlistMsg('❌ 获取文件预览链接失败');
+      if (data.code !== 200 || !data.data) {
+        setAlistMsg('❌ 获取文件预览信息失败');
         setPreviewLoading(false);
         return false;
       }
 
       let previewUrl: string;
+      const responsePerms = data.data?.perms || previewItemMeta.perms || {};
+      const canUseDirectLink = responsePerms.download === true;
+      const responseSign = data.data?.sign || sign || '';
+      const responseDownloadPath = data.data?.download_path || filePath;
+      const responseRawUrl = canUseDirectLink && typeof data.data?.raw_url === 'string'
+        ? data.data.raw_url
+        : '';
 
-      // 视频/PDF：走 ECS 直连（秒加载 + Range 支持）
-      if (type === 'video' || type === 'pdf') {
-        const sign = data.data?.sign || '';
+      // 下载权限用户继续走 AList 直连，保持原有速度；预览-only 用户走
+      // /api/alist-download，浏览器不会拿到可复用的 AList 链接。
+      if (canUseDirectLink && (responseRawUrl || responseSign)) {
         const base = type === 'pdf' ? getAlistBase().replace(/:5245$/, '') : getAlistBase();
         const pathPrefix = type === 'pdf' ? '/pdf-preview' : '/p';
-        previewUrl = sign
-          ? `${base}${pathPrefix}${filePath}?sign=${sign}`
-          : `${base}${pathPrefix}${filePath}`;
+        previewUrl = responseSign
+          ? `${base}${pathPrefix}${responseDownloadPath}?sign=${encodeURIComponent(responseSign)}`
+          : responseRawUrl;
         // PDF：统一用 PDF.js（桌面+手机）
         if (type === 'pdf') {
           const pdfJsUrl = `/pdfjs/viewer.html?file=${encodeURIComponent(previewUrl)}`;
-          setPreviewFile({ name, url: pdfJsUrl, type, filePath, sign, size });
+          setPreviewFile({ name, url: pdfJsUrl, type, filePath, sign: responseSign, size });
           setPreviewLoading(false);
           return true;
         }
       } else {
         previewUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}&preview=1`;
         if (userToken) previewUrl += `&token=${encodeURIComponent(userToken)}`;
-        const ccObj = getCustomConfig();
-        if (ccObj) previewUrl += `&c=${btoa(JSON.stringify(ccObj))}`;
+      }
+
+      // 预览-only PDF 也统一交给 PDF.js，文件内容由受控代理提供。
+      if (type === 'pdf') {
+        const pdfJsUrl = `/pdfjs/viewer.html?file=${encodeURIComponent(previewUrl)}`;
+        setPreviewFile({ name, url: pdfJsUrl, type, filePath, sign: responseSign, size });
+        setPreviewLoading(false);
+        return true;
       }
 
       // 接入微软 Office 在线预览服务
@@ -401,7 +401,7 @@ export default function Home() {
         }
       }
 
-      setPreviewFile({ name, url: previewUrl, type, filePath, sign, size });
+      setPreviewFile({ name, url: previewUrl, type, filePath, sign: responseSign, size });
       setPreviewLoading(false);
       return true;
     } catch (err: any) {
@@ -419,7 +419,11 @@ export default function Home() {
       const deviceCode = typeof window !== 'undefined' ? localStorage.getItem('BDPAN_DEVICE_CODE') || '' : '';
       await fetch(`${API_BASE}/api/log-action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(userToken ? { Authorization: `Bearer ${userToken}` } : {}),
+          ...(deviceCode ? { 'X-Device-Code': deviceCode } : {}),
+        },
         body: JSON.stringify({
           username: customUsername || username || '游客',
           action_type: action_type + suffix,
@@ -433,7 +437,11 @@ export default function Home() {
       if (status === 'blocked' && deviceCode) {
         fetch(`${API_BASE}/api/log-deny-event`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(userToken ? { Authorization: `Bearer ${userToken}` } : {}),
+            ...(deviceCode ? { 'X-Device-Code': deviceCode } : {}),
+          },
           body: JSON.stringify({
             deny_source: 'frontend',
             deny_reason: 'api_file_rule_denied',
@@ -461,8 +469,6 @@ export default function Home() {
   };
 
   const getAlistBase = () => {
-    const cc = getCustomConfig();
-    if (cc && cc.url) return cc.url.replace(/\/+$/, '');
     return ALIST_BASE_DEFAULT;
   };
 
@@ -474,13 +480,6 @@ export default function Home() {
       const dc = localStorage.getItem('BDPAN_DEVICE_CODE');
       if (dc) headers['X-Device-Code'] = dc;
     } catch {}
-
-    const cc = getCustomConfig();
-    if (cc) {
-      if (cc.url) headers['x-alist-url'] = cc.url;
-      if (cc.user) headers['x-alist-username'] = cc.user;
-      if (cc.pass) headers['x-alist-password'] = cc.pass;
-    }
 
     const res = await fetch(`${API_BASE}/api/alist`, {
       method: 'POST',
@@ -502,56 +501,23 @@ export default function Home() {
     localStorage.setItem('BDPAN_THEME', next);
   };
 
-  // ── 设备码计算（L2 Canvas/WebGL 指纹）──
+  // ── 稳定设备标识：首次生成随机 ID，之后只从本地存储读取 ──
+  // Canvas/WebGL 指纹会因浏览器升级、隐私策略、分辨率或显卡变化而漂移；
+  // 随机 ID 更适合做同一浏览器会话的风险关联。它不是认证凭据。
   const computeDeviceCode = (): string => {
     try {
-      const components: string[] = [];
-      // Canvas 指纹
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 200; canvas.height = 60;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.textBaseline = 'top'; ctx.font = '14px Arial';
-          ctx.fillStyle = '#f60'; ctx.fillRect(10, 5, 50, 20);
-          ctx.fillStyle = '#069'; ctx.fillText('Fingerprint!<@', 2, 20);
-          ctx.fillStyle = 'rgba(100, 200, 50, 0.7)'; ctx.fillText('CJK: 喵ฅ', 10, 40);
-          components.push(canvas.toDataURL().slice(-200));
-        }
-      } catch {}
-      // WebGL
-      try {
-        const gl = document.createElement('canvas').getContext('webgl') as WebGLRenderingContext | null;
-        if (gl) {
-          const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-          if (dbg) components.push(gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) + '|' + gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
-        }
-      } catch {}
-      // Screen + Platform + Timezone
-      components.push(`${screen.width}x${screen.height}x${screen.colorDepth}`);
-      components.push(navigator.platform || '');
-      components.push(String(new Date().getTimezoneOffset()));
-      // Hardware
-      components.push(String(navigator.hardwareConcurrency || 0));
-      components.push(String((navigator as any).deviceMemory || 0));
-      // Languages
-      components.push((navigator.languages || [navigator.language]).join(','));
-      // UA
-      components.push(navigator.userAgent || '');
-
-      // FNV-1a 64-bit hash
-      const input = components.join('###');
-      let h = BigInt('0xcbf29ce484222325');
-      for (let i = 0; i < input.length; i++) { h ^= BigInt(input.charCodeAt(i)); h *= BigInt('0x100000001b3'); }
-      return h.toString(16).padStart(16, '0');
-    } catch { return 'fallback_' + Date.now().toString(36); }
+      const randomId = window.crypto?.randomUUID?.()
+        || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+      return `wlm-v2-${randomId}`;
+    } catch { return ''; }
   };
 
   useEffect(() => {
     setMounted(true);
     if (typeof window !== 'undefined') {
-      // 设备码：首次计算并持久化
-      if (!localStorage.getItem('BDPAN_DEVICE_CODE')) {
+      // 设备码：迁移旧指纹，之后长期复用稳定随机 ID
+      const savedDeviceCode = localStorage.getItem('BDPAN_DEVICE_CODE') || '';
+      if (!/^wlm-v2-[a-z0-9-]{16,80}$/i.test(savedDeviceCode)) {
         try { localStorage.setItem('BDPAN_DEVICE_CODE', computeDeviceCode()); } catch {}
       }
       // 主题初始化
@@ -1191,10 +1157,6 @@ export default function Home() {
     logUserAction(actionType, filePath);
     let downloadUrl = `/api/alist-download?path=${encodeURIComponent(filePath)}`;
     if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
-    const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-    if (ccConfigStr) {
-      downloadUrl += `&c=${btoa(ccConfigStr)}`;
-    }
     const a = document.createElement('a');
     a.href = downloadUrl;
     a.download = fileName;
@@ -1468,22 +1430,6 @@ export default function Home() {
     let failCount = 0;
     let lastError = '';
 
-    // 提前缓存，避免每个文件都去请求 token
-    let cachedTokenData: any = null;
-    const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    try {
-      const tokenRes = await fetch(`${API_BASE}/api/alist-token`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${userToken}` },
-      });
-      cachedTokenData = await tokenRes.json();
-    } catch (e) {
-      console.warn('获取直连 token 失败:', e);
-    }
-    
-    // 提前读取自定义配置避免重复读 storage
-    const cc = getCustomConfig();
-
     for (let i = 0; i < alistUploadFiles.length; i++) {
       const file = alistUploadFiles[i];
       setUploadProgressMsg(`正在上传 (${i + 1}/${alistUploadFiles.length}): ${file.name}`);
@@ -1495,81 +1441,41 @@ export default function Home() {
         const realUploadPath = applyBasePathToVisiblePath(uploadPath, userPerms?.basePath);
         const encodedFilePath = realUploadPath.split('/').map(encodeURIComponent).join('/');
 
-        // 1. 尝试直连 ECS 上传（绕过 Vercel，极速）
-        let directSuccess = false;
+        // 统一通过本站受控上传代理。浏览器不再获取 AList 服务 Token，
+        // 也不再接受自定义 AList 地址/账号/密码，因此权限和路径校验始终在服务端完成。
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${userToken}`,
+          'File-Path': encodedFilePath,
+          'Content-Type': file.type || 'application/octet-stream',
+        };
         try {
-          const isAlistHttps = cachedTokenData && cachedTokenData.url && cachedTokenData.url.startsWith('https');
+          const dc = localStorage.getItem('BDPAN_DEVICE_CODE');
+          if (dc) headers['X-Device-Code'] = dc;
+        } catch {}
 
-          if (cachedTokenData && cachedTokenData.token && cachedTokenData.url && (!isPageHttps || isAlistHttps)) {
-            const uploadData: any = await new Promise((resolve, reject) => {
-              const xhr = new XMLHttpRequest();
-              xhr.open('PUT', `${cachedTokenData.url}/api/fs/put`);
-              xhr.setRequestHeader('Authorization', cachedTokenData.token);
-              xhr.setRequestHeader('File-Path', encodedFilePath);
-              xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-              xhr.upload.onprogress = (e) => {
-                if (e.lengthComputable) {
-                   const fileProgress = (e.loaded / e.total);
-                   const totalProgress = Math.round(((i + fileProgress) / alistUploadFiles.length) * 100);
-                   setUploadProgress(totalProgress);
-                }
-              };
-              xhr.onload = () => {
-                try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
-              };
-              xhr.onerror = () => reject(new Error('CORS_OR_NETWORK'));
-              xhr.send(file);
-            });
-            if (uploadData.code === 200) {
-              directSuccess = true;
-              successCount++;
-              logUserAction('上传', relativePath);
-            } else {
-              throw new Error(uploadData.message);
+        const uploadData: any = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', '/api/alist-upload');
+          Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const fileProgress = e.loaded / e.total;
+              const totalProgress = Math.round(((i + fileProgress) / alistUploadFiles.length) * 100);
+              setUploadProgress(totalProgress);
             }
-          }
-        } catch (directErr: any) {
-          if (directErr.message !== 'CORS_OR_NETWORK') {
-             if (!directSuccess) throw directErr;
-          }
-        }
-
-        // 2. Fallback: 通过 Vercel Dashboard 代理上传
-        if (!directSuccess) {
-          const headers: Record<string, string> = {
-            'Authorization': `Bearer ${userToken}`,
-            'File-Path': encodedFilePath,
-            'Content-Type': file.type || 'application/octet-stream',
-            'Content-Length': String(file.size),
           };
-          const cc = getCustomConfig();
-          if (cc) {
-            if (cc.url) headers['x-alist-url'] = cc.url;
-            if (cc.user) headers['x-alist-username'] = cc.user;
-            if (cc.pass) headers['x-alist-password'] = cc.pass;
-          }
-          const uploadData: any = await new Promise((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('PUT', '/api/alist-upload');
-            Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
-            xhr.upload.onprogress = (e) => {
-              if (e.lengthComputable) {
-                 const fileProgress = (e.loaded / e.total);
-                 const totalProgress = Math.round(((i + fileProgress) / alistUploadFiles.length) * 100);
-                 setUploadProgress(totalProgress);
-              }
-            };
-            xhr.onload = () => {
-              try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
-            };
-            xhr.onerror = () => reject(new Error('网络异常'));
-            xhr.send(file);
-          });
-          if (uploadData.code === 200) {
-             successCount++;
-          } else {
-             throw new Error(uploadData.message);
-          }
+          xhr.onload = () => {
+            try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
+          };
+          xhr.onerror = () => reject(new Error('网络异常'));
+          xhr.send(file);
+        });
+
+        if (uploadData.code === 200) {
+          successCount++;
+          logUserAction('上传', relativePath);
+        } else {
+          throw new Error(uploadData.message || '上传失败');
         }
       } catch (e: any) {
          failCount++;
@@ -1661,6 +1567,42 @@ export default function Home() {
       }
       setAdminMsg('✅ 操作成功');
     } catch { setAdminMsg('❌ 接口异常'); }
+  };
+
+  // 统一走风控接口，确保手动 IP 封禁同时写入 risk_scores 并联动账号/设备。
+  const adminRiskAction = async (action: 'ban_ip' | 'unban', ip: string, hours?: number) => {
+    if (!userToken) return false;
+    if (action === 'ban_ip' && (!Number.isFinite(hours) || !hours || hours <= 0 || hours > 8760)) {
+      setAdminMsg('❌ 封禁时长必须在 1~8760 小时之间');
+      return false;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/deny-stats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({
+          action,
+          entity_type: 'ip',
+          entity_value: ip,
+          ...(action === 'ban_ip' ? {
+            ban_hours: hours,
+            mgOperation: (hours as number) <= 24 ? 'visits.banShort' : 'visits.banCustom',
+          } : { mgOperation: 'visits.unban' }),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAdminMsg(`❌ ${data.error || data.message || '风控操作失败'}`);
+        return false;
+      }
+      setAdminMsg('✅ 风控操作成功');
+      logUserAction('风控操作', action === 'ban_ip' ? `封禁 IP ${ip} ${hours} 小时` : `解封 IP ${ip}`);
+      fetchAdminData();
+      return true;
+    } catch {
+      setAdminMsg('❌ 风控接口异常');
+      return false;
+    }
   };
 
   // 自动清除管理消息
@@ -1926,19 +1868,6 @@ export default function Home() {
               style={{ color: 'var(--accent-2)' }}
             >
               🔒 文件权限
-            </button>
-          )}
-          {(isAdmin || userPerms?.setting) && (
-            <button
-              onClick={() => {
-                const cc = getCustomConfig();
-                if (cc) { setCustomUrl(cc.url || ''); setCustomUser(cc.user || ''); setCustomPass(cc.pass || ''); }
-                setShowSettings(true);
-              }}
-              className="text-[10px] hover:opacity-80 transition-opacity tracking-widest flex items-center gap-1"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              ⚙️ 设置
             </button>
           )}
           <button
@@ -2245,20 +2174,17 @@ export default function Home() {
                                 {isBanned ? (
                                   <button
                                     onClick={() => {
-                                      const newBans = { ...adminSettings.bannedIps };
-                                      delete newBans[log.ip_address];
-                                      adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                      adminRiskAction('unban', log.ip_address);
                                     }}
                                     className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20" title={`过期时间: ${banExpiry}`}>解封</button>
                                 ) : (
                                   <button
                                     onClick={() => {
-                                      const hoursStr = window.prompt(`需要封禁 IP ${log.ip_address} 多少小时？\n输入 0 或取消可终止操作。`, '24');
+                                      const hoursStr = window.prompt(`需要封禁 IP ${log.ip_address} 多少小时？\n请输入 1~8760，取消可终止操作。`, '24');
                                       if (!hoursStr) return;
-                                      const hours = parseInt(hoursStr, 10);
-                                      if (isNaN(hours) || hours <= 0) return;
-                                      const newBans = { ...(adminSettings.bannedIps || {}), [log.ip_address]: Date.now() + hours * 3600 * 1000 };
-                                      adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                      const hours = Number(hoursStr);
+                                      if (!Number.isFinite(hours) || hours <= 0 || hours > 8760) return;
+                                      adminRiskAction('ban_ip', log.ip_address, hours);
                                     }}
                                     className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20">封禁</button>
                                 )}
@@ -2287,20 +2213,17 @@ export default function Home() {
                                 {isBanned ? (
                                   <button
                                     onClick={() => {
-                                      const newBans = { ...adminSettings.bannedIps };
-                                      delete newBans[ipHit.ip];
-                                      adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                      adminRiskAction('unban', ipHit.ip);
                                     }}
                                     className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20" title={`过期时间: ${banExpiry}`}>解封</button>
                                 ) : (
                                   <button
                                     onClick={() => {
-                                      const hoursStr = window.prompt(`需要封禁 IP ${ipHit.ip} 多少小时？\n输入 0 或取消可终止操作。`, '24');
+                                      const hoursStr = window.prompt(`需要封禁 IP ${ipHit.ip} 多少小时？\n请输入 1~8760，取消可终止操作。`, '24');
                                       if (!hoursStr) return;
-                                      const hours = parseInt(hoursStr, 10);
-                                      if (isNaN(hours) || hours <= 0) return;
-                                      const newBans = { ...(adminSettings.bannedIps || {}), [ipHit.ip]: Date.now() + hours * 3600 * 1000 };
-                                      adminAction('updateSettings', { settings: { bannedIps: newBans } });
+                                      const hours = Number(hoursStr);
+                                      if (!Number.isFinite(hours) || hours <= 0 || hours > 8760) return;
+                                      adminRiskAction('ban_ip', ipHit.ip, hours);
                                     }}
                                     className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20">封禁</button>
                                 )}
@@ -2954,67 +2877,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 设置弹窗 */}
-      {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowSettings(false)}>
-          <div className="w-full max-w-sm glass-strong rounded-2xl p-4 mx-4 animate-in" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="text-[12px] font-bold" style={{ color: 'var(--text-primary)' }}>⚙️ AList 服务端设置</div>
-                <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>仅在您当前浏览器有效，覆盖系统默认配置</div>
-              </div>
-              <button onClick={() => setShowSettings(false)} className="text-lg hover:opacity-100 opacity-60 transition-opacity">✕</button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>AList_URL [必须项]</label>
-                <input type="text" value={customUrl} onChange={e => setCustomUrl(e.target.value)} placeholder="如: https://pan.tantantan.tech:5245" className="w-full rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
-              </div>
-              <div>
-                <label className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>AList_Username [用于后台/直链获取]</label>
-                <input type="text" value={customUser} onChange={e => setCustomUser(e.target.value)} placeholder="可留空使用默认" className="w-full rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
-              </div>
-              <div>
-                <label className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>AList_Password</label>
-                <input type="password" value={customPass} onChange={e => setCustomPass(e.target.value)} placeholder="可留空使用默认" className="w-full rounded px-2.5 py-2 text-[11px] outline-none" style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
-              </div>
-            </div>
-
-            <div className="mt-5 flex gap-2">
-              <button
-                onClick={() => {
-                  if (customUrl) {
-                    localStorage.setItem('ALIST_CUSTOM_CONFIG', JSON.stringify({ url: customUrl, user: customUser, pass: customPass }));
-                    setAlistMsg('✅ 本地自定义配置已保存并生效');
-                  } else {
-                    localStorage.removeItem('ALIST_CUSTOM_CONFIG');
-                    setAlistMsg('✅ 已恢复默认后端配置');
-                  }
-                  setShowSettings(false);
-                  alistListDir('/');
-                }}
-                className="flex-1 bg-accent text-white text-[11px] font-bold py-2 rounded shadow hover:opacity-80"
-              >
-                保存配置
-              </button>
-              <button
-                onClick={() => {
-                  localStorage.removeItem('ALIST_CUSTOM_CONFIG');
-                  setCustomUrl(''); setCustomUser(''); setCustomPass('');
-                  setAlistMsg('✅ 已恢复默认配置');
-                  setShowSettings(false);
-                  alistListDir('/');
-                }}
-                className="px-3 text-[11px] py-2 rounded" style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)' }}
-              >
-                恢复默认
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 修改密码弹窗 */}
       {showChangePw && (
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowChangePw(false)}>
@@ -3461,10 +3323,6 @@ export default function Home() {
                     logUserAction('下载 - 阿里云服务器极速下载', alistDownloadModal!.filePath);
                     let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal!.filePath)}`;
                     if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
-                    const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-                    if (ccConfigStr) {
-                      downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
-                    }
                     window.open(downloadUrl, '_blank');
                     setAlistMsg('已启动阿里云服务器通道');
                     setAlistDownloadModal(null);
@@ -3589,10 +3447,6 @@ export default function Home() {
                     logUserAction('下载 - vercel服务器中转下载', alistDownloadModal!.filePath);
                     let downloadUrl = `/api/alist-download?path=${encodeURIComponent(alistDownloadModal!.filePath)}`;
                     if (userToken) downloadUrl += `&token=${encodeURIComponent(userToken)}`;
-                    const ccConfigStr = localStorage.getItem('ALIST_CUSTOM_CONFIG');
-                    if (ccConfigStr) {
-                      downloadUrl += `&c=${btoa(encodeURIComponent(ccConfigStr))}`;
-                    }
                     window.open(downloadUrl, '_blank');
                     setAlistDownloadModal(null);
                   }}

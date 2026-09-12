@@ -9,11 +9,12 @@ export async function POST(request: Request) {
     try {
         const ctx = getRequestContext(request);
 
-        // 设备码封禁检查（含 IP + 设备码双维度）
+        // 登录前检查 IP + 设备码；账号维度在解析 body 后再检查。
         const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
         const { banned, reason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
         if (banned) {
-            return NextResponse.json({ error: `您的${reason === 'device' ? '设备' : 'IP'}已被风控系统自动封禁，请稍后重试或联系管理员` }, { status: 403 });
+            const label = reason === 'device' ? '设备' : reason === 'account' ? '账号' : 'IP';
+            return denyAndLog(request, 'api_entity_banned', 403, `您的${label}已被风控系统自动封禁，请稍后重试或联系管理员`);
         }
 
         const body = await request.json();
@@ -42,6 +43,13 @@ export async function POST(request: Request) {
         const user = await findUser(username, password);
         if (!user) {
             return denyAndLog(request, 'api_login_failed', 401, '用户名或密码错误');
+        }
+
+        // 只有密码校验成功后才把账号纳入封禁判断，避免客户端伪造 username
+        // 造成账号关联、封禁状态泄露或误封。
+        const accountBan = await checkEntityBanned(ctx.ip, deviceCodeHash, user.role, user.username);
+        if (accountBan.banned) {
+            return denyAndLog(request, 'api_entity_banned', 403, '您的账号已被风控系统自动封禁，请稍后重试或联系管理员', user.username);
         }
 
         const token = signToken(user.username, user.role, durationHours);

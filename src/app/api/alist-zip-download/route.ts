@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
-import { verifyTokenWithLog } from '../_auth';
+import { verifyToken, verifyTokenWithLog } from '../_auth';
 import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/deny-tracker';
 import { hashDeviceCode } from '../../../lib/fingerprint';
 import {
-    applyBasePathForPermissions,
     getEffectivePermissionsForPath,
     getSettings,
     getUserPermissions,
 } from '../../../lib/users';
+import { isAlistPathScopeError, resolveScopedAlistPath } from '../../../lib/path-scope';
 
 export const maxDuration = 300; // Vercel: max 300s for streaming
 
@@ -43,14 +43,10 @@ async function getAlistToken(url: string, user: string, pass: string): Promise<s
 import { getAllFilesInDir } from '../../../lib/alist-utils';
 
 export async function GET(request: Request) {
+    let requestUsername: string | undefined;
     try {
         const ctx = getRequestContext(request);
         const deviceCodeHash = hashDeviceCode(ctx.deviceCode || '');
-        const { banned, reason: banReason } = await checkEntityBanned(ctx.ip, deviceCodeHash);
-        if (banned) {
-            return NextResponse.json({ code: 403, message: `您的${banReason === 'device' ? '设备' : 'IP'}已被禁止访问` }, { status: 403 });
-        }
-
         const { searchParams } = new URL(request.url);
         const pathsParam = searchParams.get('paths');
         const tokenParam = searchParams.get('token');
@@ -69,17 +65,27 @@ export async function GET(request: Request) {
 
         // Verify user
         const authHeader = request.headers.get('authorization') || (tokenParam ? `Bearer ${tokenParam}` : undefined);
-        const user = verifyTokenWithLog(authHeader, ctx);
+        const tokenUser = verifyToken(authHeader);
+        const { banned, reason: banReason } = await checkEntityBanned(
+            ctx.ip, deviceCodeHash, tokenUser?.role, tokenUser?.username,
+        );
+        if (banned) {
+            const label = banReason === 'device' ? '设备' : banReason === 'account' ? '账号' : 'IP';
+            return denyAndLog(request, 'api_entity_banned', 403, `您的${label}已被禁止访问`, tokenUser?.username);
+        }
+
+        const user = tokenUser || verifyTokenWithLog(authHeader, ctx);
         if (!user) {
             return NextResponse.json({ error: '请先登录' }, { status: 401 });
         }
+        requestUsername = user.username;
 
         // Check permissions (顶层跳过，子文件在预扫描时逐个检查)
         const basePerms = await getUserPermissions(user.username, user.role);
         let deniedCount = 0;
 
         for (const path of paths) {
-            const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
+            const absolutePath = resolveScopedAlistPath(path, basePerms.basePath);
             const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, absolutePath);
 
             if (!pathPerms.view || !pathPerms.download) {
@@ -108,7 +114,7 @@ export async function GET(request: Request) {
         const allEntries: Array<{ pathName: string; absolutePath: string; isDir: boolean; sign?: string; files: FileEntry[] }> = [];
 
         for (const path of paths) {
-            const absolutePath = applyBasePathForPermissions(path, basePerms.basePath);
+            const absolutePath = resolveScopedAlistPath(path, basePerms.basePath);
             const pathName = path.split('/').pop() || 'folder';
 
             let getRes = null;
@@ -125,10 +131,11 @@ export async function GET(request: Request) {
             if (isDir) {
                 const rawFiles = await getAllFilesInDir(url, aListToken, absolutePath);
                 for (const f of rawFiles) {
-                    const fp = await getEffectivePermissionsForPath(user.username, user.role, f.path);
+                    const filePath = resolveScopedAlistPath(f.path, basePerms.basePath);
+                    const fp = await getEffectivePermissionsForPath(user.username, user.role, filePath);
                     if (fp.download === false) { totalSkipped++; continue; }
-                    const relativePath = f.path.replace(absolutePath, pathName).replace(/^\//, '').replace(/\\/g, '/');
-                    files.push({ path: f.path, size: f.size, name: f.name, sign: f.sign, relativePath });
+                    const relativePath = filePath.replace(absolutePath, pathName).replace(/^\//, '').replace(/\\/g, '/');
+                    files.push({ path: filePath, size: f.size, name: f.name, sign: f.sign, relativePath });
                 }
                 if (totalSkipped > 0) console.log(`[ZIP] ${pathName}: 跳过 ${totalSkipped} 个被禁止下载的文件`);
             } else {
@@ -264,6 +271,9 @@ export async function GET(request: Request) {
         return new NextResponse(stream, { status: 200, headers: responseHeaders });
     } catch (error: any) {
         console.error('[ZIP] 初始化错误:', error);
+        if (isAlistPathScopeError(error)) {
+            return denyAndLog(request, 'api_path_scope_denied', 403, '请求路径不在允许范围内', requestUsername);
+        }
         return new Response(`错误: ${error?.message}`, { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     }
 }
