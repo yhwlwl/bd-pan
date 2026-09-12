@@ -15,4 +15,6 @@ CREATE INDEX IF NOT EXISTS idx_deny_events_ip_reason
 -- 普通成功操作也参与 IP/设备/账号关联查询，补齐三类索引。
 CREATE INDEX IF NOT EXISTS idx_action_logs_username ON bdpan_action_logs(username, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_action_logs_ip ON bdpan_action_logs(ip, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_action_logs_device_code ON bdpan_action_logs(device_code, created_at DESC);
+-- 历史 device_code 可能保存过原始长字符串，普通 B-tree 会超过索引行大小上限；
+-- Hash 索引仍支持当前按 device_code 等值查询，且不会改写历史数据。
+CREATE INDEX IF NOT EXISTS idx_action_logs_device_code ON bdpan_action_logs USING hash (device_code);
