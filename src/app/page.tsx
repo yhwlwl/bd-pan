@@ -5,7 +5,16 @@ import CHANGELOG_DATA from '../data/changelog.json';
 import { hasAnyMgViewPermission } from '../lib/mg-permissions';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '');
+const CONFIGURED_API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '');
+
+// Keep API calls on the deployment the user is currently visiting.
+// The server-hosted build lives under /pan, while Vercel should use same-origin /api/*.
+// This prevents a stale NEXT_PUBLIC_API_BASE from sending Vercel users to the old server.
+const API_BASE = typeof window === 'undefined'
+  ? CONFIGURED_API_BASE
+  : window.location.hostname === 'pan.tantantan.tech' && window.location.pathname.startsWith('/pan')
+    ? '/pan'
+    : '';
 
 type Role = 'admin' | 'manager' | 'guest';
 type Theme = 'light' | 'dark';
