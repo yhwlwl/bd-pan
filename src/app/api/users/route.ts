@@ -27,7 +27,6 @@ const SETTING_FIELD_OPERATIONS: Record<string, string[]> = {
     hideAlistButton: ['settings.global'],
     sessionDurationHours: ['settings.global'],
     refreshInterval: ['settings.global'],
-    downloadChannel: ['settings.global'],
     downloadModes: ['settings.global'],
     disableThirdDownload: ['settings.global'],
     siteTitle: ['settings.appearance'],
@@ -64,9 +63,9 @@ function sanitizeSettings(
     };
 
     if (canMgView(auth, 'settings.global')) {
-        copy(['enableGuestMode', 'hideAlistButton', 'sessionDurationHours', 'refreshInterval', 'downloadChannel', 'downloadModes', 'disableThirdDownload']);
+        copy(['enableGuestMode', 'hideAlistButton', 'sessionDurationHours', 'refreshInterval', 'downloadModes', 'disableThirdDownload']);
     }
-    if (canMgView(auth, 'downloads.viewChannels')) copy(['downloadChannel', 'downloadModes']);
+    if (canMgView(auth, 'downloads.viewChannels')) copy(['downloadModes']);
     if (canMgView(auth, 'settings.appearance')) copy(['siteTitle', 'siteSubtitle', 'siteFooter', 'defaultViewMode', 'textPreviewMaxMB']);
     if (canMgView(auth, 'settings.loginLimits')) copy(['maxFailedLogins', 'failedLoginWindowMinutes', 'maxConcurrentSessions']);
     if (canMgView(auth, 'settings.fileLimits')) copy(['maxBatchDownload', 'maxUploadSizeMB']);
