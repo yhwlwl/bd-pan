@@ -20,4 +20,4 @@ jobs:
             git pull
             npm install
             npm run build
-            pm2 restart bdpan
+            pm2 restart bd-pan
