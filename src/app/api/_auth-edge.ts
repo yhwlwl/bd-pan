@@ -3,8 +3,9 @@ import type { Role } from '../../lib/users';
 
 const TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 
-function getSecret() {
-    return process.env.ADMIN_TOKEN_SECRET || '***REDACTED***';
+function getSecret(): string | null {
+    const secret = process.env.ADMIN_TOKEN_SECRET?.trim();
+    return secret || null;
 }
 
 async function hmacSign(data: string, secret: string): Promise<string> {
@@ -23,7 +24,7 @@ export interface TokenPayload {
 
 export async function verifyTokenEdge(authHeader?: string): Promise<TokenPayload | null> {
     const secret = getSecret();
-    if (!authHeader) return null;
+    if (!secret || !authHeader) return null;
 
     const parts = authHeader.split(' ');
     if (parts.length !== 2 || parts[0] !== 'Bearer') return null;
