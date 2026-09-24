@@ -75,7 +75,6 @@ export interface GlobalSettings {
     permissions?: Record<string, UserPermissions>;
     filePermissionRules?: FilePermissionRule[];
     disableThirdDownload?: boolean;
-    downloadChannel?: 'ecs' | 'frp';
     downloadModes?: {
         ecs: DownloadModeState;
         cf: DownloadModeState;
@@ -206,7 +205,6 @@ export async function getSettings(): Promise<GlobalSettings> {
         disableThirdDownload: false,
         hideAlistButton: true,
         sessionDurationHours: 8,
-        downloadChannel: 'ecs',
         downloadModes: {
             ecs: 'enabled',
             cf: 'enabled',
@@ -233,7 +231,6 @@ export async function getSettings(): Promise<GlobalSettings> {
         filePermissionRules: Array.isArray(val.filePermissionRules) ? (val.filePermissionRules as FilePermissionRule[]) : [],
         disableThirdDownload: legacyDisableThird,
         hideAlistButton: typeof val.hideAlistButton === 'boolean' ? val.hideAlistButton : true,
-        downloadChannel: val.downloadChannel === 'frp' ? 'frp' : 'ecs',
         downloadModes: {
             ecs: dlModes.ecs || 'enabled',
             cf: dlModes.cf || 'enabled',
