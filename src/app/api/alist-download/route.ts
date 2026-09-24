@@ -13,9 +13,6 @@ import { encodeAlistPathForUrl, isAlistPathScopeError, resolveScopedAlistPath } 
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
 const ECS_PASS = process.env.ALIST_PASSWORD || '';
-const FRP_URL = (process.env.NEXT_PUBLIC_ALIST_URL_FALLBACK || 'https://frp-gap.com:37492').replace(/\/+$/, '');
-const FRP_USER = process.env.ALIST_USERNAME_FALLBACK || '';
-const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 
 const tokenCache = new Map<string, { token: string; expiry: number }>();
 
@@ -96,10 +93,9 @@ export async function GET(request: Request) {
         }
 
         const settings = await getSettings();
-        const channel = settings.downloadChannel || 'ecs';
-        const url = channel === 'ecs' ? ECS_URL : FRP_URL;
-        const aUser = channel === 'ecs' ? ECS_USER : FRP_USER;
-        const aPass = channel === 'ecs' ? ECS_PASS : FRP_PASS;
+        const url = ECS_URL;
+        const aUser = ECS_USER;
+        const aPass = ECS_PASS;
 
         const token = await getAlistToken(url, aUser, aPass);
         const scopedPath = absolutePath;
