@@ -106,7 +106,7 @@ export function AdminProvider({
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [adminStats, setAdminStats] = useState<any>(null);
   const [denyDashboard, setDenyDashboard] = useState<any>(null);
-  const [adminSettings, setAdminSettings] = useState<any>({ enableGuestMode: true, permissions: {}, downloadChannel: "ecs" });
+  const [adminSettings, setAdminSettings] = useState<any>({ enableGuestMode: true, permissions: {} });
   const [globalDownloadModes, setGlobalDownloadModes] = useState<any>({});
   const [adminMsg, setAdminMsg] = useState<string | null>(null);
   const [adminDataSource, setAdminDataSource] = useState<"ecs" | "supabase">("ecs");
