@@ -1,4 +1,5 @@
-﻿import { pgClient, pgUpsert, pgInsert, pgDelete, pgUpdate, pgFetch } from './pg-adapter';
+﻿import crypto from 'crypto';
+import { pgClient, pgUpsert, pgInsert, pgDelete, pgUpdate, pgFetch } from './pg-adapter';
 
 export type Role = 'admin' | 'manager' | 'guest';
 
@@ -74,7 +75,6 @@ export interface GlobalSettings {
     permissions?: Record<string, UserPermissions>;
     filePermissionRules?: FilePermissionRule[];
     disableThirdDownload?: boolean;
-    downloadChannel?: 'ecs' | 'frp';
     downloadModes?: {
         ecs: DownloadModeState;
         cf: DownloadModeState;
@@ -119,6 +119,33 @@ export interface GlobalSettings {
 export type UserWithPermissions = Omit<User, 'password'> & { permissions: UserPermissions };
 
 const db = pgClient();
+
+const PASSWORD_PREFIX = 'scrypt$';
+const PASSWORD_KEYLEN = 64;
+
+function hashPassword(password: string): string {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const derived = crypto.scryptSync(password, salt, PASSWORD_KEYLEN).toString('hex');
+    return `${PASSWORD_PREFIX}${salt}$${derived}`;
+}
+
+function verifyPassword(password: string, stored: string): boolean {
+    if (stored.startsWith(PASSWORD_PREFIX)) {
+        const parts = stored.split('$');
+        if (parts.length !== 3) return false;
+        const [, salt, expectedHex] = parts;
+        if (!salt || !expectedHex || expectedHex.length % 2 !== 0) return false;
+        const expected = Buffer.from(expectedHex, 'hex');
+        if (expected.length === 0) return false;
+        const actual = crypto.scryptSync(password, salt, expected.length);
+        return crypto.timingSafeEqual(actual, expected);
+    }
+
+    // Legacy plaintext compatibility: successful login upgrades the row below.
+    const a = Buffer.from(password, 'utf8');
+    const b = Buffer.from(stored, 'utf8');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 // 表名前缀（多站数据隔离，在 .env.local 设 DB_TABLE_PREFIX=wlm_）
 const PREFIX = process.env.DB_TABLE_PREFIX || '';
@@ -178,7 +205,6 @@ export async function getSettings(): Promise<GlobalSettings> {
         disableThirdDownload: false,
         hideAlistButton: true,
         sessionDurationHours: 8,
-        downloadChannel: 'ecs',
         downloadModes: {
             ecs: 'enabled',
             cf: 'enabled',
@@ -205,7 +231,6 @@ export async function getSettings(): Promise<GlobalSettings> {
         filePermissionRules: Array.isArray(val.filePermissionRules) ? (val.filePermissionRules as FilePermissionRule[]) : [],
         disableThirdDownload: legacyDisableThird,
         hideAlistButton: typeof val.hideAlistButton === 'boolean' ? val.hideAlistButton : true,
-        downloadChannel: val.downloadChannel === 'frp' ? 'frp' : 'ecs',
         downloadModes: {
             ecs: dlModes.ecs || 'enabled',
             cf: dlModes.cf || 'enabled',
@@ -341,9 +366,19 @@ export async function findUser(username: string, password: string): Promise<Omit
     if (!db) return null;
 
     const enc = encodeURIComponent;
-    const { data: rows, error } = await pgFetch<Omit<User, 'password'>>('GET', `${TABLE_USERS}?select=username,role&username=eq.${enc(username)}&password=eq.${enc(password)}&limit=1`);
+    const { data: rows, error } = await pgFetch<User>('GET', `${TABLE_USERS}?select=username,password,role&username=eq.${enc(username)}&limit=1`);
     if (error || !rows || rows.length === 0) return null;
-    return rows[0];
+
+    const user = rows[0];
+    if (!verifyPassword(password, user.password)) return null;
+
+    // Transparently migrate legacy plaintext rows after a successful login.
+    if (!user.password.startsWith(PASSWORD_PREFIX)) {
+        const { error: migrateError } = await pgUpdate(TABLE_USERS, 'username', user.username, { password: hashPassword(password) });
+        if (migrateError) console.warn('[users] password hash migration failed:', migrateError.message);
+    }
+
+    return { username: user.username, role: user.role };
 }
 
 export async function addUser(username: string, password: string, role: Role): Promise<{ ok: boolean; error?: string }> {
@@ -353,7 +388,7 @@ export async function addUser(username: string, password: string, role: Role): P
     const { data: existing } = await pgFetch('GET', `${TABLE_USERS}?select=username&username=eq.${encodeURIComponent(username)}&limit=1`);
     if (existing && existing.length > 0) return { ok: false, error: '用户名已存在' };
 
-    const { error } = await pgInsert(TABLE_USERS, { username, password, role });
+    const { error } = await pgInsert(TABLE_USERS, { username, password: hashPassword(password), role });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
 }
@@ -385,19 +420,19 @@ export async function updateAdminPassword(newPassword: string): Promise<{ ok: bo
     if (!db) return { ok: false, error: 'PG_URL 未配置' };
     if (!newPassword) return { ok: false, error: '密码不能为空' };
 
-    const { error } = await pgUpdate(TABLE_USERS, 'username', 'admin', { password: newPassword });
+    const { error } = await pgUpdate(TABLE_USERS, 'username', 'admin', { password: hashPassword(newPassword) });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
 }
 
-/** 用户自助修改自己的密码：先校验当前密码，再更新（明文存储，与现有登录一致） */
+/** 用户自助修改自己的密码：先校验当前密码，再以 scrypt 哈希更新。 */
 export async function changeUserPassword(username: string, oldPassword: string, newPassword: string): Promise<{ ok: boolean; error?: string }> {
     if (!db) return { ok: false, error: '数据库未配置' };
     if (!username || !newPassword) return { ok: false, error: '参数不完整' };
-    // 校验旧密码（明文比对，与 findUser 登录逻辑一致）
+    // 校验旧密码；findUser 同时兼容并迁移历史明文记录
     const user = await findUser(username, oldPassword);
     if (!user) return { ok: false, error: '当前密码不正确' };
-    const { error } = await pgUpdate(TABLE_USERS, 'username', username, { password: newPassword });
+    const { error } = await pgUpdate(TABLE_USERS, 'username', username, { password: hashPassword(newPassword) });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
 }

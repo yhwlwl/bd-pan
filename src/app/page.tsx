@@ -71,7 +71,6 @@ export interface GlobalSettings {
   permissions?: Record<string, UserPermissions>;
   filePermissionRules?: FilePermissionRule[];
   disableThirdDownload?: boolean;
-  downloadChannel?: 'ecs' | 'frp';
   downloadModes?: {
     ecs: DownloadModeState;
     cf: DownloadModeState;
@@ -194,7 +193,6 @@ export default function Home() {
   const [adminSettings, setAdminSettings] = useState<GlobalSettings>({
     enableGuestMode: true,
     permissions: {},
-    downloadChannel: 'ecs',
     hideAlistButton: true,
   });
   const [globalDownloadModes, setGlobalDownloadModes] = useState<GlobalSettings['downloadModes']>({
@@ -202,7 +200,6 @@ export default function Home() {
   });
   const [globalAnnouncement, setGlobalAnnouncement] = useState('');
   const [announcements, setAnnouncements] = useState<any[]>();
-  const [downloadChannel, setDownloadChannel] = useState<'ecs' | 'frp'>('ecs');
   const [newUserName, setNewUserName] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
   const [newUserRole, setNewUserRole] = useState<Role>('manager');
@@ -596,15 +593,11 @@ export default function Home() {
           if (data.downloadModes) setGlobalDownloadModes(data.downloadModes);
           if (data.announcements) setAnnouncements(data.announcements);
           else if (data.announcement) { setGlobalAnnouncement(data.announcement); setAnnouncements([{ id: "legacy", content: data.announcement, active: true, targetAudience: "all", displayLocation: "all" }]); }
-          if (data.downloadChannel === 'ecs' || data.downloadChannel === 'frp') {
-            setDownloadChannel(data.downloadChannel);
-          }
           // 同步全局设置到本地状态，对所有用户生效
           setAdminSettings(prev => ({
             ...prev,
             enableGuestMode: data.enableGuestMode ?? prev.enableGuestMode,
             hideAlistButton: data.hideAlistButton ?? prev.hideAlistButton,
-            downloadChannel: (data.downloadChannel as any) || prev.downloadChannel,
             downloadModes: data.downloadModes || prev.downloadModes,
             announcements: data.announcements || prev.announcements,
             announcement: data.announcement || prev.announcement,
@@ -1536,9 +1529,6 @@ export default function Home() {
         setAdminSettings(data.settings);
         if (data.settings.downloadModes) {
           setGlobalDownloadModes(data.settings.downloadModes);
-        }
-        if (data.settings.downloadChannel === 'ecs' || data.settings.downloadChannel === 'frp') {
-          setDownloadChannel(data.settings.downloadChannel);
         }
       }
       if (sData.code === 200 && sData.data) {
@@ -2517,24 +2507,6 @@ export default function Home() {
                     </div>
                   );
                 })}
-              </div>
-              <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-                <div>
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>下载/上传渠道</span>
-                  <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-faint)' }}>ECS = 阿里云极速线路 · FRP = NAS 备用</div>
-                </div>
-                <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-                  <button
-                    onClick={() => { adminAction('updateSettings', { settings: { downloadChannel: 'ecs' } }); setDownloadChannel('ecs'); }}
-                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${downloadChannel === 'ecs' ? 'bg-pink-500 text-white' : 'text-zinc-400 hover:text-zinc-200'
-                      }`}
-                  >🚀 ECS</button>
-                  <button
-                    onClick={() => { adminAction('updateSettings', { settings: { downloadChannel: 'frp' } }); setDownloadChannel('frp'); }}
-                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${downloadChannel === 'frp' ? 'bg-blue-500 text-white' : 'text-zinc-400 hover:text-zinc-200'
-                      }`}
-                  >📡 FRP</button>
-                </div>
               </div>
               <div className="pt-3 mt-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
                 <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>登录保持时长（小时）</span>

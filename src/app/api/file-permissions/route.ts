@@ -15,9 +15,6 @@ import { hashDeviceCode } from '../../../lib/fingerprint';
 const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
 const ECS_PASS = process.env.ALIST_PASSWORD || '';
-const FRP_URL = (process.env.NEXT_PUBLIC_ALIST_URL_FALLBACK || 'https://frp-gap.com:37492').replace(/\/+$/, '');
-const FRP_USER = process.env.ALIST_USERNAME_FALLBACK || '';
-const FRP_PASS = process.env.ALIST_PASSWORD_FALLBACK || '';
 
 const tokenCache = new Map<string, { token: string; expiry: number }>();
 
@@ -113,10 +110,7 @@ export async function POST(request: Request) {
 
             const rootPath = (scopePath || '/').replace(/\/+$/, '') || '/';
             const settings = await getSettings();
-            const channel = settings.downloadChannel || 'ecs';
-            const config = channel === 'ecs'
-                ? { url: ECS_URL, user: ECS_USER, pass: ECS_PASS }
-                : { url: FRP_URL, user: FRP_USER, pass: FRP_PASS };
+            const config = { url: ECS_URL, user: ECS_USER, pass: ECS_PASS };
 
             let token = '';
             try {
