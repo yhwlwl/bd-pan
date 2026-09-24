@@ -10,7 +10,6 @@ export async function GET() {
     return NextResponse.json({
       disableThirdDownload: settings.disableThirdDownload === true,
       enableGuestMode: settings.enableGuestMode,
-      downloadChannel: settings.downloadChannel || 'ecs',
       hideAlistButton: settings.hideAlistButton === true,
       downloadModes: settings.downloadModes || {
         ecs: 'enabled', cf: 'enabled', raw: 'enabled', vercel: 'disabled', direct302: 'enabled'
