@@ -30,12 +30,14 @@ export interface AuthContext {
   ua: string;
 }
 
-function getSecret() {
-    return process.env.ADMIN_TOKEN_SECRET || '***REDACTED***';
+function getSecret(): string | null {
+    const secret = process.env.ADMIN_TOKEN_SECRET?.trim();
+    return secret || null;
 }
 
 export function signToken(username: string, role: Role, durationHours?: number): string | null {
     const secret = getSecret();
+    if (!secret) return null;
     const ttl = (durationHours && durationHours > 0 ? durationHours : 8) * 60 * 60 * 1000;
     const payload = {
         iat: Date.now(),
@@ -60,7 +62,7 @@ export interface TokenPayload {
 
 export function verifyToken(authHeader?: string): TokenPayload | null {
     const secret = getSecret();
-    if (!authHeader) return null;
+    if (!secret || !authHeader) return null;
 
     const parts = authHeader.split(' ');
     if (parts.length !== 2 || parts[0] !== 'Bearer') return null;
