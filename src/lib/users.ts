@@ -1,5 +1,6 @@
-﻿import crypto from 'crypto';
+import crypto from 'crypto';
 import { pgClient, pgUpsert, pgInsert, pgDelete, pgUpdate, pgFetch } from './pg-adapter';
+import { MAX_BATCH_USERS, validatePassword, validateUsername } from './batch-users';
 
 export type Role = 'admin' | 'manager' | 'guest';
 
@@ -127,6 +128,17 @@ function hashPassword(password: string): string {
     const salt = crypto.randomBytes(16).toString('hex');
     const derived = crypto.scryptSync(password, salt, PASSWORD_KEYLEN).toString('hex');
     return `${PASSWORD_PREFIX}${salt}$${derived}`;
+}
+
+/** 异步版本：批量导入时避免 scrypt 同步阻塞事件循环。产物格式与 hashPassword 一致。 */
+function hashPasswordAsync(password: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const salt = crypto.randomBytes(16).toString('hex');
+        crypto.scrypt(password, salt, PASSWORD_KEYLEN, (error, derived) => {
+            if (error) reject(error);
+            else resolve(`${PASSWORD_PREFIX}${salt}$${derived.toString('hex')}`);
+        });
+    });
 }
 
 function verifyPassword(password: string, stored: string): boolean {
@@ -383,7 +395,10 @@ export async function findUser(username: string, password: string): Promise<Omit
 
 export async function addUser(username: string, password: string, role: Role): Promise<{ ok: boolean; error?: string }> {
     if (!db) return { ok: false, error: 'Supabase 未配置' };
-    if (!username || !password) return { ok: false, error: '用户名和密码不能为空' };
+    const usernameError = validateUsername(username);
+    if (usernameError) return { ok: false, error: usernameError };
+    const passwordError = validatePassword(password);
+    if (passwordError) return { ok: false, error: passwordError };
 
     const { data: existing } = await pgFetch('GET', `${TABLE_USERS}?select=username&username=eq.${encodeURIComponent(username)}&limit=1`);
     if (existing && existing.length > 0) return { ok: false, error: '用户名已存在' };
@@ -391,6 +406,80 @@ export async function addUser(username: string, password: string, role: Role): P
     const { error } = await pgInsert(TABLE_USERS, { username, password: hashPassword(password), role });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
+}
+
+export interface BatchAddSummary {
+    created: string[];
+    /** 已存在或批次内重复，未写入 */
+    skipped: Array<{ username: string; reason: string }>;
+    /** 格式不合法或写库失败 */
+    failed: Array<{ username: string; reason: string }>;
+    error?: string;
+}
+
+/**
+ * 批量创建用户：先一次性读出已占用的用户名，本地完成校验/去重，
+ * 再用单条 bulk insert 写入；bulk 失败时退回逐条写入，以便报告具体是谁失败。
+ */
+export async function addUserBatch(
+    entries: Array<{ username?: unknown; password?: unknown }>,
+    role: Role,
+): Promise<BatchAddSummary> {
+    const summary: BatchAddSummary = { created: [], skipped: [], failed: [] };
+    if (!db) return { ...summary, error: 'Supabase 未配置' };
+    if (!Array.isArray(entries) || entries.length === 0) return { ...summary, error: '没有可导入的用户' };
+    if (entries.length > MAX_BATCH_USERS) return { ...summary, error: `单次最多导入 ${MAX_BATCH_USERS} 个用户` };
+
+    const { data: rows, error: listError } = await pgFetch<{ username: string }>('GET', `${TABLE_USERS}?select=username`);
+    if (listError) return { ...summary, error: listError.message };
+
+    const existing = new Set<string>((rows || []).map((row) => String(row.username)));
+    const accepted: Array<{ username: string; password: string }> = [];
+
+    for (const entry of entries) {
+        const username = typeof entry?.username === 'string' ? entry.username.trim() : '';
+        const password = typeof entry?.password === 'string' ? entry.password : '';
+
+        const usernameError = validateUsername(username);
+        if (usernameError) {
+            summary.failed.push({ username: username || '(空)', reason: usernameError });
+            continue;
+        }
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+            summary.failed.push({ username, reason: passwordError });
+            continue;
+        }
+        if (existing.has(username)) {
+            summary.skipped.push({ username, reason: '用户名已存在或批次内重复' });
+            continue;
+        }
+        existing.add(username);
+        accepted.push({ username, password });
+    }
+
+    if (accepted.length === 0) return summary;
+
+    const records = await Promise.all(accepted.map(async (item) => ({
+        username: item.username,
+        password: await hashPasswordAsync(item.password),
+        role,
+    })));
+
+    const bulk = await pgInsert(TABLE_USERS, records);
+    if (!bulk.error) {
+        summary.created.push(...records.map((record) => record.username));
+        return summary;
+    }
+
+    // bulk 失败（约束冲突、单条格式问题等）：逐条重试以定位失败项
+    console.warn('[users] bulk insert failed, falling back to per-row:', bulk.error.message);
+    for (const record of records) {
+        const single = await pgInsert(TABLE_USERS, record);
+        if (single.error) summary.failed.push({ username: record.username, reason: single.error.message });
+        else summary.created.push(record.username);
+    }
+    return summary;
 }
 
 export async function removeUser(username: string): Promise<{ ok: boolean; error?: string }> {

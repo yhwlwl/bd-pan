@@ -12,6 +12,12 @@ const APP_SOURCE = process.env.NEXT_PUBLIC_APP_SOURCE || "pan";
 
 // ============ 类型 ============
 
+export interface AdminActionResult {
+  ok: boolean;
+  data?: any;
+  error?: string;
+}
+
 export interface AdminContextValue {
   token: string | null;
   role: string | null;
@@ -37,6 +43,8 @@ export interface AdminContextValue {
   // 操作
   fetchAllData: () => Promise<void>;
   adminAction: (action: string, body: any) => Promise<boolean>;
+  /** 同 adminAction，但返回完整响应，便于调用方展示逐条结果（如批量添加） */
+  adminActionDetailed: (action: string, body: any) => Promise<AdminActionResult>;
   setAdminDataSource: (v: "ecs" | "supabase") => void;
   setAdminPageSource: (v: string) => void;
   setAdminMsg: (v: string | null) => void;
@@ -181,9 +189,9 @@ export function AdminProvider({
 
   // ─── adminAction（完全复用现有 POST /api/users） ───
 
-  const adminAction = useCallback(
-    async (action: string, body: any): Promise<boolean> => {
-      if (!token) return false;
+  const runAdminAction = useCallback(
+    async (action: string, body: any): Promise<AdminActionResult> => {
+      if (!token) return { ok: false, error: '未登录' };
       setAdminMsg(null);
       try {
         const res = await fetch(`${API_BASE}/api/users`, {
@@ -196,35 +204,48 @@ export function AdminProvider({
         });
         const data = await res.json();
         if (!res.ok) {
-          setAdminMsg(`❌ ${data.error}`);
-          return false;
+          const error = data?.error || '请求失败';
+          setAdminMsg(`❌ ${error}`);
+          return { ok: false, error, data };
         }
         if (data.users) setAdminUsers(data.users);
         if (data.settings) {
           setAdminSettings(data.settings);
           if (data.settings.downloadModes) setGlobalDownloadModes(data.settings.downloadModes);
         }
-        setAdminMsg("操作成功");
         // 操作日志
         logAdminAction(
           action === "updateSettings" ? "修改设置" :
           action === "add" ? "添加用户" :
+          action === "addBatch" ? "批量添加用户" :
           action === "remove" ? "删除用户" :
           action === "updateRole" ? "修改用户角色" :
           action === "updatePermissions" ? "修改用户权限" :
           action === "changeAdminPassword" ? "修改管理员密码" : action,
           action === "updateSettings" ? JSON.stringify(body.settings || {}).substring(0, 200) :
-          action === "add" ? body.username : action === "remove" ? body.username :
+          action === "add" ? body.username :
+          action === "addBatch" ? `角色 ${body.role}，提交 ${Array.isArray(body.entries) ? body.entries.length : 0} 个` :
+          action === "remove" ? body.username :
           action === "updateRole" ? `${body.username} → ${body.role}` :
           action === "updatePermissions" ? body.username : ""
         );
-        return true;
+        return { ok: true, data };
       } catch {
         setAdminMsg("接口异常");
-        return false;
+        return { ok: false, error: '接口异常' };
       }
     },
     [token, logAdminAction]
+  );
+
+  // 兼容旧调用方：只关心成功/失败，成功时统一提示"操作成功"
+  const adminAction = useCallback(
+    async (action: string, body: any): Promise<boolean> => {
+      const result = await runAdminAction(action, body);
+      if (result.ok) setAdminMsg("操作成功");
+      return result.ok;
+    },
+    [runAdminAction]
   );
 
   // ─── 权限检查 ───
@@ -282,6 +303,7 @@ export function AdminProvider({
     loading,
     fetchAllData,
     adminAction,
+    adminActionDetailed: runAdminAction,
     setAdminDataSource,
     setAdminPageSource,
     setAdminMsg,

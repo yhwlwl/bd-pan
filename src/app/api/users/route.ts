@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getMgAuthContext, canMgModify, canMgView } from '../_mg-auth';
-import { getUsers, addUser, removeUser, updateUserRole, getSettings, getUserPermissions, updateSettings, updateAdminPassword } from '../../../lib/users';
+import { getUsers, addUser, addUserBatch, removeUser, updateUserRole, getSettings, getUserPermissions, updateSettings, updateAdminPassword } from '../../../lib/users';
+import { MAX_BATCH_USERS } from '../../../lib/batch-users';
 import type { FilePermissionRule, GlobalSettings, Role, UserPermissions } from '../../../lib/users';
 import { hasAnyMgViewPermission } from '../../../lib/mg-permissions';
 import { canAssignFilePermissionTarget, filterRuleUsersByActor } from '../../../lib/users';
@@ -237,6 +238,24 @@ export async function POST(request: Request) {
                 const result = await addUser(username, password, role);
                 if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
                 return NextResponse.json({ ok: true, ...(await getUsersResponse(auth, await getSettings())) });
+            }
+
+            case 'addBatch': {
+                if (!requireModify('users.addUser')) return errorResponse('无添加用户权限');
+                const { entries, role } = body as { entries?: unknown; role?: Role };
+                if (!['admin', 'manager', 'guest'].includes(role as string)) return NextResponse.json({ error: '角色无效' }, { status: 400 });
+                if (role === 'admin' && auth.user.role !== 'admin') return errorResponse('无权创建管理员');
+                if (!Array.isArray(entries) || entries.length === 0) return NextResponse.json({ error: '没有可导入的用户' }, { status: 400 });
+                if (entries.length > MAX_BATCH_USERS) return NextResponse.json({ error: `单次最多导入 ${MAX_BATCH_USERS} 个用户` }, { status: 400 });
+                const summary = await addUserBatch(entries as Array<{ username?: unknown; password?: unknown }>, role as Role);
+                if (summary.error) return NextResponse.json({ error: summary.error }, { status: 400 });
+                return NextResponse.json({
+                    ok: true,
+                    created: summary.created,
+                    skipped: summary.skipped,
+                    failed: summary.failed,
+                    ...(await getUsersResponse(auth, await getSettings())),
+                });
             }
 
             case 'remove': {
