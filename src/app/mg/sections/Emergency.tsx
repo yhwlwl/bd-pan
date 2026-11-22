@@ -1,9 +1,11 @@
 "use client";
 
+import { businessFetch, getBusinessApiBase } from "../../../lib/business-deny-client";
+
 import { useState } from "react";
 import { useAdmin } from "../lib/admin-context";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
+const API_BASE = getBusinessApiBase();
 
 export default function Emergency() {
   const { adminStats, denyDashboard, adminSettings, adminAction, logAdminAction, fetchAllData, canModify, token, isAdmin } = useAdmin();
@@ -27,7 +29,7 @@ export default function Emergency() {
     // Step 1: 备份全部数据
     if (isAdmin) {
       try {
-        await fetch(`${API_BASE}/api/mg-backup`, {
+        await businessFetch(`${API_BASE}/api/mg-backup`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ label: "维护前自动备份" }),
@@ -108,7 +110,7 @@ export default function Emergency() {
     let successCount = 0;
     for (const ip of ips) {
       try {
-        const res = await fetch(`${API_BASE}/api/deny-stats`, {
+        const res = await businessFetch(`${API_BASE}/api/deny-stats`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ action: "ban_ip", entity_type: "ip", entity_value: ip, ban_hours: 1, mgOperation: "emergency.banAllIPs" }),

@@ -140,7 +140,14 @@ function normalizeRiskEntityValue(entityType: RiskEntityType, rawValue: unknown)
 /** 从 Request 对象统一提取上下文字段 */
 export function getRequestContext(request: Request): RequestContext {
   const ip = resolveRequestIp(request.headers);
-  const device = normalizeDeviceCode(request.headers.get('x-device-code'));
+  const fromCookie = request.headers.get('cookie')?.split(';')
+    .map(part => part.trim())
+    .find(part => part.startsWith('BDPAN_DEVICE_CODE='))
+    ?.slice('BDPAN_DEVICE_CODE='.length);
+  // The cookie is only a fallback for browser navigation. Like the original
+  // device header it is not an authentication credential.
+  const cookieDevice = fromCookie && /^wlm-v2-[a-z0-9-]{16,80}$/i.test(fromCookie) ? fromCookie : null;
+  const device = normalizeDeviceCode(request.headers.get('x-device-code') || cookieDevice);
 
   return {
     ip,

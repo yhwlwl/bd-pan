@@ -1,9 +1,11 @@
 "use client";
 
+import { businessFetch, getBusinessApiBase } from "../../../lib/business-deny-client";
+
 import { useState } from "react";
 import { useAdmin } from "../lib/admin-context";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/pan";
+const API_BASE = getBusinessApiBase();
 type EntityStatusFilter = "all" | "banned" | "warning" | "event_only" | "normal";
 
 export default function RiskControl() {
@@ -47,7 +49,7 @@ export default function RiskControl() {
         body.action === "ban_entity" ? "riskcontrol.ban" :
         body.action === "clear_score" ? "riskcontrol.clearScore" : ""
       );
-      const res = await fetch(`${API_BASE}/api/deny-stats`, {
+      const res = await businessFetch(`${API_BASE}/api/deny-stats`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...body, mgOperation }),

@@ -1,9 +1,11 @@
 "use client";
 
+import { businessFetch, getBusinessApiBase } from "../../lib/business-deny-client";
+
 import { useState } from "react";
 import { AdminProvider } from "./lib/admin-context";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/pan";
+const API_BASE = getBusinessApiBase();
 
 export default function MgLayout({ children }: { children: React.ReactNode }) {
   const [auth, setAuth] = useState<{
@@ -22,14 +24,14 @@ export default function MgLayout({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/login`, {
+      const res = await businessFetch(`${API_BASE}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: form.username, password: form.password }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        setError(data.error || `登录失败 (${res.status})`);
+        setError(data.message || data.error || `登录失败 (${res.status})`);
         setLoading(false);
         return;
       }
@@ -40,7 +42,7 @@ export default function MgLayout({ children }: { children: React.ReactNode }) {
         return;
       }
       // 记录登录日志
-      fetch(`${API_BASE}/api/log-action`, {
+      businessFetch(`${API_BASE}/api/log-action`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.token}` },
         body: JSON.stringify({
