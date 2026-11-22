@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import CHANGELOG_DATA from '../data/changelog.json';
 import { hasAnyMgViewPermission } from '../lib/mg-permissions';
+import { businessFetch, redirectBusinessBan } from '../lib/business-deny-client';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const CONFIGURED_API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '');
@@ -487,7 +488,7 @@ export default function Home() {
       if (dc) headers['X-Device-Code'] = dc;
     } catch {}
 
-    const res = await fetch(`${API_BASE}/api/alist`, {
+    const res = await businessFetch(`${API_BASE}/api/alist`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -547,15 +548,16 @@ export default function Home() {
         }
       }
 
-      // 风控检查（如果已登录，立即查风险分）
-      if (savedToken && savedRole) {
-        const dc = localStorage.getItem('BDPAN_DEVICE_CODE') || '';
-        fetch(`${API_BASE}/api/check-risk`, {
-          headers: dc ? { 'X-Device-Code': dc } : {},
-        }).then(r => r.json()).then(data => {
-          if (data.warning) setRiskWarning(data.warning);
-        }).catch(() => {});
-      }
+      // 未登录也检查 IP / 设备；登录状态由服务端校验，不能信任本地角色。
+      const riskHeaders: Record<string, string> = {};
+      if (savedToken) riskHeaders.Authorization = `Bearer ${savedToken}`;
+      businessFetch(`${API_BASE}/api/check-risk`, {
+        headers: riskHeaders, cache: 'no-store',
+      }).then(async r => {
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data.warning) setRiskWarning(data.warning);
+      }).catch(() => {});
 
       // 访客追踪
       fetch('https://ipapi.co/json/')
@@ -694,13 +696,13 @@ export default function Home() {
     setAuthLoading(true);
     setAuthError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/login`, {
+      const res = await businessFetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: uname, password: pwd }),
       });
       const data = await res.json();
-      if (!res.ok || !data.token) { logUserAction('登录', uname, 'failed', uname); setAuthError(data.error || '登录失败'); return; }
+      if (!res.ok || !data.token) { logUserAction('登录', uname, 'failed', uname); setAuthError(data.message || data.error || '登录失败'); return; }
       setUserToken(data.token);
       setUserRole(data.role);
       setUsername(data.username);
@@ -727,13 +729,13 @@ export default function Home() {
     setAuthLoading(true);
     setAuthError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/login`, {
+      const res = await businessFetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ guest: true }),
       });
       const data = await res.json();
-      if (!res.ok || !data.token) { logUserAction('登录 - 游客', '游客模式不可用', 'failed', 'guest'); setAuthError(data.error || '游客模式不可用'); return; }
+      if (!res.ok || !data.token) { logUserAction('登录 - 游客', '游客模式不可用', 'failed', 'guest'); setAuthError(data.message || data.error || '游客模式不可用'); return; }
       setUserToken(data.token);
       setUserRole(data.role);
       setUsername(data.username);
@@ -776,7 +778,7 @@ export default function Home() {
     if (newPw !== confirmPw) { setChangePwMsg({ type: 'err', text: '两次输入的新密码不一致' }); return; }
     setChangePwLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/change-password`, {
+      const res = await businessFetch(`${API_BASE}/api/change-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
         body: JSON.stringify({ oldPassword: oldPw, newPassword: newPw }),
@@ -1241,7 +1243,7 @@ export default function Home() {
     setT2Progress({ current: 0, total: 0, msg: '⏳ 正在获取文件列表...' });
 
     try {
-      const res = await fetch(`${API_BASE}/api/alist-batch-list?${params.toString()}`, { headers });
+      const res = await businessFetch(`${API_BASE}/api/alist-batch-list?${params.toString()}`, { headers });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
@@ -1307,7 +1309,7 @@ export default function Home() {
     if (userToken) headers['Authorization'] = `Bearer ${userToken}`;
 
     // 先预览（获取目录信息）
-    fetch(`${API_BASE}/api/alist-zip-preview?${params.toString()}`, { headers })
+    businessFetch(`${API_BASE}/api/alist-zip-preview?${params.toString()}`, { headers })
       .then(async res => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `权限不足 (${res.status})`);
@@ -1319,7 +1321,7 @@ export default function Home() {
           setAlistMsg(`[ZIP] ${data.dirs.length} 个目录，共 ${totalFiles} 个文件`);
           console.log(`[批量下载:T1] 目录数=${data.dirs.length}, 文件数=${totalFiles}`);
         }
-        fetch(`${API_BASE}/api/alist-zip-download?${params.toString()}`, headers)
+        businessFetch(`${API_BASE}/api/alist-zip-download?${params.toString()}`, headers)
           .then(async r => {
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const skipped = parseInt(r.headers.get('X-Skipped-Files') || '0', 10);
@@ -1467,7 +1469,7 @@ export default function Home() {
             }
           };
           xhr.onload = () => {
-            try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('响应解析失败')); }
+            try { const body = JSON.parse(xhr.responseText); redirectBusinessBan(xhr.status, body); resolve(body); } catch { reject(new Error('响应解析失败')); }
           };
           xhr.onerror = () => reject(new Error('网络异常'));
           xhr.send(file);
@@ -1510,16 +1512,16 @@ export default function Home() {
     try {
       // 非 admin 只拉统计数据（操作日志等）
       if (userRole !== 'admin') {
-        const statsRes = await fetch(`${API_BASE}/api/admin-stats?source=${source}&page_source=${adminPageSource}`, { headers: { 'Authorization': `Bearer ${userToken}` } });
+        const statsRes = await businessFetch(`${API_BASE}/api/admin-stats?source=${source}&page_source=${adminPageSource}`, { headers: { 'Authorization': `Bearer ${userToken}` } });
         const sData = await statsRes.json();
         if (sData.code === 200 && sData.data) setAdminStats(sData.data);
         return;
       }
       // admin 拉全部（含 deny 风控管理）
       const [usrRes, statsRes, denyRes] = await Promise.all([
-        fetch(`${API_BASE}/api/users`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-        fetch(`${API_BASE}/api/admin-stats?source=${source}&page_source=${adminPageSource}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-        fetch(`${API_BASE}/api/deny-stats`, { headers: { 'Authorization': `Bearer ${userToken}` } }).catch(() => null as any),
+        businessFetch(`${API_BASE}/api/users`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+        businessFetch(`${API_BASE}/api/admin-stats?source=${source}&page_source=${adminPageSource}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+        businessFetch(`${API_BASE}/api/deny-stats`, { headers: { 'Authorization': `Bearer ${userToken}` } }).catch(() => null as any),
       ]);
       const data = await usrRes.json();
       const sData = await statsRes.json();
@@ -1546,7 +1548,7 @@ export default function Home() {
     if (!userToken) return;
     setAdminMsg(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users`, {
+      const res = await businessFetch(`${API_BASE}/api/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
         body: JSON.stringify({ action, ...body }),
@@ -1576,7 +1578,7 @@ export default function Home() {
       return false;
     }
     try {
-      const res = await fetch(`${API_BASE}/api/deny-stats`, {
+      const res = await businessFetch(`${API_BASE}/api/deny-stats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
         body: JSON.stringify({
@@ -1633,7 +1635,7 @@ export default function Home() {
   const fetchFilePermissionsData = async () => {
     if (!userToken || !canControlFile) return;
     try {
-      const res = await fetch(`${API_BASE}/api/file-permissions`, {
+      const res = await businessFetch(`${API_BASE}/api/file-permissions`, {
         headers: { Authorization: `Bearer ${userToken}` },
       });
       const data = await res.json();
@@ -1652,7 +1654,7 @@ export default function Home() {
     if (!userToken) return false;
     setFilePermMsg(null);
     try {
-      const res = await fetch(`${API_BASE}/api/file-permissions`, {
+      const res = await businessFetch(`${API_BASE}/api/file-permissions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
         body: JSON.stringify({ rules }),
@@ -2035,7 +2037,7 @@ export default function Home() {
                             <td className="py-1 pl-2 text-center whitespace-nowrap">
                               <button
                                 onClick={async () => {
-                                  await fetch(`${API_BASE}/api/deny-stats`, {
+                                  await businessFetch(`${API_BASE}/api/deny-stats`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
                                     body: JSON.stringify({ action: 'adjust_score', entity_type: e.entity_type, entity_value: e.entity_value, delta: 5 }),
@@ -2046,7 +2048,7 @@ export default function Home() {
                                 title="+5">+5</button>
                               <button
                                 onClick={async () => {
-                                  await fetch(`${API_BASE}/api/deny-stats`, {
+                                  await businessFetch(`${API_BASE}/api/deny-stats`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
                                     body: JSON.stringify({ action: 'adjust_score', entity_type: e.entity_type, entity_value: e.entity_value, delta: -5 }),
@@ -2700,7 +2702,7 @@ export default function Home() {
                   <span className="text-[10px] font-bold text-zinc-500">🖥️ 服务端日志 (最近100条)</span>
                   <button onClick={async () => {
                     try {
-                      const res = await fetch(`${API_BASE}/api/debug-logs?limit=100`, { headers: { Authorization: `Bearer ${userToken}` } });
+                      const res = await businessFetch(`${API_BASE}/api/debug-logs?limit=100`, { headers: { Authorization: `Bearer ${userToken}` } });
                       const data = await res.json();
                       const logs = data.logs || [];
                       const w = window.open('', '_blank', 'width=900,height=600');
@@ -4076,7 +4078,7 @@ export default function Home() {
                           setRegexPreview({ loading: true, total: 0, files: [], truncated: false });
                           setFilePermMsg(null);
                           try {
-                            const res = await fetch(`${API_BASE}/api/file-permissions`, {
+                            const res = await businessFetch(`${API_BASE}/api/file-permissions`, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
                               body: JSON.stringify({

@@ -2,14 +2,27 @@
  * GET /api/check-risk — 检查当前设备/IP 的风险评分
  * 无需鉴权，自动从请求头提取 IP 和 device_code
  */
-import { calculateDecayedScore, getRequestContext } from '../../../lib/deny-tracker';
+import { calculateDecayedScore, getRequestContext, checkEntityBanned, denyAndLog } from '../../../lib/deny-tracker';
 import { hashDeviceCode } from '../../../lib/fingerprint';
 import { pgFetch } from '../../../lib/pg-adapter';
 import { getSettings } from '../../../lib/users';
+import { verifyToken } from '../_auth';
 
 export async function GET(request: Request): Promise<Response> {
   const ctx = getRequestContext(request);
   const dcHash = hashDeviceCode(ctx.deviceCode || '');
+
+  try {
+    const auth = verifyToken(request.headers.get('authorization') || undefined);
+    const result = await checkEntityBanned(ctx.ip, dcHash, auth?.role, auth?.username);
+    if (result.banned) {
+      return denyAndLog(request, 'api_entity_banned', 403, '当前访问已被限制，请联系管理员', auth?.username);
+    }
+  } catch {
+    return new Response(JSON.stringify({ code: 503, message: '风控状态暂时无法读取' }), {
+      status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+    });
+  }
 
   let ipScore = 0;
   let dcScore = 0;
@@ -54,7 +67,7 @@ export async function GET(request: Request): Promise<Response> {
     warning,
   }), {
     status: 200,
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 }
 

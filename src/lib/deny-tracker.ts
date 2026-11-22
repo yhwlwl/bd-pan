@@ -790,11 +790,23 @@ export async function denyAndLog(
     geoRegion,
   }).catch(() => ({ recorded: false, ipScore: 0, dcScore: 0, warning: null }));
 
-  const body = JSON.stringify({ code: statusCode, message });
+  const blocked = statusCode === 403 && (denyReason === 'api_entity_banned' || denyReason === 'api_ip_banned');
+  if (blocked && request.method === 'GET' && request.headers.get('sec-fetch-mode') === 'navigate') {
+    return new Response(null, {
+      status: 303,
+      headers: {
+        Location: 'https://deny.tantantan.tech/#business-ban',
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+      },
+    });
+  }
+  const body = JSON.stringify({ code: statusCode, message, ...(blocked ? { blocked: true } : {}) });
   const response = new Response(body, {
     status: statusCode,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
     },
   });
 
