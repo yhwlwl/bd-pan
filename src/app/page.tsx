@@ -496,7 +496,10 @@ export default function Home() {
     // 检测风险警告 header（deny 追踪系统）
     if (!res.ok) {
       const warning = res.headers.get('X-Risk-Warning');
-      if (warning) setAlistMsg(warning);
+      if (warning) {
+        try { setAlistMsg(decodeURIComponent(warning)); }
+        catch { setAlistMsg(warning); }
+      }
     }
     return res;
   };
