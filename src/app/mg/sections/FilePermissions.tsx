@@ -1,9 +1,11 @@
 "use client";
 
+import { businessFetch, getBusinessApiBase } from "../../../lib/business-deny-client";
+
 import { useState, useEffect } from "react";
 import { useAdmin } from "../lib/admin-context";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
+const API_BASE = getBusinessApiBase();
 
 const ACTION_LABELS: Record<string, string> = {
   view: "浏览", download: "下载", preview: "预览", upload: "上传",
@@ -34,7 +36,7 @@ export default function FilePermissions() {
   // 加载规则
   const loadRules = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/file-permissions?operation=fileperms.viewRules`, {
+      const res = await businessFetch(`${API_BASE}/api/file-permissions?operation=fileperms.viewRules`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -48,7 +50,7 @@ export default function FilePermissions() {
   // 保存规则
   const saveRules = async (newRules: FileRule[], mgOperation = "fileperms.editRules") => {
     try {
-      const res = await fetch(`${API_BASE}/api/file-permissions`, {
+      const res = await businessFetch(`${API_BASE}/api/file-permissions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ rules: newRules, mgOperation }),
@@ -66,7 +68,7 @@ export default function FilePermissions() {
   // 正则预览
   const previewRegex = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/file-permissions`, {
+      const res = await businessFetch(`${API_BASE}/api/file-permissions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({

@@ -1,5 +1,7 @@
 "use client";
 
+import { businessFetch, getBusinessApiBase } from "../../../lib/business-deny-client";
+
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import {
   canModifyMgOperation,
@@ -7,7 +9,7 @@ import {
   canViewMgSection,
 } from "../../../lib/mg-permissions";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/pan";
+const API_BASE = getBusinessApiBase();
 const APP_SOURCE = process.env.NEXT_PUBLIC_APP_SOURCE || "pan";
 
 // ============ 类型 ============
@@ -134,11 +136,11 @@ export function AdminProvider({
     try {
       // 统一拉全部（API 各路由有独立权限校验）
       const [usrRes, statsRes, denyRes] = await Promise.all([
-        fetch(`${API_BASE}/api/users`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_BASE}/api/admin-stats?source=${adminDataSource}&page_source=${adminPageSource}`, {
+        businessFetch(`${API_BASE}/api/users`, { headers: { Authorization: `Bearer ${token}` } }),
+        businessFetch(`${API_BASE}/api/admin-stats?source=${adminDataSource}&page_source=${adminPageSource}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${API_BASE}/api/deny-stats`, {
+        businessFetch(`${API_BASE}/api/deny-stats`, {
           headers: { Authorization: `Bearer ${token}` },
         }).catch(() => null as any),
       ]);
@@ -170,7 +172,7 @@ export function AdminProvider({
   const logAdminAction = useCallback(
     (actionType: string, actionItem: string) => {
       if (!token) return;
-      fetch(`${API_BASE}/api/log-action`, {
+      businessFetch(`${API_BASE}/api/log-action`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -194,7 +196,7 @@ export function AdminProvider({
       if (!token) return { ok: false, error: '未登录' };
       setAdminMsg(null);
       try {
-        const res = await fetch(`${API_BASE}/api/users`, {
+        const res = await businessFetch(`${API_BASE}/api/users`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

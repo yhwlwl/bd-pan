@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "../lib/server-log"; // 劫持 console.log/warn/error 到内存缓冲
 import "./globals.css";
+import BusinessRiskGate from "./business-risk-gate";
 
 export const metadata: Metadata = {
   title: "成都七中STA · 科协网盘",
@@ -11,6 +12,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="zh" suppressHydrationWarning>
       <body className="antialiased">
+        <BusinessRiskGate />
         {children}
       </body>
     </html>

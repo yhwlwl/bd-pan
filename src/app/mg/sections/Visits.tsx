@@ -1,9 +1,11 @@
 "use client";
 
+import { businessFetch, getBusinessApiBase } from "../../../lib/business-deny-client";
+
 import { useState } from "react";
 import { useAdmin } from "../lib/admin-context";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://pan.tantantan.tech/wlm-api";
+const API_BASE = getBusinessApiBase();
 
 export default function Visits() {
   const { adminStats, adminSettings, isAdmin, fetchAllData, canModify, loading, token, setAdminMsg } = useAdmin();
@@ -28,7 +30,7 @@ export default function Visits() {
 
   const postRiskAction = async (body: Record<string, unknown>): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/api/deny-stats`, {
+      const res = await businessFetch(`${API_BASE}/api/deny-stats`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),

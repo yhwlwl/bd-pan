@@ -3,19 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import CHANGELOG_DATA from '../data/changelog.json';
 import { hasAnyMgViewPermission } from '../lib/mg-permissions';
-import { businessFetch, redirectBusinessBan } from '../lib/business-deny-client';
+import { businessFetch, redirectBusinessBan, ensureBusinessDeviceCode, getBusinessApiBase } from '../lib/business-deny-client';
 
 const ALIST_BASE_DEFAULT = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
-const CONFIGURED_API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '');
-
-// Keep API calls on the deployment the user is currently visiting.
-// The server-hosted build lives under /pan, while Vercel should use same-origin /api/*.
-// This prevents a stale NEXT_PUBLIC_API_BASE from sending Vercel users to the old server.
-const API_BASE = typeof window === 'undefined'
-  ? CONFIGURED_API_BASE
-  : window.location.hostname === 'pan.tantantan.tech' && window.location.pathname.startsWith('/pan')
-    ? '/pan'
-    : '';
+const API_BASE = getBusinessApiBase();
 
 type Role = 'admin' | 'manager' | 'guest';
 type Theme = 'light' | 'dark';
@@ -514,22 +505,11 @@ export default function Home() {
   // ── 稳定设备标识：首次生成随机 ID，之后只从本地存储读取 ──
   // Canvas/WebGL 指纹会因浏览器升级、隐私策略、分辨率或显卡变化而漂移；
   // 随机 ID 更适合做同一浏览器会话的风险关联。它不是认证凭据。
-  const computeDeviceCode = (): string => {
-    try {
-      const randomId = window.crypto?.randomUUID?.()
-        || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
-      return `wlm-v2-${randomId}`;
-    } catch { return ''; }
-  };
-
   useEffect(() => {
     setMounted(true);
     if (typeof window !== 'undefined') {
-      // 设备码：迁移旧指纹，之后长期复用稳定随机 ID
-      const savedDeviceCode = localStorage.getItem('BDPAN_DEVICE_CODE') || '';
-      if (!/^wlm-v2-[a-z0-9-]{16,80}$/i.test(savedDeviceCode)) {
-        try { localStorage.setItem('BDPAN_DEVICE_CODE', computeDeviceCode()); } catch {}
-      }
+      // 设备码统一生成并同步给页面导航。
+      ensureBusinessDeviceCode();
       // 主题初始化
       const saved = localStorage.getItem('BDPAN_THEME') as Theme | null;
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
