@@ -7,7 +7,7 @@
 import { pgInsert, pgFetch } from './pg-adapter';
 import { getSettings, updateSettings } from './users';
 import { normalizeDeviceCode } from './fingerprint';
-import { isIP } from 'node:net';
+import { normalizeIp, resolveRequestIp } from './request-ip';
 
 // ============================================================
 // 默认配置常量（可被 bdpan_settings.denyTracking 覆盖）
@@ -111,23 +111,6 @@ export interface RequestContext {
 // 内部工具
 // ============================================================
 
-/**
- * 只接受 Nginx 覆盖写入的 X-WLM-Client-IP。
- *
- * X-Real-IP / X-Forwarded-For 都可能由直接访问者自行构造，因此生产环境
- * 不再把它们当作身份依据。开发环境仍允许旧头，方便本地调试；ECS 必须
- * 配合 config.txt 中的 proxy_set_header X-WLM-Client-IP 使用。
- */
-function normalizeIp(raw: string | null | undefined): string {
-  let value = (raw || '').trim();
-  if (value.startsWith('::ffff:')) value = value.slice(7);
-  if (value.startsWith('[') && value.endsWith(']')) value = value.slice(1, -1);
-  // IP 由 Nginx 的可信头注入。这里仍然做严格格式校验，避免任意文本进入
-  // 风险键、日志和 PostgREST 查询。
-  if (!value || value.length > 128 || /[\r\n]/.test(value) || isIP(value) === 0) return 'unknown';
-  return value;
-}
-
 function normalizeAccount(raw: string | undefined | null): string | null {
   const value = (raw || '').trim();
   if (!value || value === 'guest' || value === '游客' || value === 'admin') return null;
@@ -156,11 +139,7 @@ function normalizeRiskEntityValue(entityType: RiskEntityType, rawValue: unknown)
 
 /** 从 Request 对象统一提取上下文字段 */
 export function getRequestContext(request: Request): RequestContext {
-  const trustedIp = request.headers.get('x-wlm-client-ip');
-  const legacyIp = process.env.NODE_ENV !== 'production'
-    ? request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for')?.split(',').map((item) => item.trim()).filter(Boolean).pop()
-    : null;
-  const ip = normalizeIp(trustedIp || legacyIp);
+  const ip = resolveRequestIp(request.headers);
   const device = normalizeDeviceCode(request.headers.get('x-device-code'));
 
   return {
@@ -811,7 +790,12 @@ export async function denyAndLog(
   });
 
   if (result.warning) {
-    response.headers.set('X-Risk-Warning', result.warning);
+    // HTTP headers must be ASCII-safe. A warning must never turn a denial into a 500.
+    try {
+      response.headers.set('X-Risk-Warning', encodeURIComponent(result.warning));
+    } catch {
+      // The status and JSON response remain authoritative.
+    }
   }
 
   return response;
