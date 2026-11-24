@@ -4,12 +4,13 @@ import { denyAndLog, getRequestContext, checkEntityBanned } from '../../../lib/d
 import { hashDeviceCode } from '../../../lib/fingerprint';
 import {
     getEffectivePermissionsForPath,
-    getSettings,
     getUserPermissions,
 } from '../../../lib/users';
 import { isAlistPathScopeError, resolveScopedAlistPath } from '../../../lib/path-scope';
 
-const ECS_URL = (process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
+export const runtime = 'nodejs';
+
+const ECS_URL = (process.env.ALIST_UPLOAD_URL || process.env.NEXT_PUBLIC_ALIST_URL || 'https://pan.tantantan.tech:5245').replace(/\/+$/, '');
 const ECS_USER = process.env.ALIST_USERNAME || '';
 const ECS_PASS = process.env.ALIST_PASSWORD || '';
 
@@ -32,18 +33,7 @@ export async function PUT(request: Request) {
     }
 
     try {
-        const settings = await getSettings();
         const config = { url: ECS_URL, user: ECS_USER, pass: ECS_PASS };
-
-        const tokenRes = await fetch(`${config.url}/api/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: config.user, password: config.pass }),
-        });
-        const tokenData = await tokenRes.json();
-        if (tokenData.code !== 200 || !tokenData.data?.token) {
-            return NextResponse.json({ code: 500, message: 'AList Token 获取失败' }, { status: 500 });
-        }
 
         const originalFilePath = request.headers.get('File-Path');
         if (!originalFilePath) {
@@ -59,11 +49,20 @@ export async function PUT(request: Request) {
         const filePath = resolveScopedAlistPath(rawFilePath, userPerms.basePath);
         const encodedFilePath = filePath.split('/').map(encodeURIComponent).join('/');
 
-        console.log('[alist-upload] userPerms.basePath:', userPerms.basePath, 'originalFilePath:', originalFilePath, 'rawFilePath:', rawFilePath, 'resolvedFilePath:', filePath, 'encodedFilePath:', encodedFilePath);
 
         const pathPerms = await getEffectivePermissionsForPath(user.username, user.role, filePath);
         if (!pathPerms.upload) {
             return denyAndLog(request, 'api_permission_denied', 403, '该目录禁止上传', user.username);
+        }
+
+        const tokenRes = await fetch(`${config.url}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: config.user, password: config.pass }),
+        });
+        const tokenData = await tokenRes.json();
+        if (tokenData.code !== 200 || !tokenData.data?.token) {
+            return NextResponse.json({ code: 500, message: 'AList Token 获取失败' }, { status: 500 });
         }
 
         const contentLength = request.headers.get('Content-Length');
@@ -80,17 +79,20 @@ export async function PUT(request: Request) {
             duplex: 'half',
         } as any);
 
-        const data = await uploadRes.json().catch(() => ({}));
+        const data = await uploadRes.json().catch(() => null);
+        const success = uploadRes.ok && data?.code === 200;
+        const status = success ? 200 : (uploadRes.ok ? 502 : uploadRes.status);
+        console.info('[alist-upload] result', { status, upstreamStatus: uploadRes.status, upstreamCode: typeof data?.code === 'number' ? data.code : null, bytes: contentLength });
         return NextResponse.json({
-            code: data?.code ?? (uploadRes.ok ? 200 : uploadRes.status),
-            message: data?.message || (uploadRes.ok ? 'success' : 'AList 上传失败'),
+            code: success ? 200 : status,
+            message: success ? 'success' : 'AList 未确认上传成功，请重试或联系管理员',
             data: null,
-        }, { status: uploadRes.ok ? 200 : uploadRes.status });
+        }, { status });
     } catch (error: any) {
-        console.error('[alist-upload] error:', error);
+        console.error('[alist-upload] error:', error?.name || 'unknown');
         if (isAlistPathScopeError(error)) {
             return denyAndLog(request, 'api_path_scope_denied', 403, '请求路径不在允许范围内', tokenUser?.username);
         }
-        return NextResponse.json({ code: 500, message: error?.message || '上传代理失败' }, { status: 500 });
+        return NextResponse.json({ code: 500, message: '上传代理失败，请重试或联系管理员' }, { status: 500 });
     }
 }
