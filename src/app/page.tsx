@@ -1442,7 +1442,8 @@ export default function Home() {
 
         const uploadData: any = await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          xhr.open('PUT', '/api/alist-upload');
+          // File bytes bypass Vercel; the existing ECS upload route still enforces auth, bans and path permissions.
+          xhr.open('PUT', 'https://pan.tantantan.tech/pan/api/alist-upload');
           Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
           xhr.upload.onprogress = (e) => {
             if (e.lengthComputable) {
@@ -1452,9 +1453,20 @@ export default function Home() {
             }
           };
           xhr.onload = () => {
-            try { const body = JSON.parse(xhr.responseText); redirectBusinessBan(xhr.status, body); resolve(body); } catch { reject(new Error('响应解析失败')); }
+            try {
+              const body = JSON.parse(xhr.responseText);
+              redirectBusinessBan(xhr.status, body);
+              if (xhr.status < 200 || xhr.status >= 300) {
+                const error = Object.assign(new Error(body?.message || `上传失败 (HTTP ${xhr.status})`), { httpStatus: xhr.status });
+                reject(error);
+              } else { resolve(body); }
+            } catch {
+              reject(Object.assign(new Error(xhr.status === 413 ? '文件超过服务器允许的大小' : `上传响应异常 (HTTP ${xhr.status})`), { httpStatus: xhr.status }));
+            }
           };
-          xhr.onerror = () => reject(new Error('网络异常'));
+          xhr.onerror = () => reject(new Error('上传连接中断或无法连接上传服务器'));
+          xhr.onabort = () => reject(new Error('上传已取消'));
+          xhr.ontimeout = () => reject(new Error('上传超时'));
           xhr.send(file);
         });
 
@@ -1466,7 +1478,8 @@ export default function Home() {
         }
       } catch (e: any) {
          failCount++;
-         logUserAction('上传', `${alistPath}/${file.name}`, 'failed');
+         const failureKind = Number.isInteger(e?.httpStatus) && e.httpStatus > 0 ? `HTTP ${e.httpStatus}` : (e?.message === '上传连接中断或无法连接上传服务器' ? '网络连接失败' : e?.message === '上传已取消' ? '已取消' : e?.message === '上传超时' ? '超时' : '应用层错误');
+         logUserAction('上传', `${alistPath}/${file.name} [${failureKind}; ${file.size} bytes]`, 'failed');
          lastError = e.message;
       }
     }
