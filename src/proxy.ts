@@ -47,5 +47,7 @@ export async function proxy(request: NextRequest): Promise<Response> {
 export const config = {
   // Public build assets are not business routes. All pages and APIs, including
   // /mg, unknown paths and future routes, use the same gate.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // The exact upload route repeats auth, device/IP/account bans and path permission checks.
+  // Do not clone or buffer its binary request body in Next Proxy.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|(?:pan/)?api/alist-upload/?$).*)'],
 };
