@@ -290,9 +290,7 @@ export async function updateSettings(patch: Partial<GlobalSettings>): Promise<vo
     await pgUpsert(TABLE_SETTINGS, { key: 'global', value: merged });
 }
 
-export async function getUserPermissions(username: string, role: Role): Promise<UserPermissions> {
-    const settings = await getSettings();
-
+export async function getUserPermissions(username: string, role: Role, settings?: GlobalSettings): Promise<UserPermissions> {
     const defaultManager: UserPermissions = {
         view: true,
         search: true,
@@ -346,7 +344,7 @@ export async function getUserPermissions(username: string, role: Role): Promise<
     }
 
     const defaultPerms = role === 'manager' ? defaultManager : defaultGuest;
-    const customPerms = settings.permissions?.[username];
+    const customPerms = (settings ?? await getSettings()).permissions?.[username];
     if (!customPerms) return defaultPerms;
     return { ...defaultPerms, ...customPerms };
 }

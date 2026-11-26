@@ -6,6 +6,7 @@
  */
 import { pgInsert, pgFetch } from './pg-adapter';
 import { getSettings, updateSettings } from './users';
+import type { GlobalSettings } from './users';
 import { normalizeDeviceCode } from './fingerprint';
 import { normalizeIp, resolveRequestIp } from './request-ip';
 
@@ -841,24 +842,42 @@ export async function checkEntityBanned(
   deviceCodeHash?: string | null,
   role?: string | null,
   username?: string | null,
+  settings?: Promise<GlobalSettings>,
 ): Promise<{ banned: boolean; reason: string }> {
-  // admin/manager 绕过封禁
   if (role === 'admin' || role === 'manager') {
     return { banned: false, reason: '' };
   }
+  return (await getEntityRisk(ip, deviceCodeHash, role, username, settings)).ban;
+}
 
+/** Read the ban decision and warning data from one lookup for the request. */
+export async function getEntityRisk(
+  ip: string,
+  deviceCodeHash?: string | null,
+  role?: string | null,
+  username?: string | null,
+  settingsRequest = getSettings(),
+) {
+  const privileged = role === 'admin' || role === 'manager';
   const normalizedIp = normalizeIp(ip);
-  const account = normalizeAccount(username);
+  const account = privileged ? null : normalizeAccount(username);
   const identities: Array<{ entity_type: RiskEntityType; entity_value: string }> = [];
   if (normalizedIp !== 'unknown') identities.push({ entity_type: 'ip', entity_value: normalizedIp });
   const normalizedDeviceHash = normalizeRiskEntityValue('device_code', deviceCodeHash);
   if (normalizedDeviceHash) identities.push({ entity_type: 'device_code', entity_value: normalizedDeviceHash });
   if (account) identities.push({ entity_type: 'account', entity_value: account });
 
-  const [settings, riskRows] = await Promise.all([getSettings(), getRiskScores(identities)]);
+  const [settings, riskRows] = await Promise.all([settingsRequest, getRiskScores(identities)]);
+  const ipRow = riskRows.get(entityKey('ip', normalizedIp));
+  const deviceRow = normalizedDeviceHash ? riskRows.get(entityKey('device_code', normalizedDeviceHash)) : undefined;
+  const accountRow = account ? riskRows.get(entityKey('account', account)) : undefined;
+  const warningData = { ipRow, deviceRow, decayWindowHours: settings.denyTracking?.decayWindowHours ?? 24 };
+  const allowed = { ban: { banned: false, reason: '' }, ...warningData };
+  if (privileged) return allowed;
+
   const now = Date.now();
   const configuredIpExpiry = normalizedIp === 'unknown' ? 0 : Number(settings.bannedIps?.[normalizedIp] || 0);
-  if (configuredIpExpiry > now) return { banned: true, reason: 'ip' };
+  if (configuredIpExpiry > now) return { ban: { banned: true, reason: 'ip' }, ...warningData };
   if (configuredIpExpiry > 0 && configuredIpExpiry <= now && settings.bannedIps?.[normalizedIp]) {
     // 过期项清理放到后台，不增加当前请求的拒绝判断延迟。
     const bannedIps = { ...(settings.bannedIps || {}) };
@@ -866,15 +885,11 @@ export async function checkEntityBanned(
     updateSettings({ bannedIps }).catch(() => {});
   }
 
-  const ipRow = normalizedIp === 'unknown' ? null : riskRows.get(entityKey('ip', normalizedIp));
-  const deviceRow = normalizedDeviceHash ? riskRows.get(entityKey('device_code', normalizedDeviceHash)) : null;
-  const accountRow = account ? riskRows.get(entityKey('account', account)) : null;
+  if (isActiveBan(ipRow, now)) return { ban: { banned: true, reason: 'ip' }, ...warningData };
+  if (isActiveBan(deviceRow, now)) return { ban: { banned: true, reason: 'device' }, ...warningData };
+  if (isActiveBan(accountRow, now)) return { ban: { banned: true, reason: 'account' }, ...warningData };
 
-  if (isActiveBan(ipRow, now)) return { banned: true, reason: 'ip' };
-  if (isActiveBan(deviceRow, now)) return { banned: true, reason: 'device' };
-  if (isActiveBan(accountRow, now)) return { banned: true, reason: 'account' };
-
-  return { banned: false, reason: '' };
+  return allowed;
 }
 
 /**

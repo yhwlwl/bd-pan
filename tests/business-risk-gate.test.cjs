@@ -70,3 +70,17 @@ test('OPTIONS preserves existing API CORS without redirect',async()=>{
   assert.equal(response.status,204);
   assert.equal(counts().calls,0);
 });
+
+test('only the exact login and check-risk handlers own their ban checks',async()=>{
+  const {proxy,counts}=loadProxy({banned:true});
+  for(const [path,method] of [['/api/login','POST'],['/pan/api/login/','POST'],['/api/check-risk','GET'],['/pan/api/check-risk/','GET']]){
+    const response=await proxy(request(path,method));
+    assert.equal(response.headers.get('x-test-next'),'yes');
+  }
+  assert.equal(counts().calls,0);
+  for(const [path,method] of [['/api/login','GET'],['/api/login/other','POST'],['/api/check-risk','POST']]){
+    const response=await proxy(request(path,method));
+    assert.equal(response.status,403);
+  }
+  assert.equal(counts().calls,3);
+});

@@ -21,6 +21,12 @@ export async function proxy(request: NextRequest): Promise<Response> {
     });
   }
 
+  // These handlers already check bans with the same request identity.
+  if ((request.method === 'POST' && /^\/(?:pan\/)?api\/login\/?$/.test(pathname)) ||
+      (request.method === 'GET' && /^\/(?:pan\/)?api\/check-risk\/?$/.test(pathname))) {
+    return NextResponse.next();
+  }
+
   const ctx = getRequestContext(request);
   try {
     const auth = verifyToken(request.headers.get('authorization') || undefined);
